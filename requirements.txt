@@ -1,0 +1,9 @@
+cryptography==45.0.5
+librosa==0.11.0
+numba==0.61.2
+numpy
+pydub==0.25.1
+pygame==2.6.1
+PyQt5==5.15.11
+PyQt5_sip==12.17.0
+scipy
