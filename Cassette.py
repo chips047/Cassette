@@ -10,7 +10,6 @@ try:
     from PyQt5.QtCore import *
     from PyQt5.QtWidgets import *
     
-    from loguru import logger
     from System import Styles
 
 except ModuleNotFoundError as e:
@@ -22,11 +21,13 @@ QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
 app = QApplication(sys.argv)
-from System import Utils
-app.setWindowIcon(Utils.Icons.WindowIcon)
 
+from System import Utils
+from loguru import logger
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
+
+app.setWindowIcon(Utils.Icons.WindowIcon)
 
 class ApplicationWindow(QMainWindow):
     def __init__(self):
