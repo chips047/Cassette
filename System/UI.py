@@ -418,6 +418,7 @@ class DraggableValueControl(QWidget):
         self.value_label.setFont(font)
         self.value_label.setStyleSheet(Styles.Other.font + Styles.Other.transparent)
         self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        self.value_label.setContentsMargins(0, 0, 0, 3)
         self.update_value_label()
         
         self.bottom_row_layout.addWidget(self.value_label, alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -509,6 +510,7 @@ class CycleButton(QWidget):
         self.value_label.setFont(font)
         self.value_label.setStyleSheet(Styles.Other.font + Styles.Other.transparent)
         self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        self.value_label.setContentsMargins(0, 0, 0, 5)
         self.bottom_row_layout.addWidget(self.value_label, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self.bottom_row_layout.addSpacing(4)
@@ -1817,7 +1819,7 @@ class ExportDialogWindow(BaseDialogWindow):
         ported, ported_to = Porter.Port.port(self.original_model, code_model, self.composition)
         Porter.Port.export_port(ported, ported_to, self.composition.duration_ms, self.composition.id)
         
-        os.startfile(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
+        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
         Utils.ui_sound("Export")
 
     def on_ok(self):
@@ -1847,9 +1849,11 @@ class DialogInputWindow(BaseDialogWindow):
     def on_ok(self):
         Utils.ui_sound("PopupClose2")
         text = self.input_field.text()
+        
         if text is None:
             self.ok_button.start_glitch()
             return
+
         self.result_text = text
         self.start_exit_animation()
 
