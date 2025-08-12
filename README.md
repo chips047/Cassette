@@ -1,15 +1,20 @@
 ![Hello.](github/title.png)
-## 🎵 Say Hello to **Cassette**  
+## Say Hello to **Cassette**  
 Create stunning **Glyphtones** — easier than ever before.
 
-## 💻 **Recommended System Requirements**  
+## **Recommended System Requirements**  
 To ensure a smooth experience, we recommend running Cassette on the following system:
 
 - **Memory**: 8 GB RAM or more  
 - **Processor**: 4 Core CPU
-- **Clock Speed**: 2.0 GHz or higher  
+- **Clock Speed**: 2.0 GHz or higher
+- **Free Space**: 1 GB or more
 
-## ⚠️ **Important Notes**  
+## How to install?
+Go to Releases page and download `Cassette.zip`
+Unpack it and run `Cassette.bat`
+
+## **Important Notes**  
 
 - When launching **Cassette** for the first time, the app **may experience noticeable lag** while loading the initial ringtone. Please be patient — it gets better after the first run.  
 - This is the **very first release**. Don’t expect perfection just yet — crashes, slowdowns, or glitches may occur. If you encounter bugs, please report them so we can improve!  
