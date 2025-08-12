@@ -1,26 +1,25 @@
 try:
     import os
     import sys
-    import subprocess
     
-    print("=== sys.path ===")
-    for p in sys.path:
-        print(p)
-    print("================")
-    print("Текущая директория:", os.getcwd())
-    
+    #os.environ["QT_FONT_DPI"] = "120"
+    #os.environ["QT_SCALE_FACTOR"] = "2"
     sys.path.insert(0, os.path.dirname(__file__))
 
     from PyQt5.QtGui import *
     from PyQt5.QtCore import *
     from PyQt5.QtWidgets import *
     
+    from loguru import logger
     from System import Styles
 
 except ModuleNotFoundError as e:
     from System import Utils
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
 app = QApplication(sys.argv)
 from System import Utils
@@ -34,6 +33,7 @@ class ApplicationWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Cassette")
         self.resize(1280, 800)
+        logger.info("Starting up...")
         
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
@@ -58,6 +58,8 @@ class ApplicationWindow(QMainWindow):
         self.move(qr.topLeft())
 
     def fade_out(self, widget):
+        logger.info("Fading out")
+        
         effect = widget.graphicsEffect()
         if not isinstance(effect, QGraphicsOpacityEffect):
             effect = QGraphicsOpacityEffect(widget)
@@ -71,6 +73,8 @@ class ApplicationWindow(QMainWindow):
         return self.anim_out
 
     def fade_in(self, widget):
+        logger.info("Fading in")
+        
         effect = widget.graphicsEffect()
         if not isinstance(effect, QGraphicsOpacityEffect):
             effect = QGraphicsOpacityEffect(widget)
@@ -95,6 +99,7 @@ class ApplicationWindow(QMainWindow):
         anim_out = self.fade_out(self.main_menu_widget)
 
         def on_fade_out_finished():
+            logger.info("Showing compositor...")
             Utils.ui_sound("Eject")
             self.stack.setCurrentWidget(self.compositor_widget)
             target_geometry = self.stack.geometry() 
@@ -119,6 +124,7 @@ class ApplicationWindow(QMainWindow):
 
         def on_fade_out_compositor_finished():
             Utils.ui_sound("Eject")
+            logger.info("Showing main menu...")
             self.stack.setCurrentWidget(self.main_menu_widget)
 
             initial_main_menu_geometry = self.stack.geometry()
@@ -160,13 +166,14 @@ class ApplicationWindow(QMainWindow):
 if __name__ == '__main__':
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")
+        logger.info("Loaded font")
     
     if os.path.exists("System/Fonts/NType82.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
+        logger.info("Loaded font")
 
     main_window = ApplicationWindow()
     main_window.show()
-    
-    Utils.ui_sound("Start")
 
+    Utils.ui_sound("Start")
     sys.exit(app.exec_())

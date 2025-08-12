@@ -1,5 +1,6 @@
 import librosa
 import numpy as np
+import multiprocessing as mp
 
 from PyQt5.QtCore import *
 
@@ -85,27 +86,45 @@ def analyze_bpm_and_beat_grid(audio_path, sr=44100, hop_length=256, min_consiste
 
     return tempo / 2, pseudo_first_beat, list(snapped_beats)
 
-class BPMWorker(QThread):
+def bpm_task(file_path, queue):
+    bpm, first_beat, beats = analyze_bpm_and_beat_grid(file_path)
+    queue.put((bpm, first_beat, beats))
+
+class BPMWorkerProcess(QObject):
     bpm_ready = pyqtSignal(float, float, list)
-    
+
     def __init__(self, file_path):
         super().__init__()
         self.file_path = file_path
-    
-    def run(self):
-        def should_interrupt():
-            return self.isInterruptionRequested()
-    
-        bpm, first_beat_offset_sec, snapped_times = analyze_bpm_and_beat_grid(
-            self.file_path,
-            should_interrupt=should_interrupt
-        )
-    
-        if not self.isInterruptionRequested():
-            self.bpm_ready.emit(bpm, first_beat_offset_sec, snapped_times)
-    
-    def stop_bpm_worker(self):
-        if self.bpm_worker and self.bpm_worker.isRunning():
-            self.bpm_worker.requestInterruption()
-            self.bpm_worker.quit()
-            self.bpm_worker.wait()
+        self.proc = None
+        self.queue = mp.Queue()
+
+    def start(self):
+        if self.proc and self.proc.is_alive():
+            return
+
+        self.proc = mp.Process(target=bpm_task, args=(self.file_path, self.queue))
+        self.proc.start()
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._check_result)
+        self.timer.start(100)
+
+    def _task(self, file_path, queue):
+        bpm, first_beat, beats = analyze_bpm_and_beat_grid(file_path)
+        queue.put((bpm, first_beat, beats))
+
+    def _check_result(self):
+        if not self.queue.empty():
+            bpm, first_beat, beats = self.queue.get()
+            self.bpm_ready.emit(bpm, first_beat, beats)
+            self.stop()
+
+    def stop(self):
+        if hasattr(self, "timer") and self.timer.isActive():
+            self.timer.stop()
+
+        if self.proc and self.proc.is_alive():
+            self.proc.terminate()
+            self.proc.join()
+        self.proc = None

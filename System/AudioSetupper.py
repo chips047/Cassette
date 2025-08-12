@@ -4,17 +4,84 @@ import pygame
 import librosa
 
 import numpy as np
+import multiprocessing as mp
 
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 
+from loguru import logger
 from .Constants import *
 
 from . import UI
 from . import Utils
 from . import Styles
 from . import BPMAnalyze
+
+def audio_loader_task(file_path, target_width, queue):
+    audio_data, sampling_rate = librosa.load(file_path, sr=44100)
+
+    peaks = []
+    if audio_data is not None and len(audio_data) > 0 and target_width > 0:
+        num_peaks = target_width * 2
+        samples_per_peak = max(1, len(audio_data) // num_peaks)
+        for i in range(0, len(audio_data), samples_per_peak):
+            chunk = audio_data[i:i + samples_per_peak]
+            if len(chunk) > 0:
+                peaks.append(np.max(np.abs(chunk)))
+
+    queue.put((audio_data, sampling_rate, peaks))
+
+class AudioLoaderProcess(QObject):
+    dataReady = pyqtSignal(object, int, list)
+
+    def __init__(self, file_path, target_width):
+        super().__init__()
+        self.file_path = file_path
+        self.target_width = target_width
+        self.proc = None
+        self.queue = mp.Queue()
+
+    def start(self):
+        if self.proc and self.proc.is_alive():
+            return
+
+        self.proc = mp.Process(target=audio_loader_task, args=(self.file_path, self.target_width, self.queue))
+        self.proc.start()
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self._check_result)
+        self.timer.start(100)
+
+    def _task(self, file_path, target_width, queue):
+        import librosa, numpy as np
+        audio_data, sampling_rate = librosa.load(file_path, sr=44100)
+
+        peaks = []
+        if audio_data is not None and len(audio_data) > 0 and target_width > 0:
+            num_peaks = target_width * 2
+            samples_per_peak = max(1, len(audio_data) // num_peaks)
+            for i in range(0, len(audio_data), samples_per_peak):
+                chunk = audio_data[i:i + samples_per_peak]
+                if len(chunk) > 0:
+                    peaks.append(np.max(np.abs(chunk)))
+
+        queue.put((audio_data, sampling_rate, peaks))
+
+    def _check_result(self):
+        if not self.queue.empty():
+            audio_data, sr, peaks = self.queue.get()
+            self.dataReady.emit(audio_data, sr, peaks)
+            self.stop()
+
+    def stop(self):
+        if hasattr(self, "timer") and self.timer.isActive():
+            self.timer.stop()
+
+        if self.proc and self.proc.is_alive():
+            self.proc.terminate()
+            self.proc.join()
+        self.proc = None
 
 class AudioLoaderWorker(QObject):
     dataReady = pyqtSignal(np.ndarray, int, list)
@@ -139,6 +206,7 @@ class TrimmingWaveformWidget(QWidget):
             if self.duration > 0:
                 time_pos = (x / self.width()) * self.duration
                 self.set_playback_position(time_pos)
+                logger.info(f"Placing playback on {time_pos}")
                 self.playbackPositionClicked.emit(self.playback_position)
 
     def mouseMoveEvent(self, event):
@@ -311,7 +379,7 @@ class AudioSetupDialog(QDialog):
         self.pulse_timer.timeout.connect(self.pulse)
         self.pulse_direction = 1
 
-        self.bpm_worker = BPMAnalyze.BPMWorker(self.file_path)
+        self.bpm_worker = BPMAnalyze.BPMWorkerProcess(self.file_path)
         self.bpm_worker.bpm_ready.connect(self.on_bpm_ready)
         self.bpm_worker.start()
 
@@ -322,20 +390,14 @@ class AudioSetupDialog(QDialog):
         self.bpm_remove_timer.timeout.connect(self._bpm_remove_step)
         self._bpm_final_bpm = None
         
-        self.thread = QThread()
-        self.worker = AudioLoaderWorker(self.file_path, self.width())
-        self.worker.moveToThread(self.thread)
-
-        self.thread.started.connect(self.worker.run)
-        self.worker.dataReady.connect(self.on_audio_loaded)
-        self.worker.dataReady.connect(self.thread.quit)
-        self.worker.dataReady.connect(self.worker.deleteLater)
-        self.thread.finished.connect(self.thread.deleteLater)
-
-        self.thread.start()
+        self.audio_loader = AudioLoaderProcess(self.file_path, self.width())
+        self.audio_loader.dataReady.connect(self.on_audio_loaded)
+        logger.info("Loading audio...")
+        self.audio_loader.start()
     
     @pyqtSlot(np.ndarray, int, list)
     def on_audio_loaded(self, audio_data, sampling_rate, peaks):
+        logger.info("Audio loaded.")
         self.audio_data = audio_data
         self.sampling_rate = sampling_rate
         
@@ -350,6 +412,7 @@ class AudioSetupDialog(QDialog):
         self.ok_button.setEnabled(True)
     
     def shrink_bpm_input(self):
+        logger.info("Shrinking BPM section...")
         anim = QPropertyAnimation(self.bpm_input, b"maximumWidth")
         anim.setDuration(300)
         anim.setStartValue(self.bpm_input.width())
@@ -378,16 +441,15 @@ class AudioSetupDialog(QDialog):
                 self.bpm_animating = False
 
         return super().eventFilter(obj, event)
-    
-    def stop_bpm_worker(self):
-        if self.bpm_worker and self.bpm_worker.isRunning():
-            self.bpm_worker.requestInterruption()
-            self.bpm_worker = None
         
     def closeEvent(self, event):
-        self.stop_playback()
-        self.stop_bpm_worker()
-        self.stop_bpm_animation()
+        if hasattr(self, "bpm_worker"):
+            self.bpm_worker.stop()
+        
+        if hasattr(self, "audio_loader"):
+            self.audio_loader.stop()
+        
+        logger.info("Loaders stopped.")
         super().closeEvent(event)
 
     def edit_start_time(self):
@@ -468,6 +530,7 @@ class AudioSetupDialog(QDialog):
         super().accept()
 
     def on_bpm_ready(self, bpm, first_beat_offset_sec, snapped_times):
+        logger.info("BPM found.")
         self.snapped_times = snapped_times
         self.first_beat_offset_sec = first_beat_offset_sec
 
@@ -598,7 +661,6 @@ class AudioSetupDialog(QDialog):
         elif self.is_playing:
             self.trim_widget.set_playback_position(self.trim_widget.end_time)
             self.stop_playback()
-
 
     def pulse(self):
         current_width = self.trim_widget.pulsating_width

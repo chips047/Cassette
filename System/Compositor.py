@@ -1,7 +1,3 @@
-import time
-import json
-import socket
-
 import numpy as np
 
 from PyQt5.QtGui import *
@@ -547,8 +543,8 @@ class ScrollableContent(QWidget):
             self.scale_view(+100 if event.angleDelta().y() > 0 else -100)
         else:
             delta = event.angleDelta().y()
-            # меняем не мгновенную скорость, а целевую
             self._scroll_target_velocity += -delta * 0.2
+            
             if not self._scroll_timer.isActive():
                 self._scroll_timer.start()
 

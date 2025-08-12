@@ -88,14 +88,18 @@ def get_time():
         return "what the fuck"
 
 def NDot(size):
-    Ndot = QFont("Ndot 57", size)
+    Ndot = QFont("Ndot 57")
+    px_size = round(size * 120 / 72)
     Ndot.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    Ndot.setPixelSize(px_size)
     
     return Ndot
 
 def NType(size):
-    Ntype = QFont("NType 82", size)
+    Ntype = QFont("NType 82")
+    px_size = round(size * 120 / 72)
     Ntype.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    Ntype.setPixelSize(px_size)
     
     return Ntype
 

@@ -1416,10 +1416,6 @@ class Settings(QDialog):
         self.max_tilt_angle = 2
         self.mouse_origin = None
         self.is_mouse_inside = False
-        
-        for w in [self.title_label, self.ok_button, self.cancel_button]:
-            w.installEventFilter(self)
-            w.setMouseTracking(True)
 
         self.tilt_timer = QTimer(self)
         self.tilt_timer.setInterval(16)
@@ -1663,18 +1659,15 @@ class BaseDialogWindow(QDialog):
         self.max_tilt_angle = 12
         self.mouse_origin = None
         self.is_mouse_inside = False
-        
-        self.title_label.installEventFilter(self)
-        self.ok_button.installEventFilter(self)
-        self.cancel_button.installEventFilter(self)
-        self.title_label.setMouseTracking(True)
-        self.ok_button.setMouseTracking(True)
-        self.cancel_button.setMouseTracking(True)
 
         self.tilt_timer = QTimer(self)
         self.tilt_timer.setInterval(FPS_60)
         self.tilt_timer.timeout.connect(self.update)
         self.tilt_timer.start()
+        
+        self.setMouseTracking(True)
+        for child in self.findChildren(QWidget):
+            child.setMouseTracking(True)
 
         QTimer.singleShot(0, self.start_entry_animation)
     
@@ -1686,6 +1679,19 @@ class BaseDialogWindow(QDialog):
             self.update()
 
         return super().eventFilter(watched_object, event)
+    
+    def _apply_mouse_tracking_and_filter(self, widget):
+        widget.setMouseTracking(True)
+        widget.installEventFilter(self)
+        for child in widget.findChildren(QWidget):
+            self._apply_mouse_tracking_and_filter(child)
+
+    def event(self, event):
+        if event.type() == QEvent.ChildAdded:
+            child = event.child()
+            if isinstance(child, QWidget):
+                self._apply_mouse_tracking_and_filter(child)
+        return super().event(event)
 
     def start_entry_animation(self):
         screen_center = QApplication.desktop().screen().rect().center()
@@ -1836,7 +1842,6 @@ class DialogInputWindow(BaseDialogWindow):
         self.input_field = AnimatedLineEdit(min_number, max_number, max_length, input_type)
         self.input_field.setFont(Utils.NType(13))
         self.input_field.setPlaceholderText(self.placeholder)
-        self.input_field.installEventFilter(self)
         self.layout.insertWidget(1, self.input_field)
 
     def on_ok(self):
