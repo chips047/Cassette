@@ -8,7 +8,6 @@ import re
 import zlib
 import math
 import base64
-from enum import Enum
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
