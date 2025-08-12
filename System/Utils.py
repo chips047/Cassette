@@ -7,21 +7,24 @@ import subprocess
 import numpy as np
 
 def gaussian_filter1d_np(data, sigma):
-    # Размер ядра: 6 * sigma (как в scipy) или минимум 3
     radius = int(3 * sigma)
     x = np.arange(-radius, radius + 1)
+    
     kernel = np.exp(-(x**2) / (2 * sigma**2))
     kernel /= kernel.sum()
+    
     return np.convolve(data, kernel, mode='same')
 
 def medfilt_np(data, kernel_size):
     if kernel_size % 2 == 0:
         raise ValueError("kernel_size must be odd")
+    
     pad_width = kernel_size // 2
     padded = np.pad(data, pad_width, mode='edge')
     shape = (data.size, kernel_size)
     strides = (padded.strides[0], padded.strides[0])
     windows = np.lib.stride_tricks.as_strided(padded, shape=shape, strides=strides)
+    
     return np.median(windows, axis=1)
 
 def system_global_error_message(title, message):
@@ -111,13 +114,23 @@ class Icons:
     Play = QIcon("System/Icons/Play.png")
     Pause = QIcon("System/Icons/Pause.png")
 
+def open_file(path):
+    if platform.system() == "Windows":
+        os.startfile(path)
+    
+    elif platform.system() == "Darwin":
+        subprocess.run(["open", path])
+    
+    else:
+        subprocess.run(["xdg-open", path])
+
 def get_songs_path(relative_path: str) -> str:
     base_path = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
     cassette_root = os.path.abspath(os.path.join(base_path, ".."))
     normalized_parts = os.path.normpath(relative_path).split(os.sep)
     full_path = os.path.join(cassette_root, "Songs", *normalized_parts)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
     
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path
 
 def get_cache_path(relative_path: str) -> str:
@@ -125,8 +138,8 @@ def get_cache_path(relative_path: str) -> str:
     cassette_root = os.path.abspath(os.path.join(base_path, ".."))
     normalized_parts = os.path.normpath(relative_path).split(os.sep)
     full_path = os.path.join(cassette_root, "Cache", *normalized_parts)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
     
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path
 
 def run(*args, **kwargs):
