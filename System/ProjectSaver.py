@@ -179,7 +179,7 @@ class Composition:
 
     def export(self, out_path = None):
         Exporter.export_ringtone(out_path or Utils.get_songs_path(str(self.id)), self)
-        os.startfile(os.path.abspath(Utils.get_songs_path(str(self.id))))
+        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
 
     def new_glyph(self, track, start, duration=None, brightness=None):
         self.last_glyph_id += 1
