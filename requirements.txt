@@ -7,3 +7,4 @@ pygame==2.6.1
 PyQt5==5.15.11
 PyQt5_sip==12.17.0
 scipy
+loguru
