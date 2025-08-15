@@ -2,9 +2,6 @@ name: Build aubio wheels
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 jobs:
   build_wheels:
@@ -31,10 +28,8 @@ jobs:
           CIBW_BUILD: "cp310-*"
           CIBW_SKIP: "pp* *-musllinux*"
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      - name: Upload wheels as artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: wheelhouse/*.whl
-          draft: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: aubio-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
