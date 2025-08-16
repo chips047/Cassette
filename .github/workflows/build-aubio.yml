@@ -1,0 +1,35 @@
+name: Build aubio wheels
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone aubio
+        run: |
+          git clone https://github.com/aubio/aubio.git
+          cd aubio
+          git submodule update --init --recursive
+
+      - name: Install cibuildwheel
+        run: pip install cibuildwheel
+
+      - name: Build wheels (Python 3.10 only)
+        run: cibuildwheel aubio --output-dir wheelhouse
+        env:
+          CIBW_BUILD: "cp310-*"
+          CIBW_SKIP: "pp* *-musllinux*"
+
+      - name: Upload wheels as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aubio-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
