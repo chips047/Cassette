@@ -10,14 +10,21 @@ To ensure a smooth experience, we recommend running Cassette on the following sy
 - **Clock Speed**: 2.0 GHz or higher
 - **Free Space**: 1 GB or more
 
-## How to install?
-Go to Releases page and download `Cassette.zip`
-Unpack it and run `Cassette.bat`
+## How to Install
+
+1. Go to the Releases page and download the package you need.  
+   - **Note:** The `nopython` package requires Python to be installed on your system.
+
+2. Unpack the downloaded archive.
+
+3. Run the appropriate script for your system:  
+   - On **Windows**: `Cassette.bat`  
+   - On **Linux/macOS**: `Cassette.sh`
 
 ## **Important Notes**  
 
 - When launching **Cassette** for the first time, the app **may experience noticeable lag** while loading the initial ringtone. Please be patient — it gets better after the first run.  
-- This is the **very first release**. Don’t expect perfection just yet — crashes, slowdowns, or glitches may occur. If you encounter bugs, please report them so we can improve!  
+- Don’t expect perfection just yet — crashes, slowdowns, or glitches may occur. If you encounter bugs, please report them so I can improve!  
 - Certain features are **not implemented yet**, including:
   - Segmented editor  
   - Undo/Redo functionality  
