@@ -2,6 +2,9 @@ try:
     import os
     import sys
     
+    #sys.stdout = open(os.devnull, 'w')
+    #sys.stderr = open(os.devnull, 'w')
+    
     #os.environ["QT_FONT_DPI"] = "120"
     #os.environ["QT_SCALE_FACTOR"] = "2"
     sys.path.insert(0, os.path.dirname(__file__))
@@ -19,11 +22,13 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+QApplication.setAttribute(Qt.AA_UseDesktopOpenGL) 
 
 app = QApplication(sys.argv)
 
 from System import Utils
 from loguru import logger
+from System import UI
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
 
@@ -156,12 +161,6 @@ class ApplicationWindow(QMainWindow):
     
     def closeEvent(self, event):
         self.compositor_widget.closeEvent(event)
-
-        #subprocess.Popen([
-        #    sys.executable, '-c',
-        #    'import pygame, time; pygame.mixer.init(); s=pygame.mixer.Sound("System/UI/Close.wav"); s.play(); time.sleep(s.get_length());'
-        #])
-
         super().closeEvent(event)
 
 if __name__ == '__main__':

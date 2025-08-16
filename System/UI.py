@@ -9,9 +9,10 @@ from PyQt5.QtWidgets import *
 
 from . import Utils
 from . import Styles
-from .Constants import *
-from . import GlyphEffects
 from . import Porter
+from . import GlyphEffects
+
+from .Constants import *
 
 class GlitchyButton(QPushButton):
     def __init__(self, *args, **kwargs):
@@ -92,19 +93,16 @@ class GlitchyButton(QPushButton):
 class NothingButton(GlitchyButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.setStyleSheet(Styles.Buttons.nothing_styled_button)
 
 class Button(GlitchyButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
         self.setStyleSheet(Styles.Buttons.normal_button)
 
 class ButtonWithOutline(GlitchyButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        
         self.setStyleSheet(Styles.Buttons.normal_button_with_border)
 
 class Selector(QWidget):
@@ -367,13 +365,57 @@ class SliderWithLabel(QWidget):
     def setValue(self, val):
         self.slider.setValue(val)
 
-class DraggableValueControl(QWidget):
-    valueChanged = pyqtSignal(int)
-
-    def __init__(self, icon = None, static_label_text = None, initial_value = 100, min_val = 0, max_val = 200, step = 5, unit_suffix = "", parent = None):
+class _BaseControlWidget(QWidget):
+    """Базовый класс для общих элементов управления."""
+    def __init__(self, icon=None, static_label_text=None, parent=None):
         super().__init__(parent)
         self.static_label_text = static_label_text
         self.icon = icon
+        self._setup_ui()
+
+    def _setup_ui(self):
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setMinimumWidth(120)
+
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(8, 0, 8, 0)
+        self.main_layout.setSpacing(1)
+
+        if self.static_label_text:
+            self.top_label = QLabel(self.static_label_text)
+            self.top_label.setFont(Utils.NDot(11))
+            self.top_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            self.top_label.setStyleSheet(Styles.Other.second_font + Styles.Other.transparent)
+            self.main_layout.addWidget(self.top_label)
+
+        self.bottom_row_layout = QHBoxLayout()
+        self.bottom_row_layout.setContentsMargins(0, 0, 0, 0)
+        self.bottom_row_layout.setSpacing(4)
+        
+        if self.icon:
+            self.icon_label = QLabel()
+            pixmap = self.icon.pixmap(20, 20)
+            self.icon_label.setPixmap(pixmap)
+            self.icon_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self.icon_label.setStyleSheet(Styles.Other.transparent)
+            self.bottom_row_layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+        
+        self.value_label = QLabel()
+        font = Utils.NDot(13)
+        self.value_label.setFont(font)
+        self.value_label.setStyleSheet(Styles.Other.font + Styles.Other.transparent)
+        self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        
+        self.bottom_row_layout.addWidget(self.value_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self.bottom_row_layout.addSpacing(4)
+        self.bottom_row_layout.addStretch()
+        self.main_layout.addLayout(self.bottom_row_layout)
+
+class DraggableValueControl(_BaseControlWidget):
+    valueChanged = pyqtSignal(int)
+
+    def __init__(self, icon = None, static_label_text = None, initial_value = 100, min_val = 0, max_val = 200, step = 5, unit_suffix = "", parent = None):
+        super().__init__(icon, static_label_text, parent)
         self.current_value = initial_value
         self.min_val = min_val
         self.max_val = max_val
@@ -382,52 +424,9 @@ class DraggableValueControl(QWidget):
         self.dragging = False
         self.drag_start_x = 0
         self.drag_start_value = 0
-
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(8, 0, 8, 0)
-        self.main_layout.setSpacing(1)
-
-        if self.static_label_text:
-            self.top_label = QLabel(self.static_label_text)
-            font = Utils.NDot(11)
-            self.top_label.setFont(font)
-            self.top_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-            self.top_label.setStyleSheet(Styles.Other.second_font + Styles.Other.transparent) 
-            self.main_layout.addWidget(self.top_label)
-
-        self.bottom_row_layout = QHBoxLayout()
-        self.bottom_row_layout.setContentsMargins(0, 0, 0, 0)
-        self.bottom_row_layout.setSpacing(4)
-
-        if self.icon:
-            self.icon_label = QLabel()
-            icon = self.icon
-            icon_size = 20
-            pixmap = icon.pixmap(icon_size, icon_size)
-            self.icon_label.setPixmap(pixmap)
-            self.icon_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            self.icon_label.setStyleSheet(Styles.Other.transparent)
-            self.bottom_row_layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         
-        self.value_label = QLabel()
-        font = Utils.NDot(13)
-        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
-        
-        self.value_label.setFont(font)
-        self.value_label.setStyleSheet(Styles.Other.font + Styles.Other.transparent)
-        self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
-        self.value_label.setContentsMargins(0, 0, 0, 3)
+        self.value_label.setContentsMargins(0, 0, 0, 4)
         self.update_value_label()
-        
-        self.bottom_row_layout.addWidget(self.value_label, alignment=Qt.AlignmentFlag.AlignVCenter)
-        self.bottom_row_layout.addSpacing(4)
-        
-        self.bottom_row_layout.addStretch() 
-        self.main_layout.addLayout(self.bottom_row_layout) 
-
-        self.setMinimumWidth(120) 
         self.setStyleSheet(Styles.Controls.ValueControl)
 
     def update_value_label(self):
@@ -444,19 +443,16 @@ class DraggableValueControl(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent):
         if self.dragging:
             delta_x = event.pos().x() - self.drag_start_x
-            pixels_per_step_value_change = 10 
-            
-            change_in_value_steps = delta_x // pixels_per_step_value_change 
+            pixels_per_step_value_change = 10
+            change_in_value_steps = delta_x // pixels_per_step_value_change
             new_value = self.drag_start_value + change_in_value_steps * self.step
-            
-            new_value = int(round(new_value / self.step)) * self.step 
+            new_value = int(round(new_value / self.step)) * self.step
             new_value = max(self.min_val, min(self.max_val, new_value))
             
             if new_value != self.current_value:
                 self.current_value = new_value
                 self.update_value_label()
                 self.valueChanged.emit(self.current_value)
-            
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
@@ -465,62 +461,17 @@ class DraggableValueControl(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
             event.accept()
 
-class CycleButton(QWidget):
+class CycleButton(_BaseControlWidget):
     state_changed = pyqtSignal(str, object)
 
     def __init__(self, icon="", static_label_text="", states=None, parent=None):
-        super().__init__(parent)
-
-        self.icon = icon
-        self.static_label_text = static_label_text
+        super().__init__(icon, static_label_text, parent)
         self.states = states if states is not None else [("1x", 1.0)]
         self.current_state_index = 0
-
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(8, 0, 8, 0)
-        self.main_layout.setSpacing(1)
-
-        if self.static_label_text:
-            self.top_label = QLabel(self.static_label_text)
-            font = Utils.NDot(11)
-            self.top_label.setFont(font)
-            self.top_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-            self.top_label.setStyleSheet(Styles.Other.second_font + Styles.Other.transparent)
-            self.main_layout.addWidget(self.top_label)
-
-        self.bottom_row_layout = QHBoxLayout()
-        self.bottom_row_layout.setContentsMargins(0, 0, 0, 0)
-        self.bottom_row_layout.setSpacing(4)
-
-        if self.icon:
-            self.icon_label = QLabel()
-            icon = self.icon
-            icon_size = 20
-            pixmap = icon.pixmap(icon_size, icon_size)
-            self.icon_label.setPixmap(pixmap)
-            self.icon_label.setStyleSheet(Styles.Other.transparent)
-            self.icon_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            self.bottom_row_layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
-
-        self.value_label = QLabel()
-        font = Utils.NDot(13)
-        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
-        self.value_label.setFont(font)
-        self.value_label.setStyleSheet(Styles.Other.font + Styles.Other.transparent)
-        self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        
         self.value_label.setContentsMargins(0, 0, 0, 5)
-        self.bottom_row_layout.addWidget(self.value_label, alignment=Qt.AlignmentFlag.AlignVCenter)
-
-        self.bottom_row_layout.addSpacing(4)
-        self.bottom_row_layout.addStretch()
-        self.main_layout.addLayout(self.bottom_row_layout)
-
-        self.setMinimumWidth(120)
-        self.setStyleSheet(Styles.Controls.CycleButton)
-
         self.update_button_state()
+        self.setStyleSheet(Styles.Controls.CycleButton)
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -568,33 +519,33 @@ class EffectPreviewWidget(QWidget):
 
         self.configuration = GlyphEffects.EffectsConfig[self.effect_name]
         for i, element in enumerate(self.configuration["settings"].keys()):
-                if element.startswith("checkbox"):
-                    widget = Checkbox(self.configuration["settings"][f"checkbox{i + 1}"]["title"], self)
-                    widget.setChecked(self.configuration["settings"][f"checkbox{i + 1}"]["default"])
+            if element.startswith("checkbox"):
+                widget = Checkbox(self.configuration["settings"][f"checkbox{i + 1}"]["title"], self)
+                widget.setChecked(self.configuration["settings"][f"checkbox{i + 1}"]["default"])
+                
+                self.controls[element] = widget
+                layout.addWidget(widget)
 
-                    self.controls[element] = widget
-                    layout.addWidget(widget)
+            if element.startswith("slider"):
+                widget = SliderWithLabel(
+                    description=self.configuration["settings"][f"slider{i + 1}"]["title"],
+                    min_val=self.configuration["settings"][f"slider{i + 1}"]["min"],
+                    max_val=self.configuration["settings"][f"slider{i + 1}"]["max"],
+                    default_val=self.configuration["settings"][f"slider{i + 1}"]["min"]
+                )
 
-                if element.startswith("slider"):
-                    widget = SliderWithLabel(
-                        description=self.configuration["settings"][f"slider{i + 1}"]["title"],
-                        min_val=self.configuration["settings"][f"slider{i + 1}"]["min"],
-                        max_val=self.configuration["settings"][f"slider{i + 1}"]["max"],
-                        default_val=self.configuration["settings"][f"slider{i + 1}"]["min"]
-                    )
+                self.controls[element] = widget
+                layout.addWidget(widget)
 
-                    self.controls[element] = widget
-                    layout.addWidget(widget)
+            if element.startswith("selector"):
+                widget = SelectorWithLabel(
+                    self.configuration["settings"][f"selector{i + 1}"]["title"],
+                    self.configuration["settings"][f"selector{i + 1}"]["choices"],
+                    width = 460
+                )
 
-                if element.startswith("selector"):
-                    widget = SelectorWithLabel(
-                        self.configuration["settings"][f"selector{i + 1}"]["title"],
-                        self.configuration["settings"][f"selector{i + 1}"]["choices"],
-                        width = 460
-                    )
-
-                    self.controls[element] = widget
-                    layout.addWidget(widget)
+                self.controls[element] = widget
+                layout.addWidget(widget)
 
         layout.addStretch()
 
@@ -619,8 +570,8 @@ class EffectPreviewWidget(QWidget):
         return settings
 
     def on_apply(self):
-        self.apply_button.setFont(Utils.NDot(16))
         self.apply_button.setText("Applied")
+        self.apply_button.setStyleSheet(Styles.Buttons.normal_button_with_border)
         current_settings = self.get_settings()
         self.apply_requested.emit(self.effect_name, current_settings)
     
@@ -710,14 +661,11 @@ class AnimatedTooltip(QWidget):
 
         self.anim_size = QPropertyAnimation(self, b"size")
         self.anim_opacity = QPropertyAnimation(self.text_opacity, b"opacity")
-        self.hide_timer = QTimer(self)
-        self.hide_timer.setSingleShot(True)
-        self.hide_timer.timeout.connect(self.hide)
         self._hiding = False
         
         self._target_size = 0
 
-    def show_tooltip(self, text, pos, duration=7000):
+    def show_tooltip(self, text, pos):
         self._hiding = False
 
         self._tooltip_visible = True
@@ -746,8 +694,6 @@ class AnimatedTooltip(QWidget):
         
         self._target_size = final_size
         QTimer.singleShot(TOOLTIP_POPUP_IN, self._fade_in_text)
-
-        self.hide_timer.start(duration)
 
     def _fade_in_text(self):
         self.anim_opacity.stop()
@@ -847,6 +793,9 @@ class MiniWaveformPreview(QWidget):
         if self.audio_data is None or len(self.audio_data) == 0 or self.width() <=0:
             self.peaks = []
             return
+        
+        self.audio_data = self.audio_data - np.mean(self.audio_data)
+        self.audio_data = self.audio_data / np.max(np.abs(self.audio_data))
 
         num_peaks = self.width()
 
@@ -1346,7 +1295,6 @@ class NavButton(QPushButton):
         else:
             self.setStyleSheet(self.inactive_style)
 
-
 class Settings(QDialog):
     MARGIN = 20
     def __init__(self):
@@ -1360,7 +1308,7 @@ class Settings(QDialog):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setModal(True)
         self.setFixedSize(self.content_width + self.MARGIN * 2, self.content_height + self.MARGIN * 2)
-        Utils.ui_sound("PopupOpen2")
+        Utils.ui_sound("PopupOpen")
 
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
@@ -1531,7 +1479,7 @@ class Settings(QDialog):
         self.start_exit_animation()
     
     def reject(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         self.start_exit_animation()
 
     def _really_close(self):
@@ -1588,18 +1536,25 @@ class Settings(QDialog):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        
         content_rect = QRect(self.MARGIN, self.MARGIN, self.content_width, self.content_height)
+        
         if self.is_mouse_inside and self.mouse_origin:
             mouse_pos_in_content = self.mouse_origin - content_rect.topLeft()
             x_norm = max(-1.0, min(1.0, (mouse_pos_in_content.x() / self.content_width) * 2 - 1))
             y_norm = max(-1.0, min(1.0, (mouse_pos_in_content.y() / self.content_height) * 2 - 1))
+            x_norm = max(-0.98, min(0.98, x_norm))
+            y_norm = max(-0.98, min(0.98, y_norm))
+            
             angle_x = -y_norm * self.max_tilt_angle
             angle_y = -x_norm * self.max_tilt_angle
+            
             transform = QTransform()
             transform.translate(content_rect.center().x(), content_rect.center().y())
             transform.rotate(angle_y, Qt.YAxis)
             transform.rotate(angle_x, Qt.XAxis)
             transform.translate(-content_rect.center().x(), -content_rect.center().y())
+            
             painter.setTransform(transform)
         
         bg_color = QColor(*Styles.hex_to_rgb(Styles.Colors.secondary_background))
@@ -1627,7 +1582,7 @@ class BaseDialogWindow(QDialog):
         self.setModal(True)
         self.setFixedSize(self.content_width + self.MARGIN * 2, self.content_height + self.MARGIN * 2)
         
-        Utils.ui_sound("PopupOpen2")
+        Utils.ui_sound("PopupOpen")
 
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
@@ -1782,12 +1737,12 @@ class DialogWindow(BaseDialogWindow):
         self._was_cancelled = False
 
     def on_ok(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         self._was_cancelled = False
         self.start_exit_animation()
 
     def on_cancel(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         self._was_cancelled = True
         self.start_exit_animation()
 
@@ -1823,12 +1778,12 @@ class ExportDialogWindow(BaseDialogWindow):
         Utils.ui_sound("Export")
 
     def on_ok(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         self._was_cancelled = False
         self.start_exit_animation()
 
     def on_cancel(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         self._was_cancelled = True
         self.start_exit_animation()
 
@@ -1847,7 +1802,7 @@ class DialogInputWindow(BaseDialogWindow):
         self.layout.insertWidget(1, self.input_field)
 
     def on_ok(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         text = self.input_field.text()
         
         if text is None:
@@ -1858,7 +1813,7 @@ class DialogInputWindow(BaseDialogWindow):
         self.start_exit_animation()
 
     def on_cancel(self):
-        Utils.ui_sound("PopupClose2")
+        Utils.ui_sound("PopupClose")
         self.result_text = None
         self.start_exit_animation()
 
@@ -1867,3 +1822,228 @@ class DialogInputWindow(BaseDialogWindow):
 
     def get_text(self) -> str:
         return self.input_field.text()
+
+
+class FloatingWindow(QDialog):
+    MARGIN = 50
+    
+    def __init__(self, title: str, width: int, height: int):
+        super().__init__()
+        self.content_width = width
+        self.content_height = height
+
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        self.setFixedSize(self.content_width + self.MARGIN * 2, self.content_height + self.MARGIN * 2)
+
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setOpacity(1.0)
+
+        self.setupLayout(title)
+        self.setupMouseTracking()
+        self.setupAnimationProperties()
+        
+        self.animation_timer = QTimer(self)
+        self.animation_timer.setInterval(FPS_120)
+        self.animation_timer.timeout.connect(self.updateSmooth)
+        
+        QTimer.singleShot(0, self.start_entry_animation)
+
+    def setupLayout(self, title):
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(
+            self.MARGIN + 20, self.MARGIN + 20, 
+            self.MARGIN + 20, self.MARGIN + 20
+        )
+        self.layout.setSpacing(15)
+
+        self.title_label = QLabel(title)
+        self.title_label.setFont(Utils.NType(15))
+        self.title_label.setStyleSheet("color: #fff;")
+        self.layout.addWidget(self.title_label)
+        
+        self._apply_mouse_tracking_and_filter(self)
+
+    def setupMouseTracking(self):
+        self.setMouseTracking(True)
+        self.max_tilt_angle = 15
+        
+        self.current_tilt_x = 0.0
+        self.current_tilt_y = 0.0
+        self.target_tilt_x = 0.0
+        self.target_tilt_y = 0.0
+        self.tilt_smoothing = 0.1
+
+    def setupAnimationProperties(self):
+        self.entry_rotation_angle = 0
+        self.current_rotation = 0.0
+        self.target_rotation = 0.0
+        self.rotation_smoothing = 0.2
+
+    def eventFilter(self, watched_object, event):
+        if event.type() == QEvent.MouseMove:
+            pos_in_window = watched_object.mapTo(self, event.pos())
+            self.calculateTargetTilt(pos_in_window)
+        
+        return super().eventFilter(watched_object, event)
+
+    def _apply_mouse_tracking_and_filter(self, widget):
+        widget.setMouseTracking(True)
+        widget.installEventFilter(self)
+        for child in widget.findChildren(QWidget):
+            child.installEventFilter(self)
+            child.setMouseTracking(True)
+
+    def calculateTargetTilt(self, mouse_pos):
+        center_x = self.width() / 2
+        center_y = self.height() / 2
+        
+        x_norm = -(mouse_pos.x() - center_x) / center_x
+        y_norm = (mouse_pos.y() - center_y) / center_y
+
+        self.target_tilt_x = -y_norm * self.max_tilt_angle
+        self.target_tilt_y = x_norm * self.max_tilt_angle
+
+    def updateSmooth(self):
+        self.current_tilt_x += (self.target_tilt_x - self.current_tilt_x) * self.tilt_smoothing
+        self.current_tilt_y += (self.target_tilt_y - self.current_tilt_y) * self.tilt_smoothing
+        self.current_rotation += (self.target_rotation - self.current_rotation) * self.rotation_smoothing
+        
+        if (
+            abs(self.current_tilt_x - self.target_tilt_x) > 0.01 or 
+            abs(self.current_tilt_y - self.target_tilt_y) > 0.01 or
+            abs(self.current_rotation - self.target_rotation) > 0.01
+        ):
+            self.update()
+
+    def start_entry_animation(self):
+        screen_center = QApplication.primaryScreen().geometry().center()
+        final_rect = QRect(
+            screen_center.x() - self.width() // 2,
+            screen_center.y() - self.height() // 2,
+            self.width(), self.height()
+        )
+
+        self.setGeometry(final_rect.translated(0, +20))
+
+        anim_geo = QPropertyAnimation(self, b"geometry")
+        anim_geo.setDuration(800)
+        anim_geo.setStartValue(final_rect.translated(0, -200))
+        anim_geo.setEndValue(final_rect)
+        anim_geo.setEasingCurve(QEasingCurve.OutElastic)
+        
+        anim_opacity = QPropertyAnimation(self.opacity_effect, b"opacity")
+        anim_opacity.setDuration(350)
+        anim_opacity.setStartValue(0)
+        anim_opacity.setEndValue(1)
+        anim_opacity.setEasingCurve(QEasingCurve.OutExpo)
+
+        self.rotation_anim = QPropertyAnimation(self, b"entryRotation")
+        self.rotation_anim.setDuration(1200)
+        start_angle = random.randint(-65, 65)
+        self.rotation_anim.setStartValue(start_angle)
+        self.rotation_anim.setEndValue(0)
+        self.rotation_anim.setEasingCurve(QEasingCurve.OutElastic)
+
+        self.anim_group = QParallelAnimationGroup()
+        self.anim_group.addAnimation(anim_geo)
+        self.anim_group.addAnimation(anim_opacity)
+        self.anim_group.addAnimation(self.rotation_anim)
+        
+        self.animation_timer.start()
+        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
+        
+        Utils.ui_sound("Error1")
+
+    def getEntryRotation(self):
+        return self.entry_rotation_angle
+
+    def setEntryRotation(self, value):
+        self.entry_rotation_angle = value
+        self.target_rotation = value
+
+    entryRotation = pyqtProperty(float, fget=getEntryRotation, fset=setEntryRotation)
+
+    def start_exit_animation(self):
+        self.animation_timer.stop()
+        
+        start_rect = self.geometry()
+        end_rect = start_rect.translated(0, -50)
+
+        anim_move = QPropertyAnimation(self, b"geometry")
+        anim_move.setDuration(300)
+        anim_move.setStartValue(start_rect)
+        anim_move.setEndValue(end_rect)
+        anim_move.setEasingCurve(QEasingCurve.OutExpo)
+
+        anim_opacity = QPropertyAnimation(self.opacity_effect, b"opacity")
+        anim_opacity.setDuration(400)
+        anim_opacity.setStartValue(1.0)
+        anim_opacity.setEndValue(0.0)
+        anim_opacity.setEasingCurve(QEasingCurve.InCubic)
+
+        self.anim_group = QParallelAnimationGroup()
+        self.anim_group.addAnimation(anim_move)
+        self.anim_group.addAnimation(anim_opacity)
+        self.anim_group.finished.connect(self._really_close)
+        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
+
+    def enterEvent(self, event):
+        if not self.animation_timer.isActive():
+            self.animation_timer.start()
+        
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.target_tilt_x = 0.0
+        self.target_tilt_y = 0.0
+        
+        QTimer.singleShot(1000, self.checkIfShouldStopTimer)
+        super().leaveEvent(event)
+        
+    def checkIfShouldStopTimer(self):
+        if not self.rect().contains(self.mapFromGlobal(self.cursor().pos())):
+            self.animation_timer.stop()
+
+    def mouseMoveEvent(self, event):
+        self.calculateTargetTilt(event.pos())
+        super().mouseMoveEvent(event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        content_rect = QRect(self.MARGIN, self.MARGIN, self.content_width, self.content_height)
+        
+        transform = QTransform()
+        center_point = content_rect.center()
+        transform.translate(center_point.x(), center_point.y())
+        
+        transform.rotate(self.current_tilt_y, Qt.YAxis)
+        transform.rotate(self.current_tilt_x, Qt.XAxis)
+        
+        transform.rotate(self.current_rotation)
+        transform.translate(-center_point.x(), -center_point.y())
+        
+        painter.setTransform(transform)
+
+        bg_color = QColor(Styles.Colors.secondary_background)
+        painter.setBrush(bg_color)
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(content_rect, 16, 16)
+
+        border_color = QColor(Styles.Colors.glass_border)
+        pen = QPen(border_color, 1.5)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(content_rect, 16, 16)
+
+        painter.save()
+        painter.resetTransform()
+        super().paintEvent(event)
+        painter.restore()
+
+    def _really_close(self):
+        self.accept()

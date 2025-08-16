@@ -105,14 +105,14 @@ class Other:
     second_font = f"""color: {Colors.second_font_color};"""
     
     Tooltip = f"""
-    color: {Colors.font_color};
-    background-color: {Colors.effect_menu_second};
-    border-radius: {Roundings.button};
-    border: {Metrics.glass_border_thick}px solid {Colors.glass_border}
+        color: {Colors.font_color};
+        background-color: {Colors.effect_menu_second};
+        border-radius: {Roundings.button};
+        border: {Metrics.glass_border_thick}px solid {Colors.glass_border}
     """
 
     glass_border = f"""
-    border: {Metrics.glass_border_thick}px solid {Colors.glass_border};
+        border: {Metrics.glass_border_thick}px solid {Colors.glass_border};
     """
 
 class Controls:
@@ -151,19 +151,17 @@ class Controls:
             selection-background-color: {Colors.nothing_accent};
             selection-color: white;
             padding: 4px;
-            outline: 0px; /* Убирает рамку фокуса в Windows */
+            outline: 0px;
         }}
     """
     
     Selector = f"""
     
-    /* сам корневой виджет */
         QWidget#selectorRoot {{
             background-color: {Colors.effect_menu_third};
             border-radius: {Roundings.button}px;
         }}
 
-        /* внутренний фон — тот же цвет и радиус */
         #selectorWidget {{
             background-color: {Colors.effect_menu_third};
             border-radius: {Roundings.button}px;
@@ -174,24 +172,21 @@ class Controls:
             border-radius: {Roundings.button}px;
         }}
 
-        /* обычное состояние */
         QPushButton#segmentedButton {{
             color: {Colors.font_color};
             background-color: {Colors.effect_menu};
             border: none;
-            padding: 0;                 /* чуть больше воздуха */
+            padding: 0;
             border-radius: {Roundings.button - 5}px;
         }}
 
-        /* навели курсор — подсветка слегка темнее фона */
         QPushButton#segmentedButton:hover {{
             background-color: {Colors.effect_menu_second};
         }}
 
-        /* выбранный сегмент — красный акцент */
         QPushButton#segmentedButton:checked {{
             background-color: {Colors.nothing_accent};
-            color: #ffffff;                 /* белый текст читается лучше */
+            color: #ffffff;
         }}
         QPushButton#segmentedButton:checked:hover {{
             background-color: {Colors.nothing_accent_second};
@@ -199,34 +194,28 @@ class Controls:
     """
     
     Selector2 = f"""
-        /* Style for the QWidget that contains the buttons */
-        /* This will apply to the 'selector_container' in your Python code */
         QWidget {{
-            background-color: {Colors.secondary_background}; /* No background for the container itself */
+            background-color: {Colors.secondary_background};
             border-radius: {Roundings.button}px;
         }}
 
-        /* Normal state of the segmented button */
         QPushButton#segmentedButton {{
             color: {Colors.font_color};
             background-color: transparent;
             border: none;
             padding: 0;
-            border-radius: {Roundings.button}px; /* Slightly smaller radius for individual buttons */
+            border-radius: {Roundings.button}px;
         }}
 
-        /* Hover state for the segmented button */
         QPushButton#segmentedButton:hover {{
             background-color: {Colors.third_background};
         }}
 
-        /* Checked state for the segmented button */
         QPushButton#segmentedButton:checked {{
             background-color: {Colors.nothing_accent};
             color: #ffffff;
         }}
 
-        /* Hover state for the checked segmented button */
         QPushButton#segmentedButton:checked:hover {{
             background-color: {Colors.nothing_accent_second};
         }}
@@ -371,20 +360,20 @@ class Controls:
         }}
 
         QCheckBox::indicator:hover {{
-            border: {Metrics.glass_border_thick} solid {Colors.nothing_accent};
+            border: {Metrics.glass_border_thick} solid {Colors.nothing_accent_third};
         }}
 
         QCheckBox::indicator:checked {{
-            background-color: {Colors.effect_menu_second};
+            background-color: {Colors.nothing_accent};
             border: {Metrics.glass_border_thick} solid {Colors.nothing_accent};
-            image: url(System/Icons/Dot.png);
         }}
         """
     
     DialogBackground = """
-    background-color: rgba(20, 20, 20, 220);
-    border-radius: 16px;
+        background-color: rgba(20, 20, 20, 220);
+        border-radius: 16px;
     """
+    
     InputField = """
         background-color: #222;
         color: #fff;
@@ -395,30 +384,30 @@ class Controls:
 
 class Menus:
     RMB_element = f"""
-    QMenu {{
-        background-color: {Colors.effect_menu};
-        color: {Colors.font_color};
-        border: {Metrics.glass_border_thick} solid {Colors.glass_border};
-        border-radius: {Roundings.rmb_menu}px;
-        padding: 4px;
-    }}
+        QMenu {{
+            background-color: {Colors.effect_menu};
+            color: {Colors.font_color};
+            border: {Metrics.glass_border_thick} solid {Colors.glass_border};
+            border-radius: {Roundings.rmb_menu}px;
+            padding: 4px;
+        }}
 
-    QMenu::item {{
-        {Other.transparent}
-        padding: 5px 20px;
-        margin: 2px;
-        border-radius: {Roundings.rmb_menu_item}px;
-    }}
+        QMenu::item {{
+            {Other.transparent}
+            padding: 5px 20px;
+            margin: 2px;
+            border-radius: {Roundings.rmb_menu_item}px;
+        }}
 
-    QMenu::item:selected {{
-        background-color: {Colors.effect_menu_second};
-    }}
+        QMenu::item:selected {{
+            background-color: {Colors.effect_menu_second};
+        }}
 
-    QMenu::separator {{
-        height: {Metrics.glass_border_thick};
-        background-color: {Colors.glass_border};
-        margin: 4px 10px;
-    }}
+        QMenu::separator {{
+            height: {Metrics.glass_border_thick};
+            background-color: {Colors.glass_border};
+            margin: 4px 10px;
+        }}
     """
 
     audio_setup = f"""

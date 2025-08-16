@@ -1,7 +1,7 @@
 import os
 import json
-import webbrowser
 import shutil
+import webbrowser
 
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -374,6 +374,10 @@ class MainMenu(QWidget):
         settings_dialog = UI.Settings()
         settings_dialog.init_settings(settings)
         settings_dialog.exec_()
+    
+    def on_import(self):
+        dialog = UI.FloatingWindow("test", 500, 300)
+        dialog.exec_()
 
     def create_button_panel(self):
         panel = QWidget()
@@ -417,6 +421,9 @@ class MainMenu(QWidget):
             
             if text == "Settings":
                 btn.clicked.connect(self.on_settings)
+            
+            if text == "Import":
+                btn.clicked.connect(self.on_import)
 
             layout.addWidget(btn)
         
