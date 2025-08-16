@@ -113,6 +113,7 @@ class Icons:
     Speed = QIcon("System/Icons/Speed.png")
     Play = QIcon("System/Icons/Play.png")
     Pause = QIcon("System/Icons/Pause.png")
+    Effect = QIcon("System/Icons/Effect.png")
 
 def open_file(path):
     if platform.system() == "Windows":
@@ -125,10 +126,8 @@ def open_file(path):
         subprocess.run(["xdg-open", path])
 
 def get_songs_path(relative_path: str) -> str:
-    base_path = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
-    cassette_root = os.path.abspath(os.path.join(base_path, ".."))
     normalized_parts = os.path.normpath(relative_path).split(os.sep)
-    full_path = os.path.join(cassette_root, "Songs", *normalized_parts)
+    full_path = os.path.join(os.path.expanduser("~"), "Songs", *normalized_parts)
     
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path
@@ -150,7 +149,7 @@ def run(*args, **kwargs):
 
 def ui_sound(name):
     try:
-        sound = pygame.mixer.Sound(f"System/UI/{name}.wav")
+        sound = pygame.mixer.Sound(f"System/Sounds/{name}.wav")
 
         array = pygame.sndarray.array(sound)
         rate = np.random.uniform(0.97, 1.03)
