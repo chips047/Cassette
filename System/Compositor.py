@@ -271,6 +271,9 @@ class ScrollableContent(QWidget):
         start_sample = max(0, start_sample)
         end_sample = min(len(self.audio_data), end_sample)
         audio_chunk = self.audio_data[start_sample:end_sample]
+        
+        audio_chunk = audio_chunk - np.mean(audio_chunk)
+        audio_chunk = audio_chunk / np.max(np.abs(audio_chunk))
     
         if audio_chunk.size == 0:
             return None
@@ -1148,7 +1151,7 @@ class CompositorWidget(QWidget):
         self.glyph_dur_control = UI.DraggableValueControl(Utils.Icons.Duration, "duration", 100, 5, 5000, 5, "ms")
         self.brightness_control = UI.DraggableValueControl(Utils.Icons.Brightness, "brightness", 100, 5, 100, 5, "%")
         self.playspeed_button = UI.CycleButton(Utils.Icons.Speed, "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
-        self.default_effect = UI.CycleButton(Utils.Icons.Speed, "effect", [("none", "None"), ("fade out", "Fade out"), ("fade in", "Fade in"), ("fade in out", "Fade in + out")])
+        self.default_effect = UI.CycleButton(Utils.Icons.Effect, "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
         
         self.top_control_bar_layout.addWidget(self.glyph_dur_control)
         self.top_control_bar_layout.addWidget(self.brightness_control)

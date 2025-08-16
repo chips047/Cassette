@@ -1,60 +1,73 @@
-import librosa
+import aubio
+import tempfile
+
 import numpy as np
 import multiprocessing as mp
 
+from PyQt5.Qt import *
 from PyQt5.QtCore import *
+from pydub import AudioSegment
 
 from System import Utils
 from System.Constants import *
 
-def snap_beats_to_onsets(bpm_times, onset_times, onset_strengths, should_interrupt=lambda: False):
-    snapped = []
-    onset_times = np.array(onset_times)
-    onset_strengths = np.array(onset_strengths)
+def ensure_wav(path):
+    if path.lower().endswith(".wav"):
+        return path
 
-    for t in bpm_times:
+    tmp_path = tempfile.mktemp(suffix=".wav")
+    audio = AudioSegment.from_file(path)
+    audio.export(tmp_path, format="wav", parameters=["-acodec", "pcm_s16le"])
+    return tmp_path
+
+def analyze_bpm_and_beat_grid(audio_path, hop_size = 256, min_consistent_beats = 7, tolerance = 0.07, should_interrupt = lambda: False):
+    if should_interrupt():
+        return 0, 0, []
+
+    wav_path = ensure_wav(audio_path)
+
+    samplerate = 0
+    s = aubio.source(wav_path, samplerate, hop_size)
+    samplerate = s.samplerate
+
+    onset_detector = aubio.onset("default", 1024, hop_size, samplerate)
+    tempo_detector = aubio.tempo("default", 1024, hop_size, samplerate)
+
+    onset_times, onset_strengths, tempo_estimates = [], [], []
+    total_frames = 0
+
+    while True:
         if should_interrupt():
+            return 0, 0, []
+
+        samples, read = s()
+        if read == 0:
             break
 
-        mask = np.abs(onset_times - t) <= BEAT_MAX_DISTANCE
-        candidates = onset_times[mask]
-        candidates_strength = onset_strengths[mask]
+        if onset_detector(samples):
+            onset_times.append(onset_detector.get_last_s())
+            onset_strengths.append(onset_detector.get_last())
 
-        if len(candidates) == 0:
-            continue
+        if tempo_detector(samples):
+            tempo_estimates.append(tempo_detector.get_bpm())
 
-        max_idx = np.argmax(candidates_strength)
-        best_time = candidates[max_idx]
-        best_strength = candidates_strength[max_idx]
-
-        if best_strength >= STRENGTH_THRESHOLD:
-            snapped.append(best_time)
-
-    return np.array(snapped)
-
-def analyze_bpm_and_beat_grid(audio_path, sr=44100, hop_length=256, min_consistent_beats=7, tolerance=0.07, should_interrupt=lambda: False):
-    if should_interrupt():
-        return 0, 0, []
-
-    y, sr = librosa.load(audio_path, sr=sr)
-    if should_interrupt():
-        return 0, 0, []
-
-    duration = librosa.get_duration(y=y, sr=sr)
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop_length)
-    tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr, hop_length=hop_length)
-    tempo *= 2
-    beat_interval = 60.0 / tempo
-
-    onset_frames = librosa.onset.onset_detect(y=y, sr=sr, hop_length=hop_length, backtrack=True)
-    onset_times = librosa.frames_to_time(onset_frames, sr=sr, hop_length=hop_length)
-    onset_strengths = onset_env[onset_frames]
-
-    if should_interrupt():
-        return 0, 0, []
+        total_frames += read
+        if read < hop_size:
+            break
 
     if len(onset_times) < min_consistent_beats + 1:
         return 1, 0, []
+
+    if tempo_estimates:
+        tempo = np.median(tempo_estimates)
+    else:
+        return 0, 0, []
+
+    tempo *= 2
+    beat_interval = 60.0 / tempo
+
+    onset_times = np.array(onset_times)
+    onset_strengths = np.array(onset_strengths)
 
     intervals = np.diff(onset_times)
     smoothed_intervals = Utils.medfilt_np(intervals, 5)
@@ -66,11 +79,13 @@ def analyze_bpm_and_beat_grid(audio_path, sr=44100, hop_length=256, min_consiste
     for i, match in enumerate(mask):
         if should_interrupt():
             return 0, 0, []
+        
         if match:
             count += 1
             if count >= min_consistent_beats:
                 start_idx = i - count + 1
                 break
+        
         else:
             count = 0
 
@@ -78,13 +93,10 @@ def analyze_bpm_and_beat_grid(audio_path, sr=44100, hop_length=256, min_consiste
     num_beats_back = int(first_strong_beat_time / beat_interval)
     pseudo_first_beat = first_strong_beat_time - num_beats_back * beat_interval
 
-    bpm_grid = np.arange(pseudo_first_beat, duration, beat_interval)
     if should_interrupt():
         return 0, 0, []
 
-    snapped_beats = snap_beats_to_onsets(bpm_grid, onset_times, onset_strengths, should_interrupt)
-
-    return tempo / 2, pseudo_first_beat, list(snapped_beats)
+    return tempo / 2, pseudo_first_beat, list(onset_times)
 
 def bpm_task(file_path, queue):
     bpm, first_beat, beats = analyze_bpm_and_beat_grid(file_path)
@@ -110,10 +122,6 @@ class BPMWorkerProcess(QObject):
         self.timer.timeout.connect(self._check_result)
         self.timer.start(100)
 
-    def _task(self, file_path, queue):
-        bpm, first_beat, beats = analyze_bpm_and_beat_grid(file_path)
-        queue.put((bpm, first_beat, beats))
-
     def _check_result(self):
         if not self.queue.empty():
             bpm, first_beat, beats = self.queue.get()
@@ -127,4 +135,19 @@ class BPMWorkerProcess(QObject):
         if self.proc and self.proc.is_alive():
             self.proc.terminate()
             self.proc.join()
+        
         self.proc = None
+
+def load_audio(path, sr = 44100, mono = True):
+    audio = AudioSegment.from_file(path)
+
+    if audio.frame_rate != sr:
+        audio = audio.set_frame_rate(sr)
+
+    if mono and audio.channels > 1:
+        audio = audio.set_channels(1)
+
+    samples = np.array(audio.get_array_of_samples())
+    y = samples.astype(np.float32) / 32768.0  
+
+    return y, sr

@@ -1,11 +1,11 @@
 import time
 import pygame
-import librosa
 
 import numpy as np
 
 from PyQt5.QtCore import *
 from System.Constants import *
+from System import Audio
 
 class PlaybackManager(QObject):
     playback_position_updated = pyqtSignal(float)
@@ -35,7 +35,7 @@ class PlaybackManager(QObject):
 
     def load_audio(self, file_path):
         try:
-            y, sr = librosa.load(file_path, sr = None)
+            y, sr = Audio.load_audio(file_path)
 
             self.audio_data = y
             self.sampling_rate = sr

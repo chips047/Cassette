@@ -1,7 +1,6 @@
 import re
 import time
 import pygame
-import librosa
 
 import numpy as np
 import multiprocessing as mp
@@ -16,10 +15,10 @@ from .Constants import *
 from . import UI
 from . import Utils
 from . import Styles
-from . import BPMAnalyze
+from . import Audio
 
 def audio_loader_task(file_path, target_width, queue):
-    audio_data, sampling_rate = librosa.load(file_path, sr=44100)
+    audio_data, sampling_rate = Audio.load_audio(file_path)
 
     peaks = []
     if audio_data is not None and len(audio_data) > 0 and target_width > 0:
@@ -54,8 +53,7 @@ class AudioLoaderProcess(QObject):
         self.timer.start(100)
 
     def _task(self, file_path, target_width, queue):
-        import librosa, numpy as np
-        audio_data, sampling_rate = librosa.load(file_path, sr=44100)
+        audio_data, sampling_rate = Audio.load_audio(file_path)
 
         peaks = []
         if audio_data is not None and len(audio_data) > 0 and target_width > 0:
@@ -93,7 +91,7 @@ class AudioLoaderWorker(QObject):
 
     @pyqtSlot()
     def run(self):
-        audio_data, sampling_rate = librosa.load(self.file_path, sr=44100)
+        audio_data, sampling_rate = Audio.load_audio(self.file_path)
 
         peaks = []
         if audio_data is not None and len(audio_data) > 0 and self.target_width > 0:
@@ -379,7 +377,7 @@ class AudioSetupDialog(QDialog):
         self.pulse_timer.timeout.connect(self.pulse)
         self.pulse_direction = 1
 
-        self.bpm_worker = BPMAnalyze.BPMWorkerProcess(self.file_path)
+        self.bpm_worker = Audio.BPMWorkerProcess(self.file_path)
         self.bpm_worker.bpm_ready.connect(self.on_bpm_ready)
         self.bpm_worker.start()
 

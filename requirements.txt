@@ -1,10 +1,9 @@
+--find-links ./System/Wheels
 cryptography
-librosa
-numba
 numpy
-pydub
 pygame
 PyQt5
 PyQt5_sip
-scipy
 loguru
+pydub
+aubio
