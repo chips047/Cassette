@@ -1,3 +1,4 @@
+import time
 import numpy as np
 
 from PyQt5.QtGui import *
@@ -84,16 +85,43 @@ class ScrollableContent(QWidget):
         self.tooltip_delay_timer.timeout.connect(self.show_delayed_tooltip)
     
         # Caching
-        self._elements_cache_dirty = True
         self._element_rects = []
-        self._elements_pixmap = None
-        self._elements_pixmap_rect = None
         self.tile_width = TILE_SIZE
         self.waveform_tiles = {}
-    
+        self.glyph_paths = {}
+        
+        self._ruler_cache = None
+        self._ruler_cache_rect = None
+
+        self._beats_cache = None
+        self._beats_cache_rect = None
+        
+        self._glyph_pixmaps = {}
+
+        base_font = QFont()
+        self._track_label_font = QFont(base_font)
+        self._track_label_font.setPointSize(9)
+        self._track_label_font.setBold(True)
+
+        self._ruler_font = QFont(base_font)
+        self._ruler_font.setPointSize(8)
+
+        self._white_brush = QBrush(QColor(255, 255, 255))
+        self._red_pen = QPen(Qt.GlobalColor.red, 1.5)
+        self._gray_pen = QPen(QColor("#505050"), 1)
+
+        accent_rgb = Styles.hex_to_rgb(Styles.Colors.nothing_accent)
+        self._marquee_pen = QPen(QColor(*accent_rgb, 200), 1, Qt.PenStyle.DashLine)
+        self._marquee_brush = QBrush(QColor(*accent_rgb, 50))
+
         # Other state
         self.active_popup = None
         self._mouse_pressed = False
+        self.setAutoFillBackground(False)
+
+        self._frame_count = 0
+        self._last_fps_time = time.time()
+        self._fps = 0
 
         # Final init
         self.update_minimum_height()
@@ -103,6 +131,96 @@ class ScrollableContent(QWidget):
         self.playback_manager.audio_loaded.connect(self._on_audio_loaded_from_manager)
         self.playback_manager.status_message_requested.connect(self.set_status_message)
         self.playback_manager.playback_state_changed.connect(self._on_playback_state_changed)
+    
+    def get_opacity_for_position(self, x_pos):
+        widget_width = self.get_visible_rect().width()
+        fade_margin = 100
+
+        if x_pos > widget_width:
+            return 0.0
+
+        if x_pos > widget_width - fade_margin and x_pos < widget_width:
+            t = (widget_width - x_pos) / fade_margin
+            return t * t
+
+        return 1.0
+    
+    def get_or_generate_glyph_pixmap(self, glyph_id, glyph_data, is_selected):
+        cache_key = (glyph_id, is_selected, glyph_data['duration'], glyph_data['start'])
+
+        if cache_key in self._glyph_pixmaps:
+            return self._glyph_pixmaps[cache_key]
+
+        # Создаем новый Pixmap и Painter
+        rect = self.get_element_rect(glyph_data)
+        pixmap = QPixmap(int(rect.width() + 2), int(rect.height() + 2)) # Добавляем небольшой отступ для контура
+        pixmap.fill(Qt.GlobalColor.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Рисуем глиф на Pixmap
+        path = QPainterPath()
+        # Вычитаем offset, чтобы рисовать в координатах Pixmap
+        path.addRoundedRect(1, 1, rect.width(), rect.height(), 10, 10) 
+
+        fill_brush = QBrush(QColor(255, 255, 255))
+        border_pen = QPen(Qt.GlobalColor.red, 1.5) if is_selected else QPen(QColor("#505050"), 1)
+        
+        painter.setPen(border_pen)
+        painter.setBrush(fill_brush)
+        painter.drawPath(path)
+        
+        painter.end()
+
+        # Сохраняем в кэш
+        self._glyph_pixmaps[cache_key] = pixmap
+        return pixmap
+    
+    def update_ruler_cache(self, visible_rect: QRectF):
+        pixmap = QPixmap(int(visible_rect.width()), Styles.Metrics.Tracks.ruler_height)
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        p = QPainter(pixmap)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setFont(self._ruler_font)
+        p.setPen(QPen(QColor(255, 255, 255), 0.5))
+
+        start_second = int(max(0, visible_rect.left() // self.pixels_per_major_tick))
+        end_second = int((visible_rect.right() // self.pixels_per_major_tick) + 2)
+
+        for i in range(start_second, end_second + 1):
+            x_pos = i * self.pixels_per_major_tick - visible_rect.left()
+            p.drawLine(QPointF(x_pos, 0), QPointF(x_pos, 8))
+            p.drawText(QPointF(x_pos + 5, Styles.Metrics.Tracks.ruler_height - 10),
+                       str(self.start_time_sec + i))
+
+        p.end()
+
+        self._ruler_cache = pixmap
+        self._ruler_cache_rect = QRectF(visible_rect)  # сохранить область
+    
+    def update_beats_cache(self, visible_rect: QRectF):
+        """Перерисовывает сетку с битами и сохраняет в pixmap"""
+        pixmap = QPixmap(int(visible_rect.width()), self.height())
+        pixmap.fill(Qt.GlobalColor.transparent)
+
+        p = QPainter(pixmap)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        beat_times = self.composition.beats
+        if beat_times:
+            p.setPen(QPen(QColor(Styles.Colors.Waveline.beat_color), 1, Qt.PenStyle.DotLine))
+            for beat_time_sec in beat_times:
+                x_pos = beat_time_sec * self.pixels_per_major_tick - visible_rect.left()
+                if 0 <= x_pos <= visible_rect.width():
+                    p.drawLine(QPointF(x_pos, 0),
+                               QPointF(x_pos, Styles.Metrics.Waveform.height + Styles.Metrics.Tracks.ruler_height))
+
+        p.end()
+
+        self._beats_cache = pixmap
+        self._beats_cache_rect = QRectF(visible_rect)
     
     def _on_playback_state_changed(self, is_playing):
         if is_playing:
@@ -129,8 +247,7 @@ class ScrollableContent(QWidget):
         
         self.setMinimumWidth(int(self.total_content_width))
         
-        self.update_element_rects_cache()
-        self.mark_elements_cache_dirty()
+        self._glyph_pixmaps = {}
         self.update()
         
         self.audio_state_changed.emit()
@@ -163,12 +280,11 @@ class ScrollableContent(QWidget):
         return visible_rect
 
     def update_element_rects_cache(self):
-        self._element_rects = [self.get_element_rect(el) for id, el in self.composition.glyphs.items()]
-        self.mark_elements_cache_dirty()
+        #self._element_rects = [self.get_element_rect(el) for id, el in self.composition.glyphs.items()]
+        pass
 
     def mark_elements_cache_dirty(self):
-        self._elements_cache_dirty = True
-        self._elements_pixmap_rect = None
+        pass
 
     def get_element_rect(self, element):
         tracks_area_start_y = Styles.Metrics.Tracks.ruler_height + Styles.Metrics.Waveform.height + Styles.Metrics.Tracks.box_spacing
@@ -214,8 +330,10 @@ class ScrollableContent(QWidget):
         if self.audio_data is not None and hasattr(self, "parentWidget"):
             scroll_area_widget = self.parentWidget()
             viewport_widget = scroll_area_widget.parentWidget() if scroll_area_widget else None
+            
             if viewport_widget and hasattr(viewport_widget, 'viewport'):
                 visible_width = viewport_widget.viewport().width()
+            
             duration_seconds = len(self.audio_data) / self.sampling_rate
             if duration_seconds > 0:
                 min_pixels_per_major_tick = max(
@@ -233,9 +351,11 @@ class ScrollableContent(QWidget):
             self.playhead_x_position = min(self.playhead_x_position, self.total_content_width)
 
         self.waveform_tiles = {}
+        self._beats_cache = None
+        self._ruler_cache = None
+        
         if self.composition:
-            self.update_element_rects_cache()
-            self.mark_elements_cache_dirty()
+            self._glyph_pixmaps = {}
         
         self.update_minimum_height()
         self.update()
@@ -338,146 +458,125 @@ class ScrollableContent(QWidget):
     
     def paintEvent(self, event):
         painter = QPainter(self)
-        
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), Qt.GlobalColor.black)
-        
-        current_y = 0
-        font = painter.font()
-        painter.setPen(Qt.GlobalColor.white)
-        
-        ruler_font = QFont(font); ruler_font.setPointSize(8); painter.setFont(ruler_font)
-        num_seconds_to_display_on_ruler = int(self.total_content_width / self.pixels_per_major_tick) + 2
 
-        beat_times = self.composition.beats
-        if beat_times:
-            painter.setPen(QPen(QColor(Styles.Colors.Waveline.beat_color), 1, Qt.PenStyle.DotLine))
-            for beat_time_sec in beat_times:
-                x_pos = beat_time_sec * self.pixels_per_major_tick
-                if x_pos > self.width():
-                    break
-                painter.drawLine(
-                    QPointF(x_pos, current_y),
-                    QPointF(x_pos, current_y + Styles.Metrics.Waveform.height + Styles.Metrics.Tracks.ruler_height)
-                )
+        visible_rect = self.get_visible_rect()
+        
+        # Ruler
+        if self._ruler_cache is None or self._ruler_cache_rect != visible_rect:
+            self.update_ruler_cache(visible_rect)
 
-        for i in range(num_seconds_to_display_on_ruler):
-            x_pos = i * self.pixels_per_major_tick
-            
-            if x_pos > self.width() + self.pixels_per_major_tick : 
-                break
-            
-            time_label = str(self.start_time_sec + i)
-            painter.drawText(QPointF(x_pos + 5, current_y + Styles.Metrics.Tracks.ruler_height - 10), time_label)
-            painter.drawLine(QPointF(x_pos, current_y + Styles.Metrics.Tracks.ruler_height - 8), QPointF(x_pos, current_y + Styles.Metrics.Tracks.ruler_height))
-            pixels_per_minor_tick = self.pixels_per_major_tick / 10.0
-            
-            for j in range(1, 10):
-                minor_x_pos = x_pos + j * pixels_per_minor_tick
-                
-                if minor_x_pos < self.total_content_width + pixels_per_minor_tick:
-                    painter.drawLine(QPointF(minor_x_pos, current_y + Styles.Metrics.Tracks.ruler_height - 4), QPointF(minor_x_pos, current_y + Styles.Metrics.Tracks.ruler_height))
+        painter.drawPixmap(int(visible_rect.left()), 0, self._ruler_cache)
+
+        current_y = Styles.Metrics.Tracks.ruler_height
+
+        # Beats
+        if self._beats_cache is None or self._beats_cache_rect != visible_rect:
+            self.update_beats_cache(visible_rect)
         
-        current_y += Styles.Metrics.Tracks.ruler_height; painter.setFont(font)
-        waveform_top_y = current_y
-        
+        painter.drawPixmap(int(visible_rect.left()), 0, self._beats_cache)
+
+        # Waveform
         if self.audio_data is not None and len(self.audio_data) > 0:
-            scroll_area_widget = self.parentWidget()
-            viewport_widget = scroll_area_widget.parentWidget() if scroll_area_widget else None
-            visible_rect = viewport_widget.viewport().rect() if viewport_widget and hasattr(viewport_widget, 'viewport') else self.rect()
-            scroll_x = viewport_widget.horizontalScrollBar().value() if viewport_widget and hasattr(viewport_widget, 'horizontalScrollBar') else 0
-            
-            start_tile_index = int(scroll_x / self.tile_width)
-            end_tile_index = int((scroll_x + visible_rect.width()) / self.tile_width)
+            start_tile_index = int(visible_rect.left() // self.tile_width)
+            end_tile_index = int(visible_rect.right() // self.tile_width)
 
             for i in range(start_tile_index, end_tile_index + 1):
                 tile = self.waveform_tiles.get(i)
+                
                 if not tile:
                     tile = self.generate_tile(i)
-
+                
                 if tile:
                     draw_pos_x = i * self.tile_width
-                    painter.drawPixmap(draw_pos_x, waveform_top_y, tile)
-        
-        current_y += Styles.Metrics.Waveform.height
-        current_y += Styles.Metrics.Tracks.box_spacing
+                    if draw_pos_x <= visible_rect.right() and draw_pos_x + self.tile_width >= visible_rect.left():
+                        painter.drawPixmap(draw_pos_x, current_y, tile)
 
-        track_label_font = QFont(font); track_label_font.setPointSize(9); track_label_font.setBold(True)
-        white_brush = QBrush(QColor(255, 255, 255))
-        red_pen = QPen(Qt.GlobalColor.red, 1.5)
-        gray_pen = QPen(QColor("#505050"), 1)
-        
+        current_y += Styles.Metrics.Waveform.height + Styles.Metrics.Tracks.box_spacing
+
+        # Track Names, Grid
+        track_label_font = self._track_label_font
+        painter.setFont(track_label_font)
+
         for track_name in self.track_names:
             track_base_y = current_y
-            track_content_top_y = track_base_y + (Styles.Metrics.Tracks.row_height- Styles.Metrics.Tracks.box_height) / 2.0
+            track_content_top_y = track_base_y + (Styles.Metrics.Tracks.row_height - Styles.Metrics.Tracks.box_height) / 2.0
             track_content_bottom_y = track_content_top_y + Styles.Metrics.Tracks.box_height
 
-            painter.setFont(Utils.NDot(14)); painter.setPen(QColor(Styles.Colors.Waveline.track_name_color))
-            label_rect = QRectF(Styles.Metrics.Tracks.box_spacing, track_content_top_y, Styles.Metrics.Tracks.label_width - 2 * Styles.Metrics.Tracks.box_spacing, Styles.Metrics.Tracks.box_height)
-            painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, track_name)
-            painter.setFont(font)
-
-            painter.setPen(QPen(Qt.GlobalColor.darkGray, 0.5)) 
-            
-            for i in range(num_seconds_to_display_on_ruler): 
-                line_x = i * self.pixels_per_major_tick
+            if track_content_bottom_y >= visible_rect.top() and track_base_y <= visible_rect.bottom():
+                painter.setFont(Utils.NDot(14))
+                painter.setPen(QColor(Styles.Colors.Waveline.track_name_color))
                 
-                if line_x > Styles.Metrics.Tracks.label_width and line_x <= self.total_content_width + self.pixels_per_major_tick:
-                    if line_x < self.width() + self.pixels_per_major_tick:
-                        painter.drawLine(QPointF(line_x, track_content_top_y), QPointF(line_x, track_content_bottom_y))
-            
-            current_y += Styles.Metrics.Tracks.row_height
-            current_y += Styles.Metrics.Tracks.box_spacing
-        
-        scroll_area_widget = self.parentWidget()
-        viewport_widget = scroll_area_widget.parentWidget() if scroll_area_widget else None
-        
-        if viewport_widget and hasattr(viewport_widget, 'viewport'):
-            visible_rect = viewport_widget.viewport().rect()
-            scroll_x = viewport_widget.horizontalScrollBar().value()
-            visible_rect = QRectF(scroll_x, 0, visible_rect.width(), self.height())
-        
-        else:
-            visible_rect = QRectF(0, 0, self.width(), self.height())
-        
-        painter.setClipRect(visible_rect)
-        
-        if (self._elements_pixmap is None or self._elements_cache_dirty or
-            self._elements_pixmap_rect is None or self._elements_pixmap_rect != visible_rect):
-            self.update_elements_pixmap(visible_rect)
-        
-        if self._elements_pixmap:
-            painter.drawPixmap(int(visible_rect.left()), int(visible_rect.top()), self._elements_pixmap)
-        
-        painter.setClipping(False)
-        
+                label_rect = QRectF(
+                    Styles.Metrics.Tracks.box_spacing,
+                    track_content_top_y,
+                    Styles.Metrics.Tracks.label_width - 2 * Styles.Metrics.Tracks.box_spacing,
+                    Styles.Metrics.Tracks.box_height,
+                )
+                
+                painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, track_name)
+                painter.setFont(track_label_font)
+
+                painter.setPen(QPen(Qt.GlobalColor.darkGray, 0.5))
+                start_second = int(max(0, visible_rect.left() // self.pixels_per_major_tick))
+                end_second = int((visible_rect.right() // self.pixels_per_major_tick) + 2)
+
+                for i in range(start_second, end_second + 1):
+                    line_x = i * self.pixels_per_major_tick
+                    
+                    if visible_rect.left() <= line_x <= visible_rect.right():
+                        if line_x > Styles.Metrics.Tracks.label_width:
+                            painter.drawLine(
+                                QPointF(line_x, track_content_top_y),
+                                QPointF(line_x, track_content_bottom_y)
+                            )
+
+            current_y += Styles.Metrics.Tracks.row_height + Styles.Metrics.Tracks.box_spacing
+
+        # Glyphs
+        drawing_debug = 0
         for id, glyph in self.composition.glyphs.items():
             element_rect = self.get_element_rect(glyph)
-            
-            if not element_rect.intersects(visible_rect):
+
+            if not visible_rect.intersects(element_rect):
                 continue
             
-            path = QPainterPath(); path.addRoundedRect(element_rect, 10, 10)
+            is_selected = id in self.selected_element_ids
+            glyph_pixmap = self.get_or_generate_glyph_pixmap(id, glyph, is_selected)
             
-            if id in self.selected_element_ids:
-                painter.fillPath(path, white_brush)
-                painter.setPen(red_pen)
-            
-            else:
-                painter.fillPath(path, white_brush)
-                painter.setPen(gray_pen)
-            
-            painter.drawPath(path)
-        
-        painter.setFont(font)
-        
-        if self.is_marquee_selecting:
-            painter.setPen(QPen(QColor(*Styles.hex_to_rgb(Styles.Colors.nothing_accent) + (200,)), 1, Qt.PenStyle.DashLine))
-            painter.setBrush(QBrush(QColor(*Styles.hex_to_rgb(Styles.Colors.nothing_accent) + (50,))))
-            painter.drawRoundedRect(self.marquee_rect, Styles.Roundings.selection, Styles.Roundings.selection)
+            if glyph_pixmap:
+                element_rect = self.get_element_rect(glyph)
+                x_pos_in_viewport = element_rect.left() - visible_rect.left()
+                painter.setOpacity(self.get_opacity_for_position(x_pos_in_viewport))
+                painter.drawPixmap(element_rect.topLeft(), glyph_pixmap)
+                drawing_debug += 1
 
+        painter.setOpacity(1)
+
+        # Selection
+        if self.is_marquee_selecting:
+            painter.setPen(self._marquee_pen)
+            painter.setBrush(self._marquee_brush)
+            selection_radius = min(int((self.marquee_rect.width() + self.marquee_rect.height()) / 20), 10)
+            painter.drawRoundedRect(self.marquee_rect, selection_radius, selection_radius)
+
+        # Playhead
         painter.setPen(QPen(Qt.GlobalColor.red, 2))
-        painter.drawLine(int(self.playhead_x_position), 0, int(self.playhead_x_position), int(self.height()))
+        painter.drawLine(
+            int(self.playhead_x_position), 0,
+            int(self.playhead_x_position), int(self.height())
+        )
+        
+        self._frame_count += 1
+        now = time.time()
+        elapsed = now - self._last_fps_time
+        
+        if elapsed >= 1.0:
+            self._fps = self._frame_count / elapsed
+            self._frame_count = 0
+            self._last_fps_time = now
+            print(f"FPS: {self._fps:.1f}")
 
     def copy_selected_elements(self):
         self._copied_elements = []
@@ -505,12 +604,12 @@ class ScrollableContent(QWidget):
         self.selected_element_ids = set(new_ids)
         self.update_element_rects_cache()
         self.elements_changed.emit()
-        self.mark_elements_cache_dirty()
+        
         self.update()
         
         self.composition.save()
     
-    def control_popup(self, title, label, key, min_val=1, max_val=None):
+    def control_popup(self, title, label, key, min_val = 1, max_val = None):
         dialog = UI.DialogInputWindow(title, label, min_val, max_val) if max_val else UI.DialogInputWindow(title, label, min_val)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -520,10 +619,13 @@ class ScrollableContent(QWidget):
 
         for el_id in self.selected_element_ids:
             el = self.composition.get_glyph(el_id)
+            
             if el:
                 el[key] = user_input
                 updated_glyphs[el_id] = el
-
+                
+                self._glyph_pixmaps.pop(el_id, None)
+        
         self.composition.glyphs.update(updated_glyphs)
 
     def brightness_control_popup(self):
@@ -532,9 +634,8 @@ class ScrollableContent(QWidget):
     def duration_control_popup(self):
         self.control_popup("Duration", "Duration (ms)", "duration", min_val=1, max_val=10000)
         
-        self.update_element_rects_cache(),
-        self.mark_elements_cache_dirty(),
-        self.update(),
+        self.update_element_rects_cache()
+        self.update()
         self.elements_changed.emit()
 
     def wheelEvent(self, event):
@@ -543,7 +644,8 @@ class ScrollableContent(QWidget):
             return super().wheelEvent(event)
 
         if event.modifiers() & Qt.ControlModifier:
-            self.scale_view(+100 if event.angleDelta().y() > 0 else -100)
+            self.scale_view(+10 if event.angleDelta().y() > 0 else -10)
+        
         else:
             delta = event.angleDelta().y()
             self._scroll_target_velocity += -delta * 0.2
@@ -634,7 +736,6 @@ class ScrollableContent(QWidget):
                     self.composition.save()
                     
                     self.update_element_rects_cache()
-                    self.mark_elements_cache_dirty()
                 
                 consumed = True
 
@@ -882,9 +983,8 @@ class ScrollableContent(QWidget):
 
                 self.composition.save()
                 self.update_element_rects_cache()
-                self.mark_elements_cache_dirty()
-                self.elements_changed.emit()
                 
+                self.elements_changed.emit()
                 self.dragging_element_info = None
                 
                 self.update()
@@ -933,13 +1033,11 @@ class ScrollableContent(QWidget):
             self.context_menu.addSeparator()
             
             change_brightness_action = QAction("Change Brightness...", self)
-            change_brightness_action.triggered.connect(self.brightness_control_popup)
+            change_brightness_action.triggered.connect(lambda: QTimer.singleShot(0, self.brightness_control_popup))
             self.context_menu.addAction(change_brightness_action)
 
             change_duration_action = QAction("Change Duration...", self)
-            change_duration_action.triggered.connect(
-                self.duration_control_popup
-            )
+            change_duration_action.triggered.connect(lambda: QTimer.singleShot(0, self.duration_control_popup))
             self.context_menu.addAction(change_duration_action)
 
             self.context_menu.addSeparator()
@@ -1029,7 +1127,7 @@ class ScrollableContent(QWidget):
         self.selected_element_ids.clear()
         self.update_element_rects_cache()
         self.elements_changed.emit()
-        self.mark_elements_cache_dirty()
+        
         self.update()
 
     def ensure_playhead_visible(self):
@@ -1081,46 +1179,6 @@ class ScrollableContent(QWidget):
             target_scroll_value = max(0, min(target_scroll_value, h_bar.maximum()))
             
             h_bar.setValue(target_scroll_value)
-
-    def update_elements_pixmap(self, visible_rect):
-        w, h = int(visible_rect.width()), int(visible_rect.height())
-        if w <= 0 or h <= 0:
-            self._elements_pixmap = None
-            self._elements_pixmap_rect = None
-            return
-        
-        pixmap = QPixmap(w, h)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        cache_painter = QPainter(pixmap)
-        cache_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        white_brush = QBrush(QColor(*Styles.hex_to_rgb(Styles.Colors.element_background)))
-        red_pen = QPen(QColor(*Styles.hex_to_rgb(Styles.Colors.nothing_accent)), 2)
-        gray_pen = QPen(QColor("#505050"), 1)
-        
-        for idx, (id, element) in enumerate(self.composition.glyphs.items()):
-            element_rect = self._element_rects[idx] if idx < len(self._element_rects) else self.get_element_rect(element)
-            if not element_rect.intersects(visible_rect):
-                continue
-            
-            local_rect = QRectF(element_rect)
-            local_rect.moveLeft(local_rect.left() - visible_rect.left())
-            path = QPainterPath(); path.addRoundedRect(local_rect, 10, 10)
-            
-            if id in self.selected_element_ids:
-                cache_painter.fillPath(path, white_brush)
-                cache_painter.setPen(red_pen)
-            
-            else:
-                cache_painter.fillPath(path, white_brush)
-                cache_painter.setPen(gray_pen)
-            
-            cache_painter.drawPath(path)
-        
-        cache_painter.end()
-        self._elements_pixmap = pixmap
-        self._elements_pixmap_rect = QRectF(visible_rect)
-        self._elements_cache_dirty = False
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
@@ -1174,13 +1232,7 @@ class CompositorWidget(QWidget):
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea { border: none; background-color: #1e1e1e; border-radius: 10px; }
-            QScrollBar:horizontal {border: 1px solid #4A4A4A; background: #323232; height: 10px; margin: 0px; border-radius: 7px}
-            QScrollBar::handle:horizontal {background: #787878; min-width:  25px; border-radius: 7px}
-            QScrollBar:vertical {border: 1px solid #4A4A4A; background: #323232; width: 10px; margin: 0px; border-radius: 7px}
-            QScrollBar::handle:vertical {background: #787878; min-height: 25px; border-radius: 7px;}
-        """)
+        self.scroll_area.setStyleSheet("QScrollArea { border: none; }")
         
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -1225,6 +1277,7 @@ class CompositorWidget(QWidget):
         
         if audio_loaded:
             self.mini_preview_widget.set_audio_data(self.content_widget.audio_data, self.content_widget.sampling_rate)
+        
         else:
             self.mini_preview_widget.set_audio_data(None, 0)
         
