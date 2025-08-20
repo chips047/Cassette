@@ -20,7 +20,7 @@ class PlaybackManager(QObject):
         self.current_playback_speed_multiplier = 1.0
         self.is_playing = False
         self.playback_timer = QTimer(self)
-        self.playback_timer.setInterval(FPS_60)
+        self.playback_timer.setInterval(FPS_120)
         self.playback_timer.timeout.connect(self._update_playback_position)
         self.playback_start_audio_ms = 0
         self.playback_start_wall_time = 0
@@ -76,9 +76,7 @@ class PlaybackManager(QObject):
 
         try:
             sampling_rate = self.sampling_rate
-            print(self.current_playback_speed_multiplier)
             if self.current_playback_speed_multiplier != 1.0:
-                print("Resampling...")
                 playback_rate = self.current_playback_speed_multiplier
                 sampling_rate = int(self.sampling_rate * playback_rate)
 
@@ -96,7 +94,7 @@ class PlaybackManager(QObject):
             sound.play()
 
             self.playback_start_wall_time = time.time()
-            self.playback_timer.start(14)
+            self.playback_timer.start()
             self.is_playing = True
             self.playback_state_changed.emit(True)
 
