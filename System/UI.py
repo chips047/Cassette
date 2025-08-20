@@ -201,7 +201,7 @@ class SelectorWithLabel(QWidget):
 
         self.description_label = QLabel(description, self.container_background)
         self.description_label.setFont(Utils.NType(14))
-        self.description_label.setStyleSheet("color: #ddd; padding: 0px; background-color: transparent;")
+        self.description_label.setStyleSheet(Styles.Other.font)
         inner_layout.addWidget(self.description_label)
         self.setMaximumWidth(1000)
 
@@ -366,7 +366,6 @@ class SliderWithLabel(QWidget):
         self.slider.setValue(val)
 
 class _BaseControlWidget(QWidget):
-    """Базовый класс для общих элементов управления."""
     def __init__(self, icon=None, static_label_text=None, parent=None):
         super().__init__(parent)
         self.static_label_text = static_label_text
@@ -453,6 +452,7 @@ class DraggableValueControl(_BaseControlWidget):
                 self.current_value = new_value
                 self.update_value_label()
                 self.valueChanged.emit(self.current_value)
+            
             event.accept()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
@@ -713,7 +713,6 @@ class AnimatedTooltip(QWidget):
             return
         
         self._tooltip_visible = False
-        self.hide_timer.stop()
 
         current_opacity = self.text_opacity.opacity()
         self.anim_opacity.stop()
@@ -1570,262 +1569,8 @@ class Settings(QDialog):
         
         super().paintEvent(event)
 
-class BaseDialogWindow(QDialog):
-    MARGIN = 30
-    def __init__(self, title: str, width: int, height: int):
-        super().__init__()
-        self.content_width = width
-        self.content_height = height
-
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setModal(True)
-        self.setFixedSize(self.content_width + self.MARGIN * 2, self.content_height + self.MARGIN * 2)
-        
-        Utils.ui_sound("PopupOpen")
-
-        self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self.opacity_effect)
-        self.opacity_effect.setOpacity(1.0)
-
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(self.MARGIN + 20, self.MARGIN + 20, self.MARGIN + 20, self.MARGIN + 20)
-        self.layout.setSpacing(15)
-
-        self.title_label = QLabel(title)
-        self.title_label.setFont(Utils.NType(16))
-        self.title_label.setStyleSheet("color: #fff;")
-        self.layout.addWidget(self.title_label)
-
-        self.ok_button = NothingButton("OK")
-        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
-
-        self.cancel_button = ButtonWithOutline("Cancel")
-        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(10)
-        button_row.addWidget(self.cancel_button)
-        button_row.addWidget(self.ok_button)
-        self.layout.addLayout(button_row)
-
-        self.ok_button.clicked.connect(self.on_ok)
-        self.cancel_button.clicked.connect(self.on_cancel)
-
-        self.setMouseTracking(True)
-        self.max_tilt_angle = 12
-        self.mouse_origin = None
-        self.is_mouse_inside = False
-
-        self.tilt_timer = QTimer(self)
-        self.tilt_timer.setInterval(FPS_60)
-        self.tilt_timer.timeout.connect(self.update)
-        self.tilt_timer.start()
-        
-        self.setMouseTracking(True)
-        for child in self.findChildren(QWidget):
-            child.setMouseTracking(True)
-
-        QTimer.singleShot(0, self.start_entry_animation)
-    
-    def eventFilter(self, watched_object, event):
-        if event.type() == QEvent.MouseMove:
-            new_pos = watched_object.mapTo(self, event.pos())
-
-            self.mouse_origin = new_pos
-            self.update()
-
-        return super().eventFilter(watched_object, event)
-    
-    def _apply_mouse_tracking_and_filter(self, widget):
-        widget.setMouseTracking(True)
-        widget.installEventFilter(self)
-        for child in widget.findChildren(QWidget):
-            self._apply_mouse_tracking_and_filter(child)
-
-    def event(self, event):
-        if event.type() == QEvent.ChildAdded:
-            child = event.child()
-            if isinstance(child, QWidget):
-                self._apply_mouse_tracking_and_filter(child)
-        return super().event(event)
-
-    def start_entry_animation(self):
-        screen_center = QApplication.desktop().screen().rect().center()
-        final_rect = QRect(screen_center.x() - self.width() // 2, screen_center.y() - self.height() // 2, self.width(), self.height())
-
-        self.setGeometry(final_rect.translated(0, +20))
-        self.anim = QPropertyAnimation(self, b"geometry")
-        self.anim.setDuration(DIALOG_POPUP_IN)
-        self.anim.setStartValue(final_rect.translated(0, +20))
-        self.anim.setEndValue(final_rect)
-        self.anim.setEasingCurve(QEasingCurve.OutElastic)
-        self.anim.start(QAbstractAnimation.DeleteWhenStopped)
-
-    def start_exit_animation(self):
-        start_rect = self.geometry()
-        end_rect = start_rect.translated(0, -25)
-
-        anim_move = QPropertyAnimation(self, b"geometry")
-        anim_move.setDuration(DIALOG_POPUP_OUT)
-        anim_move.setStartValue(start_rect)
-        anim_move.setEndValue(end_rect)
-        anim_move.setEasingCurve(QEasingCurve.OutExpo)
-
-        anim_opacity = QPropertyAnimation(self.opacity_effect, b"opacity")
-        anim_opacity.setDuration(DIALOG_POPUP_FADEOUT)
-        anim_opacity.setStartValue(1.0)
-        anim_opacity.setEndValue(0.0)
-        anim_opacity.setEasingCurve(QEasingCurve.InCubic)
-
-        self.anim_group = QParallelAnimationGroup()
-        self.anim_group.addAnimation(anim_move)
-        self.anim_group.addAnimation(anim_opacity)
-        self.anim_group.finished.connect(self._really_close)
-        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
-
-    def enterEvent(self, event):
-        self.is_mouse_inside = True
-        super().enterEvent(event)
-
-    def mouseMoveEvent(self, event):
-        self.mouse_origin = event.pos()
-        self.update()
-        super().mouseMoveEvent(event)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        content_rect = QRect(self.MARGIN, self.MARGIN, self.content_width, self.content_height)
-
-        if self.is_mouse_inside and self.mouse_origin:
-            mouse_pos_in_content = self.mouse_origin - content_rect.topLeft()
-
-            x_norm = (mouse_pos_in_content.x() / self.content_width) * 2 - 1
-            y_norm = (mouse_pos_in_content.y() / self.content_height) * 2 - 1
-
-            x_norm = max(-1.0, min(1.0, x_norm))
-            y_norm = max(-1.0, min(1.0, y_norm))
-
-            angle_x = -y_norm * self.max_tilt_angle
-            angle_y = -x_norm * self.max_tilt_angle
-
-            transform = QTransform()
-            transform.translate(content_rect.center().x(), content_rect.center().y())
-            transform.rotate(angle_y, Qt.YAxis)
-            transform.rotate(angle_x, Qt.XAxis)
-            transform.translate(-content_rect.center().x(), -content_rect.center().y())
-            painter.setTransform(transform)
-
-        bg_color = QColor(*Styles.hex_to_rgb(Styles.Colors.secondary_background))
-        painter.setBrush(bg_color)
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(content_rect, 16, 16)
-
-        border = QColor(*Styles.hex_to_rgb(Styles.Colors.glass_border))
-        pen = QPen(border, 1.5)
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(content_rect, 16, 16)
-
-        super().paintEvent(event)
-
-class DialogWindow(BaseDialogWindow):
-    def __init__(self, title):
-        super().__init__(title, 400, 130)
-        self._was_cancelled = False
-
-    def on_ok(self):
-        Utils.ui_sound("PopupClose")
-        self._was_cancelled = False
-        self.start_exit_animation()
-
-    def on_cancel(self):
-        Utils.ui_sound("PopupClose")
-        self._was_cancelled = True
-        self.start_exit_animation()
-
-    def _really_close(self):
-        self.reject() if self._was_cancelled else self.accept()
-
-class ExportDialogWindow(BaseDialogWindow):
-    selection_changed = pyqtSignal(str)
-    
-    def __init__(self, title, composition):
-        super().__init__(title, 400, 250)
-        self.composition = composition
-        self.original_model = model_to_code(composition.model)
-        
-        self._was_cancelled = False
-        self.ok_button.setText("Tape it!")
-        self.cancel_button.setText("Hmm, later")
-        
-        self.number_model = code_to_number_model(composition.model)
-        self.choices = PortVariants[model_to_code(composition.model)]
-        self.combobox = SelectorWithLabel("Tap a model to port the song to it.", self.choices)
-        self.combobox.selection_changed.connect(self.request_port)
-        
-        self.layout.insertWidget(1, self.combobox)
-    
-    def request_port(self, index, text):
-        code_model = number_model_to_code(text)
-        
-        ported, ported_to = Porter.Port.port(self.original_model, code_model, self.composition)
-        Porter.Port.export_port(ported, ported_to, self.composition.duration_ms, self.composition.id)
-        
-        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
-        Utils.ui_sound("Export")
-
-    def on_ok(self):
-        Utils.ui_sound("PopupClose")
-        self._was_cancelled = False
-        self.start_exit_animation()
-
-    def on_cancel(self):
-        Utils.ui_sound("PopupClose")
-        self._was_cancelled = True
-        self.start_exit_animation()
-
-    def _really_close(self):
-        self.reject() if self._was_cancelled else self.accept()
-
-class DialogInputWindow(BaseDialogWindow):
-    def __init__(self, title="Input Dialog", placeholder="Type something...", min_number=0, max_number=100, max_length=100, input_type="number"):
-        super().__init__(title, 400, 180)
-        self.placeholder = placeholder
-        self.result_text = None
-
-        self.input_field = AnimatedLineEdit(min_number, max_number, max_length, input_type)
-        self.input_field.setFont(Utils.NType(13))
-        self.input_field.setPlaceholderText(self.placeholder)
-        self.layout.insertWidget(1, self.input_field)
-
-    def on_ok(self):
-        Utils.ui_sound("PopupClose")
-        text = self.input_field.text()
-        
-        if text is None:
-            self.ok_button.start_glitch()
-            return
-
-        self.result_text = text
-        self.start_exit_animation()
-
-    def on_cancel(self):
-        Utils.ui_sound("PopupClose")
-        self.result_text = None
-        self.start_exit_animation()
-
-    def _really_close(self):
-        self.accept() if self.result_text is not None else self.reject()
-
-    def get_text(self) -> str:
-        return self.input_field.text()
-
-
 class FloatingWindow(QDialog):
-    MARGIN = 50
+    MARGIN = 70
     
     def __init__(self, title: str, width: int, height: int):
         super().__init__()
@@ -1836,18 +1581,17 @@ class FloatingWindow(QDialog):
         self.setAttribute(Qt.WA_TranslucentBackground)
         
         self.setFixedSize(self.content_width + self.MARGIN * 2, self.content_height + self.MARGIN * 2)
-
-        self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self.opacity_effect)
-        self.opacity_effect.setOpacity(1.0)
 
         self.setupLayout(title)
         self.setupMouseTracking()
         self.setupAnimationProperties()
         
         self.animation_timer = QTimer(self)
-        self.animation_timer.setInterval(FPS_120)
+        self.animation_timer.setInterval(FPS_60)
         self.animation_timer.timeout.connect(self.updateSmooth)
+        self.animation_timer.start()
+        
+        self.was_cancelled = False
         
         QTimer.singleShot(0, self.start_entry_animation)
 
@@ -1868,7 +1612,7 @@ class FloatingWindow(QDialog):
 
     def setupMouseTracking(self):
         self.setMouseTracking(True)
-        self.max_tilt_angle = 15
+        self.max_tilt_angle = 25
         
         self.current_tilt_x = 0.0
         self.current_tilt_y = 0.0
@@ -1881,6 +1625,8 @@ class FloatingWindow(QDialog):
         self.current_rotation = 0.0
         self.target_rotation = 0.0
         self.rotation_smoothing = 0.2
+        
+        self.exit_scale = 1.0
 
     def eventFilter(self, watched_object, event):
         if event.type() == QEvent.MouseMove:
@@ -1934,7 +1680,7 @@ class FloatingWindow(QDialog):
         anim_geo.setEndValue(final_rect)
         anim_geo.setEasingCurve(QEasingCurve.OutElastic)
         
-        anim_opacity = QPropertyAnimation(self.opacity_effect, b"opacity")
+        anim_opacity = QPropertyAnimation(self, b"windowOpacity")
         anim_opacity.setDuration(350)
         anim_opacity.setStartValue(0)
         anim_opacity.setEndValue(1)
@@ -1942,7 +1688,7 @@ class FloatingWindow(QDialog):
 
         self.rotation_anim = QPropertyAnimation(self, b"entryRotation")
         self.rotation_anim.setDuration(1200)
-        start_angle = random.randint(-65, 65)
+        start_angle = random.randint(-65, -15) if random.random() < 0.5 else random.randint(15, 65)
         self.rotation_anim.setStartValue(start_angle)
         self.rotation_anim.setEndValue(0)
         self.rotation_anim.setEasingCurve(QEasingCurve.OutElastic)
@@ -1964,48 +1710,46 @@ class FloatingWindow(QDialog):
         self.entry_rotation_angle = value
         self.target_rotation = value
 
-    entryRotation = pyqtProperty(float, fget=getEntryRotation, fset=setEntryRotation)
+    entryRotation = pyqtProperty(float, fget = getEntryRotation, fset = setEntryRotation)
+    
+    def getExitScale(self):
+        return self.exit_scale
+
+    def setExitScale(self, value):
+        self.exit_scale = value
+        self.update()
+
+    exitScale = pyqtProperty(float, fget = getExitScale, fset = setExitScale)
 
     def start_exit_animation(self):
-        self.animation_timer.stop()
-        
-        start_rect = self.geometry()
-        end_rect = start_rect.translated(0, -50)
+        self.target_tilt_y = random.randint(10, 30)
+        self.target_rotation = random.randint(-15, 15)
 
-        anim_move = QPropertyAnimation(self, b"geometry")
-        anim_move.setDuration(300)
-        anim_move.setStartValue(start_rect)
-        anim_move.setEndValue(end_rect)
-        anim_move.setEasingCurve(QEasingCurve.OutExpo)
+        anim_scale = QPropertyAnimation(self, b"exitScale")
+        anim_scale.setDuration(450)
+        anim_scale.setStartValue(1.0)
+        anim_scale.setEndValue(1.5)
+        anim_scale.setEasingCurve(QEasingCurve.OutCubic)
 
-        anim_opacity = QPropertyAnimation(self.opacity_effect, b"opacity")
-        anim_opacity.setDuration(400)
+        anim_opacity = QPropertyAnimation(self, b"windowOpacity")
+        anim_opacity.setDuration(270)
         anim_opacity.setStartValue(1.0)
         anim_opacity.setEndValue(0.0)
-        anim_opacity.setEasingCurve(QEasingCurve.InCubic)
+        anim_opacity.setEasingCurve(QEasingCurve.OutCubic)
 
         self.anim_group = QParallelAnimationGroup()
-        self.anim_group.addAnimation(anim_move)
+        self.anim_group.addAnimation(anim_scale)
         self.anim_group.addAnimation(anim_opacity)
         self.anim_group.finished.connect(self._really_close)
         self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
-
-    def enterEvent(self, event):
-        if not self.animation_timer.isActive():
-            self.animation_timer.start()
+    
+    def event(self, event):
+        if event.type() == QEvent.ChildAdded:
+            child = event.child()
+            if isinstance(child, QWidget):
+                self._apply_mouse_tracking_and_filter(child)
         
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        self.target_tilt_x = 0.0
-        self.target_tilt_y = 0.0
-        
-        QTimer.singleShot(1000, self.checkIfShouldStopTimer)
-        super().leaveEvent(event)
-        
-    def checkIfShouldStopTimer(self):
-        if not self.rect().contains(self.mapFromGlobal(self.cursor().pos())):
-            self.animation_timer.stop()
+        return super().event(event)
 
     def mouseMoveEvent(self, event):
         self.calculateTargetTilt(event.pos())
@@ -2023,8 +1767,10 @@ class FloatingWindow(QDialog):
         
         transform.rotate(self.current_tilt_y, Qt.YAxis)
         transform.rotate(self.current_tilt_x, Qt.XAxis)
-        
         transform.rotate(self.current_rotation)
+        
+        transform.scale(self.exit_scale, self.exit_scale)
+        
         transform.translate(-center_point.x(), -center_point.y())
         
         painter.setTransform(transform)
@@ -2046,4 +1792,135 @@ class FloatingWindow(QDialog):
         painter.restore()
 
     def _really_close(self):
-        self.accept()
+        self.animation_timer.stop()
+        
+        if not self.was_cancelled:
+            self.accept()
+        
+        else:
+            self.reject()
+
+class DialogInputWindow(FloatingWindow):
+    def __init__(self, title="Input Dialog", placeholder = "Type something...", min_number = 0, max_number = 100, max_length = 100, input_type = "number"):
+        super().__init__(title, 400, 180)
+        self.placeholder = placeholder
+        self.result_text = None
+
+        self.input_field = AnimatedLineEdit(min_number, max_number, max_length, input_type)
+        self.input_field.setFont(Utils.NType(13))
+        self.input_field.setPlaceholderText(self.placeholder)
+        self.layout.insertWidget(1, self.input_field)
+        
+        self.ok_button = NothingButton("OK")
+        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+
+        self.cancel_button = ButtonWithOutline("Cancel")
+        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.ok_button)
+        self.layout.addLayout(button_row)
+
+        self.ok_button.clicked.connect(self.on_ok)
+        self.cancel_button.clicked.connect(self.on_cancel)
+
+    def on_ok(self):
+        Utils.ui_sound("PopupClose")
+        text = self.input_field.text()
+        
+        if text is None:
+            self.ok_button.start_glitch()
+            return
+
+        self.result_text = text
+        self.start_exit_animation()
+
+    def on_cancel(self):
+        Utils.ui_sound("PopupClose")
+        self.result_text = None
+        self.was_cancelled = True
+        self.start_exit_animation()
+
+    def get_text(self) -> str:
+        return self.input_field.text()
+
+class ExportDialogWindow(FloatingWindow):
+    selection_changed = pyqtSignal(str)
+    
+    def __init__(self, title, composition):
+        super().__init__(title, 400, 250)
+        self.composition = composition
+        self.original_model = model_to_code(composition.model)
+        
+        self._was_cancelled = False
+        
+        self.ok_button = NothingButton("Tape it!")
+        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+
+        self.cancel_button = ButtonWithOutline("Later")
+        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        
+        self.ok_button.clicked.connect(self.on_ok)
+        self.cancel_button.clicked.connect(self.on_cancel)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.ok_button)
+        self.layout.addLayout(button_row)
+        
+        self.number_model = code_to_number_model(composition.model)
+        self.choices = PortVariants[model_to_code(composition.model)]
+        self.combobox = SelectorWithLabel("Tap a model to port the song to it.", self.choices)
+        self.combobox.selection_changed.connect(self.request_port)
+        
+        self.layout.insertWidget(1, self.combobox)
+    
+    def request_port(self, index, text):
+        code_model = number_model_to_code(text)
+        
+        ported, ported_to = Porter.Port.port(self.original_model, code_model, self.composition)
+        Porter.Port.export_port(ported, ported_to, self.composition.duration_ms, self.composition.id)
+        
+        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
+        Utils.ui_sound("Export")
+
+    def on_ok(self):
+        Utils.ui_sound("PopupClose")
+        self.was_cancelled = False
+        self.start_exit_animation()
+
+    def on_cancel(self):
+        Utils.ui_sound("PopupClose")
+        self.was_cancelled = True
+        self.start_exit_animation()
+
+class DialogWindow(FloatingWindow):
+    def __init__(self, title):
+        super().__init__(title, 400, 130)
+        self.ok_button = NothingButton("Hell yeah")
+        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+
+        self.cancel_button = ButtonWithOutline("Nah")
+        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        
+        self.ok_button.clicked.connect(self.on_ok)
+        self.cancel_button.clicked.connect(self.on_cancel)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.ok_button)
+        self.layout.addLayout(button_row)
+
+    def on_ok(self):
+        Utils.ui_sound("PopupClose")
+        self.was_cancelled = False
+        self.start_exit_animation()
+
+    def on_cancel(self):
+        Utils.ui_sound("PopupClose")
+        self.was_cancelled = True
+        self.start_exit_animation()
