@@ -19,7 +19,7 @@ class Colors:
     green_button_second = "#45a049"
     
     normal_button = "#2b2b2b"
-    normal_button_second = "#262626"
+    normal_button_second = "#444"
     
     background = "#1f1f1f"
     secondary_background = "#2b2b2b"
@@ -156,7 +156,6 @@ class Controls:
     """
     
     Selector = f"""
-    
         QWidget#selectorRoot {{
             background-color: {Colors.effect_menu_third};
             border-radius: {Roundings.button}px;
@@ -219,6 +218,13 @@ class Controls:
         QPushButton#segmentedButton:checked:hover {{
             background-color: {Colors.nothing_accent_second};
         }}
+    """
+    
+    BPMTextBox = f"""
+        background-color: #2b2b2b;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 12px;
     """
 
     AudioSetupper = f"""
