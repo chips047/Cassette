@@ -43,16 +43,19 @@ class GlyphSyncer:
             self.client_sock = socket.create_connection(("127.0.0.1", 7777))
             self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     
-    def start_scanning_loop(self, parent=None):
-        self._scanner_thread = QThread(parent)
+    def start_scanning_loop(self):
+        self._scanner_thread = QThread()
         self._scanner_worker = DeviceScanner(self)
         self._scanner_worker.moveToThread(self._scanner_thread)
 
-        self._scanner_timer = QTimer(parent)
-        self._scanner_timer.timeout.connect(self._scanner_worker.scan)
-        self._scanner_timer.start(3000)
-
+        self._scanner_thread.started.connect(self._init_worker_timer)
         self._scanner_thread.start()
+
+    def _init_worker_timer(self):
+        self._scanner_timer = QTimer()
+        self._scanner_timer.setInterval(3000)
+        self._scanner_timer.timeout.connect(self._scanner_worker.scan)
+        self._scanner_timer.start()
 
     def init_device(self, device_id):
         Utils.run([ADB_PATH, "-s", device_id, "forward", "tcp:7777", "tcp:7777"], check=True)
@@ -145,9 +148,9 @@ class GlyphSyncer:
             self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     def sync(self, current: dict):
-        print("Syncing..")
         current = {str(k): v for k, v in current.items()}
         deleted = set(self.last_synced) - set(current)
+        
         def glyph_changed(g1, g2):
             if g1 is None:
                 return True
