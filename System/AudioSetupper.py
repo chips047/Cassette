@@ -312,12 +312,7 @@ class AudioSetupDialog(QDialog):
         self.bpm_input.setMinimumWidth(57)
         self.bpm_input.setMaximumWidth(203)
         self.bpm_input.setFixedHeight(Styles.Metrics.element_height)
-        self.bpm_input.setStyleSheet("""
-            background-color: #2b2b2b;
-            color: #fff;
-            padding: 8px 12px;
-            border-radius: 12px;
-        """)
+        self.bpm_input.setStyleSheet(Styles.Controls.BPMTextBox)
 
         self.bpm_anim_timer = QTimer(self)
         self.bpm_anim_timer.timeout.connect(self.animate_bpm_spinbox)
@@ -358,7 +353,7 @@ class AudioSetupDialog(QDialog):
         self.cancel_button.setMaximumWidth(100)
         
         self.ok_button.clicked.connect(self.accept)
-        self.cancel_button.clicked.connect(self.close)
+        self.cancel_button.clicked.connect(self.reject)
         self.play_button.setEnabled(False)
         self.ok_button.setEnabled(False)
 
@@ -417,7 +412,7 @@ class AudioSetupDialog(QDialog):
         anim.setEndValue(57)
         anim.setEasingCurve(QEasingCurve.OutCubic)
         anim.start()
-    
+        
         self._bpm_shrink_anim = anim
 
     def update_texboxes(self, start, end):
@@ -447,8 +442,15 @@ class AudioSetupDialog(QDialog):
         if hasattr(self, "audio_loader"):
             self.audio_loader.stop()
         
+        if self.is_playing:
+            self.stop_playback()
+        
         logger.info("Loaders stopped.")
         super().closeEvent(event)
+    
+    def reject(self):
+        self.close()
+        super().reject()
 
     def edit_start_time(self):
         current_text = self.start_time_label.time_text_to_seconds()
@@ -569,6 +571,7 @@ class AudioSetupDialog(QDialog):
     def toggle_playback(self):
         if self.is_playing:
             self.stop_playback()
+        
         else:
             self.play_selection()
 
