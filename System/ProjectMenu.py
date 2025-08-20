@@ -103,13 +103,17 @@ def get_projects_info(songs_folder):
                 except Exception as e:
                     save_data = None
 
-            projects[project_name] = {
-                "audio_path": audio_path,
-                "save": save_data,
-                "title": save_data["audio"]["title"],
-                "artist": save_data["audio"]["artist"],
-                "model": save_data["model"],
-            }
+            try:
+                projects[project_name] = {
+                    "audio_path": audio_path,
+                    "save": save_data,
+                    "title": save_data["audio"]["title"],
+                    "artist": save_data["audio"]["artist"],
+                    "model": save_data["model"],
+                }
+            
+            except Exception:
+                pass
 
     return projects
 
@@ -150,11 +154,11 @@ class TrackItemWidget(QWidget):
 
         title_label = QLabel(title)
         title_label.setFont(Utils.NType(14))
-        title_label.setStyleSheet(f"color: {Styles.Colors.font_color}; background-color: transparent;")
+        title_label.setStyleSheet(Styles.Other.font)
 
         artist_duration_label = QLabel(f"{artist}  {duration}")
         artist_duration_label.setFont(Utils.NType(11))
-        artist_duration_label.setStyleSheet(f"color: {Styles.Colors.second_font_color}; background-color: transparent;")
+        artist_duration_label.setStyleSheet(Styles.Other.second_font)
 
         info_layout.addWidget(title_label)
         info_layout.addWidget(artist_duration_label)
@@ -376,7 +380,7 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        dialog = UI.FloatingWindow("test", 500, 300)
+        dialog = UI.DialogInputWindow()
         dialog.exec_()
 
     def create_button_panel(self):
@@ -404,6 +408,7 @@ class MainMenu(QWidget):
                     QPushButton {{ background-color: {Styles.Colors.nothing_accent}; color: white; border: none; padding: 8px 15px; border-radius: 18px; }}
                     QPushButton:hover {{ background-color: {Styles.Colors.nothing_accent_second}; }}
                 """)
+            
             else:
                 btn.setStyleSheet("""
                     QPushButton { background-color: #333; color: #ccc; border: none; padding: 8px 15px; border-radius: 18px; }
