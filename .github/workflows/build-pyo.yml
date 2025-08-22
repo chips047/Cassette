@@ -23,7 +23,7 @@ jobs:
         run: pip install cibuildwheel
 
       - name: Build wheels (Python 3.10 only)
-        run: cibuildwheel aubio --output-dir wheelhouse
+        run: cibuildwheel pyo --output-dir wheelhouse
         env:
           CIBW_BUILD: "cp310-*"
           CIBW_SKIP: "pp* *-musllinux*"
