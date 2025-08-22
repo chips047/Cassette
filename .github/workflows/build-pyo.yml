@@ -24,6 +24,14 @@ jobs:
       - name: Install system deps (macOS)
         if: runner.os == 'macOS'
         run: brew install portaudio
+      
+      - name: Install vcpkg
+        if: runner.os == 'Windows'
+        run: |
+          git clone https://github.com/microsoft/vcpkg
+          .\vcpkg\bootstrap-vcpkg.bat
+          .\vcpkg\vcpkg.exe install portaudio fftw3 libsndfile
+
 
       - name: Install system deps (Windows)
         if: runner.os == 'Windows'
