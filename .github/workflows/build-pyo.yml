@@ -48,8 +48,8 @@ jobs:
             jack-audio-connection-kit-devel
             libsndfile-devel
             fftw-devel
-            liblo-devel
             portmidi-devel
+
 
       # macOS & Windows build
       - name: Build wheels (Python 3.10)
