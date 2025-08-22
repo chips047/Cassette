@@ -38,6 +38,7 @@ jobs:
         if: runner.os == 'Linux'
         run: cibuildwheel pyo --output-dir wheelhouse
         env:
+          USE_OSC: 0
           CIBW_BUILD: "cp310-*"
           CIBW_SKIP: "pp* *-musllinux*"
           CIBW_ARCHS_LINUX: x86_64
