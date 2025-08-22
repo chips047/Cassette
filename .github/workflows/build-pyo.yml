@@ -23,7 +23,7 @@ jobs:
 
       - name: Install system deps (macOS)
         if: runner.os == 'macOS'
-        run: brew install portaudio
+        run: brew install portaudio libsndfile fftw
       
       - name: Install vcpkg
         if: runner.os == 'Windows'
