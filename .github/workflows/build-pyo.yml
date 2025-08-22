@@ -1,4 +1,4 @@
-name: Build PyOpenAL
+name: Build Pyo
 
 on:
   workflow_dispatch:
@@ -13,23 +13,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone aubio
+      - name: Install system deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libportaudio2 libportaudiocpp0 portaudio19-dev \
+            libasound2-dev libjack-jackd2-dev
+
+      - name: Install system deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install portaudio
+
+      - name: Install system deps (Windows)
+        if: runner.os == 'Windows'
+        run: choco install portaudio
+
+      - name: Clone pyo
         run: |
           git clone https://github.com/belangeo/pyo.git
           cd pyo
           git submodule update --init --recursive
 
       - name: Install cibuildwheel
-        run: pip install cibuildwheel
+        run: python -m pip install cibuildwheel
 
       - name: Build wheels (Python 3.10 only)
         run: cibuildwheel pyo --output-dir wheelhouse
         env:
           CIBW_BUILD: "cp310-*"
           CIBW_SKIP: "pp* *-musllinux*"
-
-      - name: Upload wheels as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: pyo-wheels-${{ matrix.os }}
-          path: wheelhouse/*.whl
