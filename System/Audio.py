@@ -4,7 +4,6 @@ import tempfile
 import numpy as np
 import multiprocessing as mp
 
-from PyQt5.Qt import *
 from PyQt5.QtCore import *
 from pydub import AudioSegment
 
@@ -18,6 +17,7 @@ def ensure_wav(path):
     tmp_path = tempfile.mktemp(suffix=".wav")
     audio = AudioSegment.from_file(path)
     audio.export(tmp_path, format="wav", parameters=["-acodec", "pcm_s16le"])
+    
     return tmp_path
 
 def analyze_bpm_and_beat_grid(audio_path, hop_size = 256, min_consistent_beats = 7, tolerance = 0.07, should_interrupt = lambda: False):
@@ -101,6 +101,43 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size = 256, min_consistent_beats =
 def bpm_task(file_path, queue):
     bpm, first_beat, beats = analyze_bpm_and_beat_grid(file_path)
     queue.put((bpm, first_beat, beats))
+
+def intro_generator(file_path, out_path, hop_s = 512):
+    file_path = ensure_wav(file_path)
+    
+    source = aubio.source(file_path, 0, hop_s)
+    samplerate = source.samplerate
+    
+    rms_list = []
+    times = []
+
+    total_frames = 0
+    while True:
+        samples, read = source()
+        value = np.sqrt(np.mean(samples**2))
+        rms_list.append(value)
+        times.append(total_frames / float(samplerate))
+
+        total_frames += read
+        if read < hop_s:
+            break
+
+    rms_arr = np.array(rms_list)
+
+    window_size = int(3 * samplerate / hop_s)
+    energy_sum = np.convolve(rms_arr, np.ones(window_size), mode='valid')
+
+    best_idx = np.argmax(energy_sum)
+    start_time = times[best_idx]
+    end_time = start_time + 3
+    
+    audio = AudioSegment.from_file(file_path)
+    start_ms = int(start_time * 1000)
+    end_ms = int(end_time * 1000)
+    fragment = audio[start_ms:end_ms]
+    fragment = fragment.fade_out(2000)
+    
+    fragment.export(out_path, format = "mp3")
 
 class BPMWorkerProcess(QObject):
     bpm_ready = pyqtSignal(float, float, list)
