@@ -102,6 +102,7 @@ class Other:
     """
     
     font = f"""color: {Colors.font_color};"""
+    label = f"""color: {Colors.font_color}; background-color: transparent; padding: 0;"""
     second_font = f"""color: {Colors.second_font_color};"""
     
     Tooltip = f"""
