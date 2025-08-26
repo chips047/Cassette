@@ -109,7 +109,7 @@ def get_projects_info(songs_folder):
                     "save": save_data,
                     "title": save_data["audio"]["title"],
                     "artist": save_data["audio"]["artist"],
-                    "model": save_data["model"],
+                    "model": code_to_number_model(save_data["model"]),
                 }
             
             except Exception:
@@ -380,7 +380,7 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        dialog = UI.DialogInputWindow()
+        dialog = UI.ErrorWindow("Lmao!", "You got rick rolled. This is so cool. You got rick rolled. This is so cool. You got rick rolled. This is so cool.")
         dialog.exec_()
 
     def create_button_panel(self):
