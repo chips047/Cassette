@@ -5,7 +5,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from System import Player
+from System import Player as Player
 from System import Styles
 from System import ProjectSaver
 from System import GlyphEffects
@@ -610,7 +610,7 @@ class ScrollableContent(QWidget):
         self.composition.save()
     
     def control_popup(self, title, label, key, min_val = 1, max_val = None):
-        dialog = UI.DialogInputWindow(title, label, min_val, max_val) if max_val else UI.DialogInputWindow(title, label, min_val)
+        dialog = UI.DialogInputWindow(title, label, min_val, max_val, bpm = self.composition.bpm, player = self.playback_manager)
         if dialog.exec_() != QDialog.Accepted:
             return
 
@@ -1002,6 +1002,15 @@ class ScrollableContent(QWidget):
         
         else:
             super().mouseReleaseEvent(event)
+    
+    def segment_control_popup(self):
+        popup = UI.SegmentEditor("Segments", self.composition.bpm, self.playback_manager, get_segments(self.composition.model, self.composition.get_glyph(next(iter(self.selected_element_ids)))["track"]), self.composition.get_glyph(next(iter(self.selected_element_ids))).get("segments"))
+        if popup.exec_() != QDialog.Accepted:
+            return
+        
+        segments = popup.segments()
+        self.composition.change_track(next(iter(self.selected_element_ids)), segments)
+        self.composition.save()
 
     def contextMenuEvent(self, event: QContextMenuEvent):
         try:
@@ -1046,9 +1055,13 @@ class ScrollableContent(QWidget):
             effect_submenu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             effect_submenu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
             effect_submenu.setWindowFlags(effect_submenu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint) 
+            
+            segment_editor = QAction("Segments...", self)
+            segment_editor.triggered.connect(lambda: QTimer.singleShot(0, self.segment_control_popup))
+            self.context_menu.addAction(segment_editor)
 
             has_non_segmented = any(
-                not ModelSegments.get(model_to_code(self.composition.model), {}).get(self.composition.get_glyph(sel_id)["track"])
+                not ModelSegments.get(self.composition.model, {}).get(self.composition.get_glyph(sel_id)["track"])
                 for sel_id in self.selected_element_ids
             )
 
@@ -1251,9 +1264,15 @@ class CompositorWidget(QWidget):
     
     def on_eject_button_clicked(self):
         self.back_to_main_menu_requested.emit()
+        if self.content_widget.playback_manager.is_playing:
+            self.content_widget.playback_manager.underwater()
     
     def export_ringtone(self):
-        dialog = UI.ExportDialogWindow("Export?", self.content_widget.composition)
+        bpm = None
+        if self.content_widget.playback_manager.is_playing:
+            bpm = self.content_widget.composition.bpm
+        
+        dialog = UI.ExportDialogWindow("Export?", self.content_widget.composition, bpm, self.content_widget.playback_manager)
         if dialog.exec_() == QDialog.Accepted:
             self.content_widget.composition.export()
             Utils.ui_sound("Export")
@@ -1297,5 +1316,4 @@ class CompositorWidget(QWidget):
             self.content_widget.playback_manager.stop_playback()
                 
         self.content_widget.playback_manager.load_audio(audio_path)
-        Utils.ui_sound("Load")
         QTimer.singleShot(0, lambda: self.content_widget.scale_view(0))

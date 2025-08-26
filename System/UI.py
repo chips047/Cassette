@@ -132,7 +132,7 @@ class Selector(QWidget):
 
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
-        self._group.buttonClicked[int].connect(self._on_button_clicked)
+        self._group.buttonClicked.connect(self._on_button_clicked)
 
         for idx, text in enumerate(items):
             btn = QPushButton(text, objectName="segmentedButton", parent=selector_container)
@@ -148,8 +148,9 @@ class Selector(QWidget):
 
         main_layout.addWidget(selector_container)
 
-    def _on_button_clicked(self, id: int):
-        text = self._group.button(id).text()
+    def _on_button_clicked(self, button):
+        text = button.text()
+        print(text)
         self.selection_changed.emit(id, text)
 
     def currentIndex(self) -> int:
@@ -201,7 +202,7 @@ class SelectorWithLabel(QWidget):
 
         self.description_label = QLabel(description, self.container_background)
         self.description_label.setFont(Utils.NType(14))
-        self.description_label.setStyleSheet(Styles.Other.font)
+        self.description_label.setStyleSheet(Styles.Other.label)
         inner_layout.addWidget(self.description_label)
         self.setMaximumWidth(1000)
 
@@ -460,6 +461,77 @@ class DraggableValueControl(_BaseControlWidget):
             self.dragging = False
             self.setCursor(Qt.CursorShape.ArrowCursor)
             event.accept()
+
+class SegmentedBar(QWidget):
+    def __init__(self, segments = 8, defaults = None):
+        super().__init__()
+        self.segments = segments
+
+        nums = defaults or [i for i in range(segments)]
+        
+        self.active = [i in nums for i in range(segments)]
+        self.setMaximumHeight(18)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        width = self.width()
+        height = self.height()
+        seg_width = width / self.segments
+
+        painter.setPen(Qt.NoPen)
+
+        radius = 10
+
+        for i in range(self.segments):
+            color = QColor("#ddd") if self.active[i] else QColor(Styles.Colors.glass_border)
+            painter.setBrush(color)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+            if i != self.segments - 1:
+                rect = QRectF(i * seg_width, 0, seg_width + 1, height)
+            
+            else:
+                rect = QRectF(i * seg_width, 0, seg_width, height)
+
+            path = QPainterPath()
+
+            if i == 0:
+                path.moveTo(rect.topRight())
+                path.lineTo(rect.topLeft() + QPointF(radius, 0))
+                path.quadTo(rect.topLeft(), rect.topLeft() + QPointF(0, radius))
+                path.lineTo(rect.bottomLeft() + QPointF(0, -radius))
+                path.quadTo(rect.bottomLeft(), rect.bottomLeft() + QPointF(radius, 0))
+                path.lineTo(rect.bottomRight())
+                path.lineTo(rect.topRight())
+            
+            elif i == self.segments - 1:
+                path.moveTo(rect.topLeft())
+                path.lineTo(rect.topRight() - QPointF(radius, 0))
+                path.quadTo(rect.topRight(), rect.topRight() + QPointF(0, radius))
+                path.lineTo(rect.bottomRight() - QPointF(0, radius))
+                path.quadTo(rect.bottomRight(), rect.bottomRight() - QPointF(radius, 0))
+                path.lineTo(rect.bottomLeft())
+                path.lineTo(rect.topLeft())
+            
+            else:
+                path.addRect(rect)
+
+            painter.drawPath(path)
+
+    def mousePressEvent(self, event):
+        width = self.width()
+        seg_width = width / self.segments
+        index = int(event.x() // seg_width)
+        
+        if 0 <= index < self.segments:
+            self.active[index] = not self.active[index]
+            tone = index / self.segments + 0.5
+
+            if self.active[index]:
+                tone += 0.05
+
+            Utils.ui_sound("Toggle", tone)
+            self.update()
 
 class CycleButton(_BaseControlWidget):
     state_changed = pyqtSignal(str, object)
@@ -1572,15 +1644,18 @@ class Settings(QDialog):
 class FloatingWindow(QDialog):
     MARGIN = 70
     
-    def __init__(self, title: str, width: int, height: int):
+    def __init__(self, title: str, width: int, height: int, bpm: int = None, player = None):
         super().__init__()
         self.content_width = width
         self.content_height = height
+        self.bpm = bpm
+        self.player = player
 
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         
-        self.setFixedSize(self.content_width + self.MARGIN * 2, self.content_height + self.MARGIN * 2)
+        self.setFixedWidth(self.content_width + self.MARGIN * 2)
+        self.setMinimumHeight(self.content_height + self.MARGIN * 2)
 
         self.setupLayout(title)
         self.setupMouseTracking()
@@ -1591,9 +1666,23 @@ class FloatingWindow(QDialog):
         self.animation_timer.timeout.connect(self.updateSmooth)
         self.animation_timer.start()
         
+        self.bpm_timer = QTimer(self)
+        if self.bpm and self.player:
+            self.bpm_timer.setInterval(int(60000 / self.bpm))
+            self.bpm_timer.timeout.connect(self.bpm_tick_animation)
+            self.bpm_timer.start()
+        
         self.was_cancelled = False
+        self.anim_scale = None
         
         QTimer.singleShot(0, self.start_entry_animation)
+        QTimer.singleShot(20000, lambda: self.title_label.setText("Yes, this is trippy."))
+    
+    def resizeEvent(self, event):
+        self.content_width  = self.width()  - self.MARGIN * 2
+        self.content_height = self.height() - self.MARGIN * 2
+        
+        super().resizeEvent(event)
 
     def setupLayout(self, title):
         self.layout = QVBoxLayout(self)
@@ -1675,19 +1764,19 @@ class FloatingWindow(QDialog):
         self.setGeometry(final_rect.translated(0, +20))
 
         anim_geo = QPropertyAnimation(self, b"geometry")
-        anim_geo.setDuration(800)
-        anim_geo.setStartValue(final_rect.translated(0, -200))
+        anim_geo.setDuration(700) # 800
+        anim_geo.setStartValue(final_rect.translated(0, -200)) # -200
         anim_geo.setEndValue(final_rect)
         anim_geo.setEasingCurve(QEasingCurve.OutElastic)
         
         anim_opacity = QPropertyAnimation(self, b"windowOpacity")
-        anim_opacity.setDuration(350)
+        anim_opacity.setDuration(350) # 350
         anim_opacity.setStartValue(0)
         anim_opacity.setEndValue(1)
         anim_opacity.setEasingCurve(QEasingCurve.OutExpo)
 
         self.rotation_anim = QPropertyAnimation(self, b"entryRotation")
-        self.rotation_anim.setDuration(1200)
+        self.rotation_anim.setDuration(1100) # 1200
         start_angle = random.randint(-65, -15) if random.random() < 0.5 else random.randint(15, 65)
         self.rotation_anim.setStartValue(start_angle)
         self.rotation_anim.setEndValue(0)
@@ -1701,7 +1790,7 @@ class FloatingWindow(QDialog):
         self.animation_timer.start()
         self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
         
-        Utils.ui_sound("Error1")
+        Utils.ui_sound(f"Open1", 1)
 
     def getEntryRotation(self):
         return self.entry_rotation_angle
@@ -1720,8 +1809,23 @@ class FloatingWindow(QDialog):
         self.update()
 
     exitScale = pyqtProperty(float, fget = getExitScale, fset = setExitScale)
+    
+    def bpm_tick_animation(self):
+        beat_interval_ms = int(60000 / self.bpm)
+
+        self.anim_scale = QPropertyAnimation(self, b"exitScale")
+        self.anim_scale.setDuration(beat_interval_ms)
+        self.anim_scale.setKeyValueAt(0.0, 1.0)
+        self.anim_scale.setKeyValueAt(0.5, 1.05)
+        self.anim_scale.setKeyValueAt(1.0, 1.0)
+        self.anim_scale.setEasingCurve(QEasingCurve.OutCubic)
+        
+        if self.player.is_playing:
+            print("yes")
+            self.anim_scale.start()
 
     def start_exit_animation(self):
+        self.bpm_timer.stop()
         self.target_tilt_y = random.randint(10, 30)
         self.target_rotation = random.randint(-15, 15)
 
@@ -1770,7 +1874,6 @@ class FloatingWindow(QDialog):
         transform.rotate(self.current_rotation)
         
         transform.scale(self.exit_scale, self.exit_scale)
-        
         transform.translate(-center_point.x(), -center_point.y())
         
         painter.setTransform(transform)
@@ -1799,10 +1902,20 @@ class FloatingWindow(QDialog):
         
         else:
             self.reject()
+    
+    def on_ok(self):
+        Utils.ui_sound("PopupClose")
+        self.was_cancelled = False
+        self.start_exit_animation()
+
+    def on_cancel(self):
+        Utils.ui_sound("PopupClose")
+        self.was_cancelled = True
+        self.start_exit_animation()
 
 class DialogInputWindow(FloatingWindow):
-    def __init__(self, title="Input Dialog", placeholder = "Type something...", min_number = 0, max_number = 100, max_length = 100, input_type = "number"):
-        super().__init__(title, 400, 180)
+    def __init__(self, title = "Input Dialog", placeholder = "Type something...", min_number = 0, max_number = 100, max_length = 100, input_type = "number", bpm = None, player = None):
+        super().__init__(title, 400, 180, bpm, player)
         self.placeholder = placeholder
         self.result_text = None
 
@@ -1812,10 +1925,10 @@ class DialogInputWindow(FloatingWindow):
         self.layout.insertWidget(1, self.input_field)
         
         self.ok_button = NothingButton("OK")
-        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.ok_button.setFixedSize(16777215, 16777215)
 
         self.cancel_button = ButtonWithOutline("Cancel")
-        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.cancel_button.setFixedSize(16777215, 16777215)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
@@ -1837,30 +1950,24 @@ class DialogInputWindow(FloatingWindow):
         self.result_text = text
         self.start_exit_animation()
 
-    def on_cancel(self):
-        Utils.ui_sound("PopupClose")
-        self.result_text = None
-        self.was_cancelled = True
-        self.start_exit_animation()
-
     def get_text(self) -> str:
         return self.input_field.text()
 
 class ExportDialogWindow(FloatingWindow):
     selection_changed = pyqtSignal(str)
     
-    def __init__(self, title, composition):
-        super().__init__(title, 400, 250)
+    def __init__(self, title, composition, bpm = None, player = None):
+        super().__init__(title, 400, 250, bpm, player)
         self.composition = composition
-        self.original_model = model_to_code(composition.model)
+        self.original_model = composition.model
         
         self._was_cancelled = False
         
         self.ok_button = NothingButton("Tape it!")
-        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.ok_button.setFixedSize(16777215, 16777215)
 
         self.cancel_button = ButtonWithOutline("Later")
-        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.cancel_button.setFixedSize(16777215, 16777215)
         
         self.ok_button.clicked.connect(self.on_ok)
         self.cancel_button.clicked.connect(self.on_cancel)
@@ -1872,7 +1979,7 @@ class ExportDialogWindow(FloatingWindow):
         self.layout.addLayout(button_row)
         
         self.number_model = code_to_number_model(composition.model)
-        self.choices = PortVariants[model_to_code(composition.model)]
+        self.choices = PortVariants[composition.model]
         self.combobox = SelectorWithLabel("Tap a model to port the song to it.", self.choices)
         self.combobox.selection_changed.connect(self.request_port)
         
@@ -1887,24 +1994,14 @@ class ExportDialogWindow(FloatingWindow):
         Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
         Utils.ui_sound("Export")
 
-    def on_ok(self):
-        Utils.ui_sound("PopupClose")
-        self.was_cancelled = False
-        self.start_exit_animation()
-
-    def on_cancel(self):
-        Utils.ui_sound("PopupClose")
-        self.was_cancelled = True
-        self.start_exit_animation()
-
 class DialogWindow(FloatingWindow):
     def __init__(self, title):
         super().__init__(title, 400, 130)
         self.ok_button = NothingButton("Hell yeah")
-        self.ok_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.ok_button.setFixedSize(16777215, 16777215)
 
         self.cancel_button = ButtonWithOutline("Nah")
-        self.cancel_button.setFixedSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.cancel_button.setFixedSize(16777215, 16777215)
         
         self.ok_button.clicked.connect(self.on_ok)
         self.cancel_button.clicked.connect(self.on_cancel)
@@ -1915,12 +2012,44 @@ class DialogWindow(FloatingWindow):
         button_row.addWidget(self.ok_button)
         self.layout.addLayout(button_row)
 
-    def on_ok(self):
-        Utils.ui_sound("PopupClose")
-        self.was_cancelled = False
-        self.start_exit_animation()
+class SegmentEditor(FloatingWindow):
+    def __init__(self, title, bpm = None, player = None, segment_num = None, defaults = None):
+        super().__init__(title, 400, 170, bpm, player)
+        self.ok_button = NothingButton("Apply!")
+        self.ok_button.setFixedSize(16777215, 16777215)
 
-    def on_cancel(self):
-        Utils.ui_sound("PopupClose")
-        self.was_cancelled = True
-        self.start_exit_animation()
+        self.cancel_button = ButtonWithOutline("Nah")
+        self.cancel_button.setFixedSize(16777215, 16777215)
+        
+        self.ok_button.clicked.connect(self.on_ok)
+        self.cancel_button.clicked.connect(self.on_cancel)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(10)
+        button_row.addWidget(self.cancel_button)
+        button_row.addWidget(self.ok_button)
+        
+        self.segmented_bar = SegmentedBar(segment_num, defaults)
+        
+        self.layout.addWidget(self.segmented_bar)
+        self.layout.addLayout(button_row)
+    
+    def segments(self):
+        return self.segmented_bar.active
+
+class ErrorWindow(FloatingWindow):
+    def __init__(self, title, description, bpm = None, player = None):
+        super().__init__(title, 400, 170, bpm, player)
+        self.ok_button = NothingButton("Cool")
+        self.ok_button.setFixedSize(16777215, 16777215)
+
+        self.description_label = QLabel(description)
+        self.description_label.setFont(Utils.NType(12))
+        self.description_label.setStyleSheet(Styles.Other.second_font)
+        self.description_label.setContentsMargins(0, 0, 0, 5)
+        self.description_label.setWordWrap(True)
+        
+        self.layout.addWidget(self.description_label)
+
+        self.ok_button.clicked.connect(self.on_ok)
+        self.layout.addWidget(self.ok_button)
