@@ -147,12 +147,20 @@ def run(*args, **kwargs):
     
     return subprocess.run(*args, **kwargs)
 
-def ui_sound(name):
+def ui_sound(name, tone = None):
     try:
         sound = pygame.mixer.Sound(f"System/Sounds/{name}.wav")
 
         array = pygame.sndarray.array(sound)
         rate = np.random.uniform(0.97, 1.03)
+        
+        if tone:
+            rate = tone
+        
+        if tone == 1:
+            sound.play()
+            return
+        
         new_length = int(len(array) / rate)
         resampled = np.interp(np.linspace(0, len(array), new_length), np.arange(len(array)), array[:, 0]).astype(np.int16)
         
@@ -160,3 +168,17 @@ def ui_sound(name):
         new_sound.play()
 
     except Exception as e: print(str(e))
+
+def lowpass_numpy(data, strength = 10):
+    if data.ndim == 1:
+        kernel = np.ones(strength) / strength
+        return np.convolve(data, kernel, mode="same")
+    
+    else:
+        filtered = []
+        for ch in range(data.shape[1]):
+            kernel = np.ones(strength) / strength
+            filtered_ch = np.convolve(data[:, ch], kernel, mode="same")
+            filtered.append(filtered_ch)
+        
+        return np.stack(filtered, axis=1)
