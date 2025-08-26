@@ -41,19 +41,26 @@ def reverse_effect_timeline(entries: List[str]) -> List[str]:
 
 def glyphs_to_strings(glyphs: List[dict]) -> List[str]:
     lines = []
+
     for glyph in glyphs:
         t0 = _sec(glyph["start"])
         t1 = _sec(glyph["start"] + glyph["duration"])
-        track = glyph.get("track")
         brightness = int(glyph.get("brightness", 100))
-        
-        if "end_brightness" in glyph:
-            label = f"{track}-{brightness}-{glyph['end_brightness']}-LIN"
-        
-        else: label = f"{track}-{brightness}-LIN"
+        end_brightness = glyph.get("end_brightness")
 
-        lines.append(_format_entry(t0, t1, label))
-    
+        def make_label(track: str) -> str:
+            suffix = f"-{end_brightness}" if end_brightness is not None else ""
+            return f"{track}-{brightness}{suffix}-LIN"
+
+        if glyph.get("segments"):
+            for track in glyph["segments"]:  # 0,1,2,...
+                label = make_label(f"{glyph['track']}.{track + 1}")
+                lines.append(_format_entry(t0, t1, label))
+        
+        else:
+            label = make_label(glyph["track"])
+            lines.append(_format_entry(t0, t1, label))
+
     return lines
 
 def effect_to_glyph(element, effect, model, bpm, port_track = None):
@@ -239,6 +246,7 @@ def bpm_effect(glyph: dict, model: str, bpm: float, multiplier: int):
             "track": n,
             "brightness": brightness
         }, model, bpm)[0])
+        
         t += beat_interval
 
     return out
@@ -445,19 +453,6 @@ def shocker(glyph: dict, model: str, bpm: int, frequency=5.0, fade_out=True, bpm
         t = t_next
 
     return out
-
-def get_effect_config(model, track):
-    is_segmented = ModelSegments.get(model_to_code(model), {}).get(track)
-    non_segmented = {}
-    
-    if is_segmented:
-        return EffectsConfig
-    
-    for name, value in EffectsConfig.items():
-        if not value["segmented"]:
-            non_segmented[name] = value
-    
-    return non_segmented
 
 EffectsConfig = {
     "None": {

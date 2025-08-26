@@ -693,5 +693,5 @@ class AudioSetupDialog(QDialog):
                 "beats": self.snapped_times
             },
             
-            "model": number_model_to_model(self.model_selector.currentText()),
+            "model": number_model_to_code(self.model_selector.currentText()),
         }

@@ -27,36 +27,12 @@ def number_model_to_code(number: str):
         "3a": "PHONE3A"
     }.get(number)
 
-def number_model_to_model(number: str):
-    return {
-        "1": "Phone (1)",
-        "2": "Phone (2)",
-        "2a": "Phone (2a)",
-        "3a": "Phone (3a)"
-    }.get(number)
-
-def model_to_code(model: str):
-    return {
-        "Phone (1)": "PHONE1",
-        "Phone (2)": "PHONE2",
-        "Phone (2a)": "PHONE2A",
-        "Phone (3a)": "PHONE3A"
-    }.get(model)
-
 def code_to_number_model(code: str):
     return {
         "PHONE1": "1",
         "PHONE2": "2",
         "PHONE2A": "2a",
         "PHONE3A": "3a"
-    }.get(code)
-
-def code_to_model(code: str):
-    return {
-        "PHONE1": "Phone (1)",
-        "PHONE2": "Phone (2)",
-        "PHONE2A": "Phone (2a)",
-        "PHONE3A": "Phone (3a)"
     }.get(code)
 
 # ANIMATIONS :))) (ms)
@@ -72,9 +48,6 @@ TEXTBOX_INPUT = 250
 DIALOG_POPUP_IN = 550
 DIALOG_POPUP_OUT = 300
 DIALOG_POPUP_FADEOUT = 100
-
-# UI Sounds
-
 
 # Perfomance
 TILE_SIZE = 1024
@@ -94,10 +67,6 @@ FPS_60 = 16
 FPS_120 = 8
 FPS_30 = 33
 
-# BPM and Beat Detector
-BEAT_MAX_DISTANCE = 0.1
-STRENGTH_THRESHOLD = 0.07
-
 # Models and Related
 ModelSegments = {
     "PHONE1": {"4": 8},
@@ -106,11 +75,14 @@ ModelSegments = {
     "PHONE3A": {"1": 20, "2": 11, "3": 5},
 }
 
+def get_segments(model, track):
+    return ModelSegments.get(model, {}).get(track)
+
 ModelTracks = {
-    "Phone (1)": 5,
-    "Phone (2)": 11,
-    "Phone (2a)": 3,
-    "Phone (3a)": 3
+    "PHONE1": 5,
+    "PHONE2": 11,
+    "PHONE2A": 3,
+    "PHONE3A": 3
 }
 
 # Columns (To export)

@@ -69,7 +69,7 @@ class SyncedDict(dict):
 
             for id, glyph in glyphs.items():
                 if "effect" in glyph:
-                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], models.get(self.composition.model), self.composition.bpm)
+                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], self.composition.model, self.composition.bpm)
 
             super().update(glyphs, *args[1:], **kwargs)
         
@@ -130,7 +130,7 @@ class Composition:
         
         for id, glyph in self.glyphs.items():
             if "effect" in glyph:
-                self.cached_effects[id] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], models.get(self.model), self.bpm)
+                self.cached_effects[id] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], self.model, self.bpm)
 
         # if settings != None, then its a new composition
         self.syncer.full_load(self.glyphs)
@@ -195,7 +195,7 @@ class Composition:
                 "name": self.default_effect,
                 "settings": {"segmented": False}
             }
-            self.cached_effects[str(self.last_glyph_id)] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], models.get(self.model), self.bpm)
+            self.cached_effects[str(self.last_glyph_id)] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], self.model, self.bpm)
         
         self.glyphs[self.last_glyph_id] = glyph
         return self.last_glyph_id, glyph
@@ -206,7 +206,7 @@ class Composition:
     def replace_glyph(self, id: int, dict: dict):
         if id in self.glyphs:
             if "effect" in dict:
-                self.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(dict, dict["effect"], models.get(self.model), self.bpm)
+                self.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(dict, dict["effect"], self.model, self.bpm)
 
             self.glyphs[id] = dict
             return True
@@ -217,6 +217,21 @@ class Composition:
             return True
         
         return False
+    
+    def change_track(self, id: int, new_tracks: list[bool] | str):
+        turned_on = []
+        glyph = self.glyphs[id]
+        
+        if isinstance(new_tracks, list):
+            for i, segment in enumerate(new_tracks):
+                if segment:
+                    turned_on.append(i)
+        
+        else:
+            turned_on = new_tracks
+        
+        self.glyphs[id]["segments"] = turned_on
+        print(self.glyphs[id])
 
     def sorted_glyphs(self) -> tuple:
         glyphs = self.glyphs.values()
@@ -226,14 +241,8 @@ class Composition:
         only_segments_with_effects = []
 
         for glyph in glyphs:
-            if "effect" in glyph and "." in glyph["track"]:
-                only_segments_with_effects.append(glyph)
-
-            elif "effect" in glyph:
+            if "effect" in glyph:
                 only_effects.append(glyph)
-
-            elif "." in glyph["track"]:
-                only_singles_and_segments.append(glyph)
 
             else:
                 only_singles_and_segments.append(glyph)

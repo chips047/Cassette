@@ -664,15 +664,14 @@ def smart_number(s):
         return float(s)
 
 def export_ringtone(out_path, composition):
-    model = models.get(composition.model)
+    model = composition.model
     labels = []
     only_singles_and_segments, only_effects, only_segments_with_effects = composition.sorted_glyphs()
     
     if not model:
         return QMessageBox.critical(None, "Failed to export the ringtone", f"Model {model} is not found.")
     
-    for glyph in only_singles_and_segments:
-        labels.append(f"{(glyph['start'] / 1000):.6f}\t{((glyph['start'] + glyph['duration']) / 1000):.6f}\t{glyph['track']}-{glyph['brightness']}-LIN")
+    labels.extend(GlyphEffects.glyphs_to_strings(only_singles_and_segments))
 
     for glyph in only_effects:
         labels.extend(GlyphEffects.effect_to_label(glyph, glyph["effect"], model, composition.bpm))
