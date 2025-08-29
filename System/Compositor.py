@@ -279,10 +279,6 @@ class ScrollableContent(QWidget):
         
         return visible_rect
 
-    def update_element_rects_cache(self):
-        #self._element_rects = [self.get_element_rect(el) for id, el in self.composition.glyphs.items()]
-        pass
-
     def mark_elements_cache_dirty(self):
         pass
 
@@ -391,12 +387,12 @@ class ScrollableContent(QWidget):
         start_sample = max(0, start_sample)
         end_sample = min(len(self.audio_data), end_sample)
         audio_chunk = self.audio_data[start_sample:end_sample]
+
+        if audio_chunk.size == 0:
+            return None
         
         audio_chunk = audio_chunk - np.mean(audio_chunk)
         audio_chunk = audio_chunk / np.max(np.abs(audio_chunk))
-    
-        if audio_chunk.size == 0:
-            return None
     
         height = int(Styles.Metrics.Waveform.height)
         y_center = height / 2.0
@@ -536,7 +532,7 @@ class ScrollableContent(QWidget):
 
         # Glyphs
         drawing_debug = 0
-        for id, glyph in self.composition.glyphs.items():
+        for id, glyph in self.composition.all_glyphs().items():
             element_rect = self.get_element_rect(glyph)
 
             if not visible_rect.intersects(element_rect):
@@ -586,7 +582,7 @@ class ScrollableContent(QWidget):
                 self._copied_elements.append(el.copy())
 
     def paste_elements(self):
-        if not hasattr(self, '_copied_elements') or not self._copied_elements:
+        if not self._copied_elements:
             return
         
         min_start = min(el['start'] for el in self._copied_elements)
@@ -595,18 +591,12 @@ class ScrollableContent(QWidget):
     
         new_ids = []
         for el in self._copied_elements:
-            new_el = el.copy()
-            new_el['start'] = max(0, new_el['start'] + offset)
-            id, _ = self.composition.new_glyph(str(new_el['track']), new_el['start'], new_el['duration'])
-            self.composition.replace_glyph(id, new_el)
-            new_ids.append(id)
+            new_ids.append(self.composition.copy_glyph(el, offset))
         
         self.selected_element_ids = set(new_ids)
-        self.update_element_rects_cache()
         self.elements_changed.emit()
         
         self.update()
-        
         self.composition.save()
     
     def control_popup(self, title, label, key, min_val = 1, max_val = None):
@@ -626,15 +616,14 @@ class ScrollableContent(QWidget):
                 
                 self._glyph_pixmaps.pop(el_id, None)
         
-        self.composition.glyphs.update(updated_glyphs)
+        self.composition.update_bunch_of_glyphs(updated_glyphs)
 
     def brightness_control_popup(self):
-        self.control_popup("Brightness", "Percent", "brightness")
+        self.control_popup("Brightness", "Percent", "brightness", max_val = 100)
 
     def duration_control_popup(self):
-        self.control_popup("Duration", "Duration (ms)", "duration", min_val=1, max_val=10000)
+        self.control_popup("Duration", "Duration (ms)", "duration", min_val = 1, max_val=10000)
         
-        self.update_element_rects_cache()
         self.update()
         self.elements_changed.emit()
 
@@ -705,9 +694,9 @@ class ScrollableContent(QWidget):
                 
                 elif digit_val == 0:
                     target_track_index = min(9, len(self.track_names))
-            
+
             elif digit_char == '-':
-                target_track_index = 11 # 11th track
+                target_track_index = 10 # 11th track
 
             if 0 <= target_track_index < len(self.track_names):
                 el_x_start_px = self.playhead_x_position
@@ -734,8 +723,6 @@ class ScrollableContent(QWidget):
                     self.selected_element_ids.add(id) 
                     self.elements_changed.emit()
                     self.composition.save()
-                    
-                    self.update_element_rects_cache()
                 
                 consumed = True
 
@@ -917,7 +904,7 @@ class ScrollableContent(QWidget):
             self.marquee_rect = QRectF(self.marquee_start_pos, event.pos()).normalized()
             
             current_selection = set()
-            for id, element in self.composition.glyphs.items():
+            for id, element in self.composition.all_glyphs().items():
                 if self.marquee_rect.intersects(self.get_element_rect(element)):
                     current_selection.add(id)
 
@@ -975,14 +962,13 @@ class ScrollableContent(QWidget):
         
         if event.button() == Qt.MouseButton.LeftButton:
             if self.updated_elements != {}:
-                self.composition.glyphs.update(self.updated_elements)
+                self.composition.update_bunch_of_glyphs(self.updated_elements)
                 self.updated_elements = {}
             
             if self.dragging_element_info:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
 
                 self.composition.save()
-                self.update_element_rects_cache()
                 
                 self.elements_changed.emit()
                 self.dragging_element_info = None
@@ -1004,13 +990,48 @@ class ScrollableContent(QWidget):
             super().mouseReleaseEvent(event)
     
     def segment_control_popup(self):
-        popup = UI.SegmentEditor("Segments", self.composition.bpm, self.playback_manager, get_segments(self.composition.model, self.composition.get_glyph(next(iter(self.selected_element_ids)))["track"]), self.composition.get_glyph(next(iter(self.selected_element_ids))).get("segments"))
+        first_id = next(iter(self.selected_element_ids))
+        first_glyph = self.composition.get_glyph(first_id)
+
+        popup = UI.SegmentEditor(
+            "Segments",
+            self.composition.bpm,
+            self.playback_manager,
+            get_segments(self.composition.model, first_glyph["track"]),
+            first_glyph.get("segments"),
+        )
+
         if popup.exec_() != QDialog.Accepted:
             return
-        
+
         segments = popup.segments()
-        self.composition.change_track(next(iter(self.selected_element_ids)), segments)
-        self.composition.save()
+        turned_on = [i for i, s in enumerate(segments) if s]
+        all_turned_on = all(segments)
+
+        print("turned on:", turned_on, segments)
+        updated_glyphs = {}
+
+        for element_id in self.selected_element_ids:
+            glyph = self.composition.get_glyph(element_id)
+            if all_turned_on:
+                glyph.pop("segments", None)
+            
+            else:
+                glyph["segments"] = turned_on
+            
+            updated_glyphs[element_id] = glyph
+
+        if not GlyphEffects.EffectsConfig.get(first_glyph.get("effect", {}).get("name"), {}).get("supports_segmentation", True):
+            UI.ErrorWindow(
+                "Effect has been reset",
+                "Heads up: custom segmentation doesn't work with applied effect, so we reset the effect."
+            ).exec_()
+
+            for element_id in self.selected_element_ids:
+                glyph = self.composition.get_glyph(element_id)
+                glyph.pop("effect", None)
+
+        self.composition.update_bunch_of_glyphs(updated_glyphs)
 
     def contextMenuEvent(self, event: QContextMenuEvent):
         try:
@@ -1056,23 +1077,38 @@ class ScrollableContent(QWidget):
             effect_submenu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
             effect_submenu.setWindowFlags(effect_submenu.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint) 
             
-            segment_editor = QAction("Segments...", self)
-            segment_editor.triggered.connect(lambda: QTimer.singleShot(0, self.segment_control_popup))
-            self.context_menu.addAction(segment_editor)
+            has_non_segmented = [
+                not is_segmented(self.composition.get_glyph(sel_id)["track"], self.composition.model)
+                for sel_id in self.selected_element_ids
+            ]
 
-            has_non_segmented = any(
-                not ModelSegments.get(self.composition.model, {}).get(self.composition.get_glyph(sel_id)["track"])
+            has_segmented = [
+                is_segmented(self.composition.get_glyph(sel_id)["track"], self.composition.model)
+                for sel_id in self.selected_element_ids
+            ]
+
+            print(has_segmented)
+
+            if len(has_segmented) == 1 and all(has_segmented):
+                print("yes")
+
+                segment_editor = QAction("Segments...", self)
+                segment_editor.triggered.connect(lambda: QTimer.singleShot(0, self.segment_control_popup))
+                self.context_menu.addAction(segment_editor)
+
+            has_segments = any(
+                GlyphEffects.is_segment_edited(self.composition.get_glyph(sel_id))
                 for sel_id in self.selected_element_ids
             )
 
-            if has_non_segmented:
-                effects = {
-                    name: config for name, config in GlyphEffects.EffectsConfig.items()
-                    if not config.get("segmented", False)
-                }
+            if any(has_non_segmented):
+                effects = GlyphEffects.only_non_segmented()
+            
+            elif has_segments:
+                effects = GlyphEffects.only_segmentation_supported()
             
             else:
-                effects = GlyphEffects.EffectsConfig
+                effects = GlyphEffects.all()
 
             for effect_name, config in effects.items():
                 single_effect_menu = effect_submenu.addMenu(effect_name)
@@ -1112,7 +1148,7 @@ class ScrollableContent(QWidget):
             return
     
     def get_element_at(self, pos):
-        for id, element in reversed(self.composition.glyphs.items()):
+        for id, element in reversed(self.composition.all_glyphs().items()):
             element_rect = self.get_element_rect(element)
             
             if element_rect.contains(pos):
@@ -1134,12 +1170,11 @@ class ScrollableContent(QWidget):
             return
         
         ids_to_delete = list(self.selected_element_ids)
-        for id in ids_to_delete:
-            self.composition.delete_glyph(id)
+        self.composition.delete_glyphs(ids_to_delete)
         
         self.selected_element_ids.clear()
-        self.update_element_rects_cache()
         self.elements_changed.emit()
+        self.composition.save()
         
         self.update()
 
@@ -1264,15 +1299,9 @@ class CompositorWidget(QWidget):
     
     def on_eject_button_clicked(self):
         self.back_to_main_menu_requested.emit()
-        if self.content_widget.playback_manager.is_playing:
-            self.content_widget.playback_manager.underwater()
     
     def export_ringtone(self):
-        bpm = None
-        if self.content_widget.playback_manager.is_playing:
-            bpm = self.content_widget.composition.bpm
-        
-        dialog = UI.ExportDialogWindow("Export?", self.content_widget.composition, bpm, self.content_widget.playback_manager)
+        dialog = UI.ExportDialogWindow("Export?", self.content_widget.composition, self.content_widget.composition.bpm, self.content_widget.playback_manager)
         if dialog.exec_() == QDialog.Accepted:
             self.content_widget.composition.export()
             Utils.ui_sound("Export")
@@ -1309,6 +1338,9 @@ class CompositorWidget(QWidget):
         self.export_button.setEnabled(audio_loaded and elements_exist)
 
     def initialize_compositor(self, audio_path, composition):
+        if self.content_widget.composition and self.content_widget.composition.syncer:
+            self.content_widget.composition.syncer.stop_scanning_loop()
+
         self.content_widget.track_names = [f"{i + 1}" for i in range(composition.track_number)]
         self.content_widget.composition = composition
                 
@@ -1317,3 +1349,10 @@ class CompositorWidget(QWidget):
                 
         self.content_widget.playback_manager.load_audio(audio_path)
         QTimer.singleShot(0, lambda: self.content_widget.scale_view(0))
+    
+    def closeEvent(self, event):
+        if self.content_widget.composition:
+            self.content_widget.composition.syncer.exit_app()
+            self.content_widget.composition.syncer.stop_scanning_loop()
+        
+        event.accept()

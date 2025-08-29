@@ -48,20 +48,32 @@ def audiosegment_from_numpy(np_array, sample_rate):
     )
 
 class SyncedDict(dict):
-    def __init__(self, *args, sync_callback = None, composition = None, **kwargs):
+    def __init__(self, *args, sync_callback, composition, **kwargs):
         super().__init__(*args, **kwargs)
         self.composition = composition
         self._sync_callback = sync_callback
 
     def __setitem__(self, key, value):
+        if "effect" in value:
+            self.composition.cached_effects[str(key)] = GlyphEffects.effect_to_glyph(
+                value, value["effect"], self.composition.model, self.composition.bpm
+            )
+
         super().__setitem__(key, value)
-        if self._sync_callback:
-            self._sync_callback(self)
+        self._sync_callback(self)
+        self.composition.save()
 
     def __delitem__(self, key):
         super().__delitem__(key)
-        if self._sync_callback:
-            self._sync_callback(self)
+        self._sync_callback(self)
+        self.composition.save()
+    
+    def delete_keys(self, keys):
+        for key in keys:
+            super().__delitem__(key)
+        
+        self._sync_callback(self)
+        self.composition.save()
 
     def update(self, *args, **kwargs):
         if args and isinstance(args[0], dict):
@@ -76,13 +88,8 @@ class SyncedDict(dict):
         else:
             super().update(*args, **kwargs)
 
-        if self._sync_callback:
-            self._sync_callback(self)
-
-    def clear(self):
-        super().clear()
-        if self._sync_callback:
-            self._sync_callback(self)
+        self._sync_callback(self)
+        self.composition.save()
 
 class Composition:
     def __init__(self, audiofile_path = None, settings = {}, id = None):
@@ -116,7 +123,7 @@ class Composition:
         
         # Defaults
         self.brightness = 100
-        self.duration_ms = 200
+        self.duration_ms = 100
         self.default_effect = "None"
         
         # Syncer (Real Time Visualization)
@@ -134,12 +141,11 @@ class Composition:
 
         # if settings != None, then its a new composition
         self.syncer.full_load(self.glyphs)
-        
-        if settings and audiofile_path:
-            self.prepare_cropped_audio(self.audiofile_path, settings)
 
-        elif self.id:
-            if not os.path.exists(Utils.get_songs_path(f"{self.id}/cropped_song.ogg")):
+        if not os.path.exists(Utils.get_songs_path(f"{self.id}/cropped_song.ogg")):
+            if settings != {}:
+                self.prepare_cropped_audio(self.audiofile_path, settings)
+            else:
                 self.prepare_cropped_audio(self.audiofile_path)
 
     def prepare_cropped_audio(self, audio_path, settings = None):
@@ -181,7 +187,7 @@ class Composition:
         Exporter.export_ringtone(out_path or Utils.get_songs_path(str(self.id)), self)
         Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
 
-    def new_glyph(self, track, start, duration=None, brightness=None):
+    def new_glyph(self, track, start, duration = None, brightness = None):
         self.last_glyph_id += 1
         glyph = {
             "track": track,
@@ -195,50 +201,31 @@ class Composition:
                 "name": self.default_effect,
                 "settings": {"segmented": False}
             }
-            self.cached_effects[str(self.last_glyph_id)] = GlyphEffects.effect_to_glyph(glyph, glyph["effect"], self.model, self.bpm)
         
         self.glyphs[self.last_glyph_id] = glyph
         return self.last_glyph_id, glyph
 
+    def all_glyphs(self):
+        return self.glyphs
+
     def get_glyph(self, glyph_id: int):
         return self.glyphs.get(glyph_id, "NOT FOUND")
-
-    def replace_glyph(self, id: int, dict: dict):
-        if id in self.glyphs:
-            if "effect" in dict:
-                self.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(dict, dict["effect"], self.model, self.bpm)
-
-            self.glyphs[id] = dict
-            return True
-
-    def delete_glyph(self, id: int):
-        if id in self.glyphs:
-            del self.glyphs[id]
-            return True
-        
-        return False
     
-    def change_track(self, id: int, new_tracks: list[bool] | str):
-        turned_on = []
-        glyph = self.glyphs[id]
-        
-        if isinstance(new_tracks, list):
-            for i, segment in enumerate(new_tracks):
-                if segment:
-                    turned_on.append(i)
-        
-        else:
-            turned_on = new_tracks
-        
-        self.glyphs[id]["segments"] = turned_on
-        print(self.glyphs[id])
+    def copy_glyph(self, glyph: dict, offset: int = 0) -> int:
+        new_glyph = glyph.copy()
+        new_glyph["start"] = max(0, new_glyph["start"] + offset)
 
+        self.last_glyph_id += 1
+        new_id = self.last_glyph_id
+
+        self.glyphs[new_id] = new_glyph
+        return new_id
+    
     def sorted_glyphs(self) -> tuple:
         glyphs = self.glyphs.values()
 
         only_singles_and_segments = []
         only_effects = []
-        only_segments_with_effects = []
 
         for glyph in glyphs:
             if "effect" in glyph:
@@ -247,10 +234,7 @@ class Composition:
             else:
                 only_singles_and_segments.append(glyph)
 
-        return only_singles_and_segments, only_effects, only_segments_with_effects
-    
-    def set_default_effect(self, effect_name):
-        self.default_effect = effect_name
+        return only_singles_and_segments, only_effects
     
     def save(self):
         save_path = Utils.get_songs_path(f"{self.id}/Save.json")
@@ -288,8 +272,23 @@ class Composition:
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(dict_data, f, ensure_ascii=False, indent=4)
     
+    def update_bunch_of_glyphs(self, data: dict):
+        self.glyphs.update(data)
+    
+    def replace_glyph(self, id, data: dict):
+        self.glyphs[id] = data
+    
+    def delete_glyph(self, id):
+        del self.glyphs[id]
+    
+    def delete_glyphs(self, keys):
+        self.glyphs.delete_keys(keys)
+    
     def set_brightness(self, brightness):
         self.brightness = brightness
     
     def set_duration(self, duration):
         self.duration_ms = duration
+    
+    def set_default_effect(self, effect_name):
+        self.default_effect = effect_name
