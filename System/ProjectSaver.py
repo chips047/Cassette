@@ -7,6 +7,7 @@ import subprocess
 import numpy as np
 from pydub import AudioSegment
 
+from System import UI
 from System import Exporter
 from System import GlyphEffects
 from System import RTVisualizer
@@ -145,6 +146,7 @@ class Composition:
         if not os.path.exists(Utils.get_songs_path(f"{self.id}/cropped_song.ogg")):
             if settings != {}:
                 self.prepare_cropped_audio(self.audiofile_path, settings)
+            
             else:
                 self.prepare_cropped_audio(self.audiofile_path)
 
@@ -292,3 +294,81 @@ class Composition:
     
     def set_default_effect(self, effect_name):
         self.default_effect = effect_name
+
+class MinimalComposition:
+    def __init__(self, id):
+        self.id = id if id is not None else random.randint(10000000, 99999999)
+        settings = json.load(open(Utils.get_songs_path(f"{self.id}/Save.json"), "r", encoding="utf-8"))
+            
+        self.model = settings.get("model")        
+        self.audio_settings = settings["audio"]
+        self.audio_duration = self.audio_settings["duration"]
+        self.bpm = self.audio_settings["bpm"]
+        self.audio_duration = self.audio_settings["duration"]
+
+        self.glyphs = settings["glyphs"]
+
+        self.cropped_audiofile_path = Utils.get_songs_path(f"{self.id}/cropped_song.ogg")
+        
+        if not os.path.exists(Utils.get_songs_path(f"{self.id}/cropped_song.ogg")):
+            if not os.path.exists(Utils.get_songs_path(f"{self.id}/full_song.ogg")):
+                error = UI.ErrorWindow("Corrupted!", "This save is corrupted.")
+                return error.exec_()
+
+            if settings != {}:
+                self.prepare_cropped_audio(self.audiofile_path, settings)
+            
+            else:
+                self.prepare_cropped_audio(self.audiofile_path)
+
+    def sorted_glyphs(self) -> tuple:
+        glyphs = self.glyphs.values()
+
+        only_singles_and_segments = []
+        only_effects = []
+
+        for glyph in glyphs:
+            if "effect" in glyph:
+                only_effects.append(glyph)
+
+            else:
+                only_singles_and_segments.append(glyph)
+
+        return only_singles_and_segments, only_effects
+
+    def prepare_cropped_audio(self, settings = None):
+        os.makedirs(Utils.get_songs_path(str(self.id)), exist_ok = True)
+        
+        if settings:
+            segment = self.audio_data[self.start_sample:self.end_sample]
+            
+            audio = audiosegment_from_numpy(segment, self.sampling_rate)
+            audio = audio.normalize()
+            
+            if self.fade_in_duration:
+                audio = audio.fade_in(self.fade_in_duration)
+            
+            if self.fade_out_duration:
+                audio = audio.fade_out(self.fade_out_duration)
+            
+            audio.export(Utils.get_songs_path(f"{self.id}/cropped_song.opus"), format='opus')
+            os.rename(Utils.get_songs_path(f"{self.id}/cropped_song.opus"), Utils.get_songs_path(f"{self.id}/cropped_song.ogg"))
+        
+        else:
+            full_song = AudioSegment.from_file(Utils.get_songs_path(f"{self.id}/full_song.ogg"))
+
+            segment = full_song[self.start_sample:self.end_sample]
+            segment = segment.normalize()
+            
+            if self.fade_in_duration:
+                segment = segment.fade_in(self.fade_in_duration)
+            
+            if self.fade_out_duration:
+                segment = segment.fade_out(self.fade_out_duration)
+            
+            segment.export(Utils.get_songs_path(f"{self.id}/cropped_song.opus"), format='opus')
+            os.rename(Utils.get_songs_path(f"{self.id}/cropped_song.opus"), Utils.get_songs_path(f"{self.id}/cropped_song.ogg"))
+
+    def export(self, out_path = None):
+        Exporter.export_ringtone(out_path or Utils.get_songs_path(str(self.id)), self)
+        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))

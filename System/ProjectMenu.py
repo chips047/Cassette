@@ -208,7 +208,7 @@ class TrackItemWidget(QWidget):
             self.main_menu.refresh_tracks()
     
     def on_export_clicked(self):
-        composition = ProjectSaver.Composition(id = self.project_id)
+        composition = ProjectSaver.MinimalComposition(self.project_id)
         
         dialog = UI.ExportDialogWindow("Export?", composition)
         if dialog.exec_() == QDialog.Accepted:
