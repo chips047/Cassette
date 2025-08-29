@@ -666,7 +666,7 @@ def smart_number(s):
 def export_ringtone(out_path, composition):
     model = composition.model
     labels = []
-    only_singles_and_segments, only_effects, only_segments_with_effects = composition.sorted_glyphs()
+    only_singles_and_segments, only_effects = composition.sorted_glyphs()
     
     if not model:
         return QMessageBox.critical(None, "Failed to export the ringtone", f"Model {model} is not found.")
