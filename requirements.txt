@@ -3,7 +3,6 @@ cryptography
 numpy
 pygame
 PyQt5
-PyQt5_sip
 loguru
 pydub
 aubio
