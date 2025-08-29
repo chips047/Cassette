@@ -35,6 +35,18 @@ def code_to_number_model(code: str):
         "PHONE3A": "3a"
     }.get(code)
 
+def is_segmented(track, model):
+    segments = {
+        "PHONE1": {"4": 8},
+        "PHONE2": {"4": 16, "10": 8},
+        "PHONE2A": {"1": 24},
+        "PHONE3A": {"1": 20, "2": 11, "3": 5}
+    }
+
+    print(track, model)
+
+    return segments.get(model, {}).get(str(track), False)
+
 # ANIMATIONS :))) (ms)
 VALUE_POPUP_IN = 220
 
