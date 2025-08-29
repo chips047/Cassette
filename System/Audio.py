@@ -20,22 +20,25 @@ def ensure_wav(path):
     
     return tmp_path
 
-def analyze_bpm_and_beat_grid(audio_path, hop_size = 256, min_consistent_beats = 7, tolerance = 0.07, should_interrupt = lambda: False):
+def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda: False):
     if should_interrupt():
         return 0, 0, []
 
     wav_path = ensure_wav(audio_path)
+    
+    try:
+        s = aubio.source(wav_path, 0, hop_size)
+        samplerate = s.samplerate
+    
+    except Exception as e:
+        print(f"Error opening audio file: {e}")
+        return 0, 0, []
 
-    samplerate = 0
-    s = aubio.source(wav_path, samplerate, hop_size)
-    samplerate = s.samplerate
-
-    onset_detector = aubio.onset("default", 1024, hop_size, samplerate)
+    onset_detector = aubio.onset("hfc", 1024, hop_size, samplerate)
     tempo_detector = aubio.tempo("default", 1024, hop_size, samplerate)
 
     onset_times, onset_strengths, tempo_estimates = [], [], []
-    total_frames = 0
-
+    
     while True:
         if should_interrupt():
             return 0, 0, []
@@ -51,52 +54,72 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size = 256, min_consistent_beats =
         if tempo_detector(samples):
             tempo_estimates.append(tempo_detector.get_bpm())
 
-        total_frames += read
         if read < hop_size:
             break
-
-    if len(onset_times) < min_consistent_beats + 1:
-        return 1, 0, []
-
-    if tempo_estimates:
-        tempo = np.median(tempo_estimates)
-    else:
+            
+    if not tempo_estimates or not onset_times:
         return 0, 0, []
 
-    tempo *= 2
-    beat_interval = 60.0 / tempo
-
-    onset_times = np.array(onset_times)
-    onset_strengths = np.array(onset_strengths)
-
+    median_tempo_aubio = np.median(tempo_estimates)
     intervals = np.diff(onset_times)
-    smoothed_intervals = Utils.medfilt_np(intervals, 5)
-    target_interval = beat_interval
-    mask = np.abs(smoothed_intervals - target_interval) < (target_interval * tolerance)
-
-    count = 0
-    start_idx = None
-    for i, match in enumerate(mask):
-        if should_interrupt():
-            return 0, 0, []
-        
-        if match:
-            count += 1
-            if count >= min_consistent_beats:
-                start_idx = i - count + 1
-                break
-        
-        else:
-            count = 0
-
-    first_strong_beat_time = onset_times[start_idx] if start_idx is not None else onset_times[0]
-    num_beats_back = int(first_strong_beat_time / beat_interval)
-    pseudo_first_beat = first_strong_beat_time - num_beats_back * beat_interval
-
-    if should_interrupt():
+    
+    if len(intervals) == 0:
         return 0, 0, []
 
-    return tempo / 2, pseudo_first_beat, list(onset_times)
+    hist, bins = np.histogram(intervals, bins=50)
+    most_frequent_interval_idx = np.argmax(hist)
+    most_frequent_interval = (bins[most_frequent_interval_idx] + bins[most_frequent_interval_idx+1]) / 2
+    tempo_from_intervals = 60.0 / most_frequent_interval if most_frequent_interval > 0 else 0
+    
+    possible_tempos = [
+        median_tempo_aubio,
+        median_tempo_aubio * 0.5,
+        median_tempo_aubio * 2,
+        tempo_from_intervals,
+        tempo_from_intervals * 0.5,
+        tempo_from_intervals * 2
+    ]
+    
+    def score_tempo(test_tempo):
+        if test_tempo <= 0:
+            return -1
+        beat_interval = 60.0 / test_tempo
+        score = np.sum(np.abs(intervals - beat_interval) < (beat_interval * 0.05))
+        score += np.sum(np.abs(intervals - beat_interval * 2) < (beat_interval * 2 * 0.05))
+        score += np.sum(np.abs(intervals - beat_interval / 2) < (beat_interval / 2 * 0.05))
+        if 80 <= test_tempo <= 140:
+            score *= 1.2
+        
+        return score
+    
+    valid_tempos = [t for t in possible_tempos if 60 <= t <= 180]
+    best_tempo = max(valid_tempos, key=score_tempo, default=0)
+
+    half_tempo = best_tempo / 2
+    if 60 <= half_tempo <= 160 and score_tempo(half_tempo) > score_tempo(best_tempo) * 0.8:
+        best_tempo = half_tempo
+
+    scores = {
+        best_tempo: score_tempo(best_tempo),
+        best_tempo / 2: score_tempo(best_tempo / 2),
+        best_tempo * 2: score_tempo(best_tempo * 2)
+    }
+    
+    best_tempo = max(scores, key=lambda t: scores[t] if 60 <= t <= 160 else -1)
+
+    if best_tempo == 0:
+        return 0, 0, []
+
+    strongest_onset_time = onset_times[np.argmax(onset_strengths)]
+    beat_interval = 60.0 / best_tempo
+
+    num_beats_back = int(strongest_onset_time / beat_interval)
+    pseudo_first_beat = strongest_onset_time - num_beats_back * beat_interval
+    
+    if pseudo_first_beat < 0:
+        pseudo_first_beat += beat_interval
+    
+    return best_tempo, pseudo_first_beat, list(onset_times)
 
 def bpm_task(file_path, queue):
     bpm, first_beat, beats = analyze_bpm_and_beat_grid(file_path)
