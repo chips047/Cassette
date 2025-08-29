@@ -126,6 +126,10 @@ class ApplicationWindow(QMainWindow):
     
     @pyqtSlot()
     def hide_compositor_and_show_main_menu(self):
+        if hasattr(self.compositor_widget, "composition"):
+            print("Stopping detector...")
+            self.compositor_widget.composition.syncer.stop_scanning_loop()
+        
         anim_out_compositor = self.fade_out(self.compositor_widget)
 
         def on_fade_out_compositor_finished():
