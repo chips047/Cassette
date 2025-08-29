@@ -1,5 +1,6 @@
 import re
 import time
+import math
 import pygame
 
 import numpy as np
@@ -398,7 +399,8 @@ class AudioSetupDialog(QDialog):
         
         self.end_time_sec = self.trim_widget.duration
         self.end_time_label.max_number = self.end_time_sec
-        self.end_time_label.setText(int(self.end_time_sec))
+        self.end_time_label.setText(max(1, math.ceil(self.end_time_sec)))
+
         self.update_texboxes(self.trim_widget.start_time, self.trim_widget.end_time)
 
         self.play_button.setEnabled(True)
@@ -419,8 +421,8 @@ class AudioSetupDialog(QDialog):
         self.start_time_label.blockSignals(True)
         self.end_time_label.blockSignals(True)
         
-        self.start_time_label.setText(int(start))
-        self.end_time_label.setText(int(end))
+        self.start_time_label.setText(int(round(start)))
+        self.end_time_label.setText(max(1, int(round(end))))
         
         self.start_time_label.blockSignals(False)
         self.end_time_label.blockSignals(False)
@@ -527,6 +529,7 @@ class AudioSetupDialog(QDialog):
         
         self.start_sample = int(self.trim_widget.start_time * self.sampling_rate)
         self.end_sample = int(self.trim_widget.end_time * self.sampling_rate)
+
         super().accept()
 
     def on_bpm_ready(self, bpm, first_beat_offset_sec, snapped_times):
