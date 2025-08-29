@@ -1,8 +1,14 @@
 import os
 import sys
+import time
+import pygame
 import shutil
 import platform
 import subprocess
+
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
 
 import numpy as np
 
@@ -56,20 +62,6 @@ def system_global_error_message(title, message):
             ])
     
     sys.exit(1)
-
-try:
-    import time
-    import pygame
-
-    from PyQt5.QtGui import *
-    from PyQt5.QtCore import *
-    from PyQt5.QtWidgets import *
-
-except ModuleNotFoundError as e:
-    system_global_error_message(
-        "Oops!",
-        f"Missing module: {e.name}\nTry to install it with the \"pip install {e.name}\" command."
-    )
 
 def get_time():
     t = time.localtime()
@@ -168,17 +160,3 @@ def ui_sound(name, tone = None):
         new_sound.play()
 
     except Exception as e: print(str(e))
-
-def lowpass_numpy(data, strength = 10):
-    if data.ndim == 1:
-        kernel = np.ones(strength) / strength
-        return np.convolve(data, kernel, mode="same")
-    
-    else:
-        filtered = []
-        for ch in range(data.shape[1]):
-            kernel = np.ones(strength) / strength
-            filtered_ch = np.convolve(data[:, ch], kernel, mode="same")
-            filtered.append(filtered_ch)
-        
-        return np.stack(filtered, axis=1)
