@@ -1,6 +1,8 @@
 import os
 import random
 import string
+import traceback
+
 import numpy as np
 
 from PyQt5.QtGui import *
@@ -15,6 +17,7 @@ from . import GlyphEffects
 from .Constants import *
 
 class GlitchyButton(QPushButton):
+    glitch_started = pyqtSignal()
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -46,6 +49,8 @@ class GlitchyButton(QPushButton):
 
     def start_glitch(self):
         Utils.ui_sound("Reject")
+        self.glitch_started.emit()
+
         if self.glitch_timer.isActive():
             return
 
@@ -150,7 +155,6 @@ class Selector(QWidget):
 
     def _on_button_clicked(self, button):
         text = button.text()
-        print(text)
         self.selection_changed.emit(id, text)
 
     def currentIndex(self) -> int:
@@ -178,6 +182,7 @@ class SelectorWithLabel(QWidget):
         *,
         width: int = 300,
         parent=None,
+        default: int = None
     ):
         super().__init__(parent)
         self.setContentsMargins(0, 0, 0, 0)
@@ -224,9 +229,11 @@ class SelectorWithLabel(QWidget):
             btn.setCursor(Qt.PointingHandCursor)
             selector_layout.addWidget(btn)
             self._group.addButton(btn, id=idx)
-
-        if self._group.buttons():
-            self._group.buttons()[0].setChecked(True)
+        
+        if default:
+            self._group.buttons()[default].setChecked(True)
+        
+        else: self._group.buttons()[0].setChecked(True)
 
         inner_layout.addWidget(selector_container)
         main_layout.addWidget(self.container_background)
@@ -463,6 +470,8 @@ class DraggableValueControl(_BaseControlWidget):
             event.accept()
 
 class SegmentedBar(QWidget):
+    segment_changed = pyqtSignal()
+
     def __init__(self, segments = 8, defaults = None):
         super().__init__()
         self.segments = segments
@@ -531,6 +540,7 @@ class SegmentedBar(QWidget):
                 tone += 0.05
 
             Utils.ui_sound("Toggle", tone)
+            self.segment_changed.emit()
             self.update()
 
 class CycleButton(_BaseControlWidget):
@@ -1642,7 +1652,7 @@ class Settings(QDialog):
         super().paintEvent(event)
 
 class FloatingWindow(QDialog):
-    MARGIN = 70
+    MARGIN = 120
     
     def __init__(self, title: str, width: int, height: int, bpm: int = None, player = None):
         super().__init__()
@@ -1677,7 +1687,7 @@ class FloatingWindow(QDialog):
         
         QTimer.singleShot(0, self.start_entry_animation)
         QTimer.singleShot(20000, lambda: self.title_label.setText("Yes, this is trippy."))
-    
+
     def resizeEvent(self, event):
         self.content_width  = self.width()  - self.MARGIN * 2
         self.content_height = self.height() - self.MARGIN * 2
@@ -1755,6 +1765,8 @@ class FloatingWindow(QDialog):
 
     def start_entry_animation(self):
         screen_center = QApplication.primaryScreen().geometry().center()
+        self.adjustSize()
+
         final_rect = QRect(
             screen_center.x() - self.width() // 2,
             screen_center.y() - self.height() // 2,
@@ -1763,30 +1775,48 @@ class FloatingWindow(QDialog):
 
         self.setGeometry(final_rect.translated(0, +20))
 
-        anim_geo = QPropertyAnimation(self, b"geometry")
-        anim_geo.setDuration(700) # 800
-        anim_geo.setStartValue(final_rect.translated(0, -200)) # -200
-        anim_geo.setEndValue(final_rect)
+        curve = QEasingCurve(QEasingCurve.OutElastic)
+        curve.setPeriod(0.27)
+        curve.setAmplitude(1.7)
+
+        start_angle = random.choice([
+            random.randint(-40, -20),
+            random.randint(20, 40)
+        ])
+
+        start_pos_y = random.choice([
+            random.randint(-250, -130),
+            random.randint(130, 250)
+        ])
+
+        anim_geo = QPropertyAnimation(self, b"pos")
+        anim_geo.setDuration(700)
+        anim_geo.setStartValue(final_rect.translated(0, start_pos_y).topLeft())
+        anim_geo.setEndValue(final_rect.topLeft())
         anim_geo.setEasingCurve(QEasingCurve.OutElastic)
         
         anim_opacity = QPropertyAnimation(self, b"windowOpacity")
-        anim_opacity.setDuration(350) # 350
+        anim_opacity.setDuration(450)
         anim_opacity.setStartValue(0)
         anim_opacity.setEndValue(1)
         anim_opacity.setEasingCurve(QEasingCurve.OutExpo)
 
-        self.rotation_anim = QPropertyAnimation(self, b"entryRotation")
-        self.rotation_anim.setDuration(1100) # 1200
-        start_angle = random.randint(-65, -15) if random.random() < 0.5 else random.randint(15, 65)
-        self.rotation_anim.setStartValue(start_angle)
-        self.rotation_anim.setEndValue(0)
-        self.rotation_anim.setEasingCurve(QEasingCurve.OutElastic)
+        anim_scale = QPropertyAnimation(self, b"exitScale")
+        anim_scale.setDuration(1150)
+        anim_scale.setStartValue(1.4)
+        anim_scale.setEndValue(1.0)
+        anim_scale.setEasingCurve(QEasingCurve.OutExpo)
+
+        rotation_anim = QPropertyAnimation(self, b"entryRotation")
+        rotation_anim.setDuration(1000)
+        rotation_anim.setStartValue(start_angle)
+        rotation_anim.setEndValue(0)
+        rotation_anim.setEasingCurve(curve)
 
         self.anim_group = QParallelAnimationGroup()
-        self.anim_group.addAnimation(anim_geo)
-        self.anim_group.addAnimation(anim_opacity)
-        self.anim_group.addAnimation(self.rotation_anim)
-        
+        for anim in (anim_scale, anim_geo, rotation_anim, anim_opacity):
+            self.anim_group.addAnimation(anim)
+
         self.animation_timer.start()
         self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
         
@@ -1821,8 +1851,59 @@ class FloatingWindow(QDialog):
         self.anim_scale.setEasingCurve(QEasingCurve.OutCubic)
         
         if self.player.is_playing:
-            print("yes")
             self.anim_scale.start()
+    
+    def wobble(self):
+        self.anim_scale = QPropertyAnimation(self, b"exitScale")
+        self.anim_scale.setDuration(400)
+        self.anim_scale.setStartValue(1.03)
+        self.anim_scale.setEndValue(1.0)
+        self.anim_scale.setEasingCurve(QEasingCurve.OutCubic)
+        
+        self.anim_scale.start()
+    
+    def disturbeAnim(self):
+        screen_center = QApplication.primaryScreen().geometry().center()
+        final_rect = QRect(
+            screen_center.x() - self.width() // 2,
+            screen_center.y() - self.height() // 2,
+            self.width(), self.height()
+        )
+
+        start_angle = random.choice([
+            random.randint(-30, -15),
+            random.randint(15, 30)
+        ])
+
+        anim_scale = QPropertyAnimation(self, b"exitScale")
+        anim_scale.setDuration(400)
+        anim_scale.setStartValue(1.04)
+        anim_scale.setEndValue(1.0)
+        anim_scale.setEasingCurve(QEasingCurve.OutCubic)
+
+        anim_geo = QPropertyAnimation(self, b"pos")
+        anim_geo.setDuration(500)
+        anim_geo.setEasingCurve(QEasingCurve.OutElastic)
+        anim_geo.setKeyValues([
+            (0.0, final_rect.topLeft()),
+            (0.5, final_rect.topLeft() + QPoint(-15, -15)),
+            (1.0, final_rect.topLeft())
+        ])
+
+        rotation_anim = QPropertyAnimation(self, b"entryRotation")
+        rotation_anim.setDuration(700)
+        rotation_anim.setEasingCurve(QEasingCurve.OutElastic)
+        rotation_anim.setKeyValues([
+            (0.0, 0),
+            (0.5, start_angle),
+            (1.0, 0)
+        ])
+
+        self.anim_group = QParallelAnimationGroup(self)
+        for anim in (anim_scale, anim_geo, rotation_anim):
+            self.anim_group.addAnimation(anim)
+
+        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
 
     def start_exit_animation(self):
         self.bpm_timer.stop()
@@ -1836,9 +1917,9 @@ class FloatingWindow(QDialog):
         anim_scale.setEasingCurve(QEasingCurve.OutCubic)
 
         anim_opacity = QPropertyAnimation(self, b"windowOpacity")
-        anim_opacity.setDuration(270)
-        anim_opacity.setStartValue(1.0)
-        anim_opacity.setEndValue(0.0)
+        anim_opacity.setDuration(400)
+        anim_opacity.setStartValue(1)
+        anim_opacity.setEndValue(0)
         anim_opacity.setEasingCurve(QEasingCurve.OutCubic)
 
         self.anim_group = QParallelAnimationGroup()
@@ -1850,9 +1931,10 @@ class FloatingWindow(QDialog):
     def event(self, event):
         if event.type() == QEvent.ChildAdded:
             child = event.child()
+
             if isinstance(child, QWidget):
                 self._apply_mouse_tracking_and_filter(child)
-        
+
         return super().event(event)
 
     def mouseMoveEvent(self, event):
@@ -1925,10 +2007,9 @@ class DialogInputWindow(FloatingWindow):
         self.layout.insertWidget(1, self.input_field)
         
         self.ok_button = NothingButton("OK")
-        self.ok_button.setFixedSize(16777215, 16777215)
-
         self.cancel_button = ButtonWithOutline("Cancel")
-        self.cancel_button.setFixedSize(16777215, 16777215)
+
+        self.ok_button.glitch_started.connect(self.disturbeAnim)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
@@ -1940,7 +2021,6 @@ class DialogInputWindow(FloatingWindow):
         self.cancel_button.clicked.connect(self.on_cancel)
 
     def on_ok(self):
-        Utils.ui_sound("PopupClose")
         text = self.input_field.text()
         
         if text is None:
@@ -1957,17 +2037,16 @@ class ExportDialogWindow(FloatingWindow):
     selection_changed = pyqtSignal(str)
     
     def __init__(self, title, composition, bpm = None, player = None):
-        super().__init__(title, 400, 250, bpm, player)
+        super().__init__(title, 600, 250, bpm, player)
         self.composition = composition
         self.original_model = composition.model
         
         self._was_cancelled = False
+        self.port_segments = False
+        self.max_tilt_angle = 15
         
         self.ok_button = NothingButton("Tape it!")
-        self.ok_button.setFixedSize(16777215, 16777215)
-
         self.cancel_button = ButtonWithOutline("Later")
-        self.cancel_button.setFixedSize(16777215, 16777215)
         
         self.ok_button.clicked.connect(self.on_ok)
         self.cancel_button.clicked.connect(self.on_cancel)
@@ -1980,28 +2059,51 @@ class ExportDialogWindow(FloatingWindow):
         
         self.number_model = code_to_number_model(composition.model)
         self.choices = PortVariants[composition.model]
+
         self.combobox = SelectorWithLabel("Tap a model to port the song to it.", self.choices)
         self.combobox.selection_changed.connect(self.request_port)
+
+        self.checkbox = CheckboxWithLabel("Port Segments", "Ports glyph segments to other devices")
+        self.checkbox.stateChanged(self.port_segments_callback)
         
         self.layout.insertWidget(1, self.combobox)
+        self.layout.insertWidget(1, self.checkbox)
     
-    def request_port(self, index, text):
+    def request_port(self, _, text):
         code_model = number_model_to_code(text)
         
-        ported, ported_to = Porter.Port.port(self.original_model, code_model, self.composition)
-        Porter.Port.export_port(ported, ported_to, self.composition.duration_ms, self.composition.id)
+        try:
+            ported, ported_to = Porter.Port.port(self.original_model, code_model, self.composition, self.port_segments)
+            Porter.Port.export_port(ported, ported_to, self.composition.audio_duration, self.composition.id)
+
+            Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
+            Utils.ui_sound("Export")
         
-        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
-        Utils.ui_sound("Export")
+        except Exception as e:
+            tb_last_line = "\n".join(traceback.format_exc().strip().splitlines()[-4:])
+            print("\n".join(traceback.format_exc().strip().splitlines()))
+
+            error = ErrorWindow(
+                "Somethin' went wrong...",
+                f"Report this error to chips047:\n{tb_last_line}"
+            )
+            error.exec_()
+    
+    def port_segments_callback(self, state):
+        if state == 2:
+            warning = ErrorWindow("Wait a second!", "Porting segments means that the zones you configured will attempt to adapt to a different device model. This may cause the zones to appear differently than intended. It is recommended not to enable this feature.")
+            warning.exec_()
+
+            self.port_segments = True
+        
+        else:
+            self.port_segments = False
 
 class DialogWindow(FloatingWindow):
     def __init__(self, title):
         super().__init__(title, 400, 130)
         self.ok_button = NothingButton("Hell yeah")
-        self.ok_button.setFixedSize(16777215, 16777215)
-
         self.cancel_button = ButtonWithOutline("Nah")
-        self.cancel_button.setFixedSize(16777215, 16777215)
         
         self.ok_button.clicked.connect(self.on_ok)
         self.cancel_button.clicked.connect(self.on_cancel)
@@ -2016,10 +2118,7 @@ class SegmentEditor(FloatingWindow):
     def __init__(self, title, bpm = None, player = None, segment_num = None, defaults = None):
         super().__init__(title, 400, 170, bpm, player)
         self.ok_button = NothingButton("Apply!")
-        self.ok_button.setFixedSize(16777215, 16777215)
-
         self.cancel_button = ButtonWithOutline("Nah")
-        self.cancel_button.setFixedSize(16777215, 16777215)
         
         self.ok_button.clicked.connect(self.on_ok)
         self.cancel_button.clicked.connect(self.on_cancel)
@@ -2033,23 +2132,26 @@ class SegmentEditor(FloatingWindow):
         
         self.layout.addWidget(self.segmented_bar)
         self.layout.addLayout(button_row)
+
+        self.segmented_bar.segment_changed.connect(self.wobble)
     
     def segments(self):
         return self.segmented_bar.active
 
 class ErrorWindow(FloatingWindow):
-    def __init__(self, title, description, bpm = None, player = None):
+    def __init__(self, title, description, button_text = "Cool", bpm = None, player = None):
         super().__init__(title, 400, 170, bpm, player)
-        self.ok_button = NothingButton("Cool")
-        self.ok_button.setFixedSize(16777215, 16777215)
+        self.ok_button = NothingButton(button_text)
 
         self.description_label = QLabel(description)
         self.description_label.setFont(Utils.NType(12))
         self.description_label.setStyleSheet(Styles.Other.second_font)
         self.description_label.setContentsMargins(0, 0, 0, 5)
         self.description_label.setWordWrap(True)
-        
-        self.layout.addWidget(self.description_label)
 
         self.ok_button.clicked.connect(self.on_ok)
+        
+        self.layout.addWidget(self.description_label)
         self.layout.addWidget(self.ok_button)
+
+        self.adjustSize()
