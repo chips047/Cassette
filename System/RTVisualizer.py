@@ -17,10 +17,23 @@ class DeviceScanner(QObject):
         super().__init__()
         self.syncer = syncer
         self._running = True
+        self._timer = None
+
+    @pyqtSlot()
+    def run(self):
+        if not self._running:
+            return
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(3000)
+        self._timer.timeout.connect(self.scan)
+        self._timer.start()
 
     @pyqtSlot()
     def scan(self):
         if not self._running:
+            if self._timer:
+                self._timer.stop()
             return
 
         old_devices = self.syncer.devices.copy()
@@ -34,9 +47,14 @@ class DeviceScanner(QObject):
 class GlyphSyncer:
     def __init__(self, composition):
         self.last_synced = {}
+
         self.composition = composition
         self.connected_model = None
         self.devices = []
+
+        self._scanner_thread = None
+        self._scanner_worker = None
+        
         self.scan_devices()
         
         if self.devices:
@@ -44,12 +62,22 @@ class GlyphSyncer:
             self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     
     def start_scanning_loop(self):
+        if self._scanner_thread and self._scanner_thread.isRunning():
+            return
+
         self._scanner_thread = QThread()
         self._scanner_worker = DeviceScanner(self)
+        
         self._scanner_worker.moveToThread(self._scanner_thread)
+        self._scanner_thread.started.connect(self._scanner_worker.run)
 
-        self._scanner_thread.started.connect(self._init_worker_timer)
         self._scanner_thread.start()
+
+    def stop_scanning_loop(self):
+        if self._scanner_thread and self._scanner_thread.isRunning():
+            self._scanner_worker.stop()
+            self._scanner_thread.quit()
+            self._scanner_thread.wait(3000)
 
     def _init_worker_timer(self):
         self._scanner_timer = QTimer()
@@ -61,6 +89,7 @@ class GlyphSyncer:
         Utils.run([ADB_PATH, "-s", device_id, "forward", "tcp:7777", "tcp:7777"], check=True)
         Utils.run([ADB_PATH, "shell", "settings", "put", "global", "nt_glyph_interface_debug_enable", "1"])
         Utils.run([ADB_PATH, "shell", "am", "force-stop", "com.glyph.receiver"], check = True)
+        #Utils.run([ADB_PATH, "shell", "am", "stopservice", "com.glyph.receiver/.MainService"])
         Utils.run([ADB_PATH, "shell", "am", "start-foreground-service", "-n", "com.glyph.receiver/.MainService"], check = True)
 
         self.connected_model = self.get_model(device_id)
@@ -92,7 +121,7 @@ class GlyphSyncer:
             return
 
         if hasattr(self.composition, "glyphs"):
-            self.full_load(self.composition.glyphs)
+            self.full_load(self.composition.all_glyphs())
     
     def get_model(self, device_id):
         result = Utils.run(
@@ -148,13 +177,15 @@ class GlyphSyncer:
             self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     def sync(self, current: dict):
+        print("- - - - - SYNC - - - - -")
         current = {str(k): v for k, v in current.items()}
         deleted = set(self.last_synced) - set(current)
         
         def glyph_changed(g1, g2):
             if g1 is None:
                 return True
-            return any(g1.get(k) != g2.get(k) for k in ("track", "start", "duration", "brightness", "effect"))
+            
+            return any(g1.get(k) != g2.get(k) for k in ("track", "start", "duration", "brightness", "effect", "segments"))
 
         changed = {
             gid: glyph
@@ -202,3 +233,10 @@ class GlyphSyncer:
         }
         self._send_json(payload)
         self.last_synced = copy.deepcopy(dict(glyphs))
+    
+    def exit_app(self):
+        self._send_json(
+            {
+                "action": "stop_app"
+            }
+        )
