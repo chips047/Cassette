@@ -8,7 +8,7 @@ class Colors:
     effect_menu_third = "#252628"
     
     nothing_accent = "#d6141f"
-    nothing_accent_second = "#d20202"
+    nothing_accent_second = "#c20808"
     nothing_accent_third = "#ba0505"
     
     black = "#000000"
