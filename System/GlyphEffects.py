@@ -92,7 +92,7 @@ def effect_to_label(element, effect, model, bpm, port_track = None):
     kwargs = parse_effect_args(config, settings_meta)
     
     if port_track is not None:
-        element["port_track"] = port_track
+        element["track"] = port_track
     
     result = glyphs_to_strings(effect_fn(element, model, bpm = bpm, **kwargs))
 
@@ -129,6 +129,7 @@ def get_data(glyph: dict, model: str, segmented = False):
     n = glyph["track"]
     brightness = int(glyph["brightness"])
     segs = None
+    turned_on_segs = glyph.get("segments")
 
     try:
         segs = ModelSegments[model][n]
@@ -138,7 +139,7 @@ def get_data(glyph: dict, model: str, segmented = False):
             if "port_track" in glyph:
                 segs = ModelSegments[model][glyph["port_track"]]
 
-    return n, segs, duration, start, end, brightness
+    return n, segs, duration, start, end, brightness, turned_on_segs
 
 def _format_entry(t0: float, t1: float, label: str) -> str:
     return f"{t0:.6f}\t{t1:.6f}\t{label}"
@@ -147,26 +148,39 @@ def _format_entry(t0: float, t1: float, label: str) -> str:
 # Effects
 # ---------------------------------------------------------------------------
 
+def fade_template(glyph: dict, model: str, bpm: int, steps: list[tuple[int, int]]):
+    n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model)
+
+    result = []
+    step_duration = duration // len(steps)
+    current_start = start
+
+    for b, eb in steps:
+        item = {
+            "start": current_start,
+            "duration": step_duration,
+            "track": n,
+            "brightness": b if b != "auto" else brightness,
+            "end_brightness": eb if eb != "auto" else brightness,
+        }
+        if turned_on_segs:
+            item["segments"] = turned_on_segs
+        result.append(item)
+        current_start += step_duration
+
+    return result
+
 def fade_in(glyph: dict, model: str, bpm: int):
-    n, segs, duration, start, end, brightness = get_data(glyph, model)
-    return [{"start": start, "duration": duration, "track": n, "brightness": 0, "end_brightness": brightness}]
+    return fade_template(glyph, model, bpm, [(0, "auto")])
 
 def fade_out(glyph: dict, model: str, bpm: int):
-    n, segs, duration, start, end, brightness = get_data(glyph, model)
-    return [{"start": start, "duration": duration, "track": n, "brightness": brightness, "end_brightness": 0}]
+    return fade_template(glyph, model, bpm, [("auto", 0)])
 
 def fade_in_out(glyph: dict, model: str, bpm: int):
-    n, segs, duration, start, end, brightness = get_data(glyph, model)
-
-    mid = start + duration / 2
-
-    return [
-        {"start": start, "duration": int(duration / 2), "track": n, "brightness": 0, "end_brightness": brightness},
-        {"start": mid, "duration": int(duration / 2), "track": n, "brightness": brightness, "end_brightness": 0}
-    ]
+    return fade_template(glyph, model, bpm, [(0, "auto"), ("auto", 0)])
 
 def sidebeat(glyph: dict, model: str, bpm: int, part: str):
-    n, segs, duration, start, end, _ = get_data(glyph, model, True)
+    n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model, True)
     segment_list = list(range(1, segs + 1))
     segments_in_one_part = segs // 3
     time_per_segment = duration / segments_in_one_part / 2
@@ -195,7 +209,8 @@ def sidebeat(glyph: dict, model: str, bpm: int, part: str):
             out.append({
                 "start": start + shrink,
                 "duration": (end - start) - 2 * shrink,
-                "track": f"{n}.{base_segment + i * direction}",
+                "track": str(n),
+                "segments": [(base_segment + i * direction) - 1],
                 "brightness": 100
             })
     
@@ -204,34 +219,38 @@ def sidebeat(glyph: dict, model: str, bpm: int, part: str):
 def glitch(glyph: dict, model: str, bpm: int, fps=20.0, duty_cycle=0.7, min_br_ratio=0.3, bpm_snap=False):
     if bpm_snap:
         fps = (bpm / 60) * bpm_snap
+    
     min_br_ratio /= 100
 
-    n, segs, duration, t, t_end, head_br = get_data(glyph, model, True)
+    n, segs, duration, t, t_end, head_br, turned_on_segs = get_data(glyph, model, True)
+    turned_on_segs = get_data(glyph, model, True)
     frame = 1000.0 / fps
     out = []
 
     min_br = max(5, int(head_br * min_br_ratio))
+    available_segments = glyph.get("segments", list(range(segs)))
+    count = int(len(available_segments) * duty_cycle)
 
     while t < t_end - 1e-9:
         t0 = t
         t1 = min(t + frame, t_end)
 
-        for seg_idx in range(1, segs + 1):
-            if random.random() < duty_cycle:
-                br = random.randint(min_br, head_br)
-                out.append({
-                    "start": t0,
-                    "duration": t1 - t0,
-                    "track": f"{n}.{seg_idx}",
-                    "brightness": br
-                })
+        chosen = random.sample(available_segments, count)
+        br = random.randint(min_br, head_br)
+        out.append({
+            "start": t0,
+            "duration": t1 - t0,
+            "track": str(n),
+            "segments": list(set(chosen)),
+            "brightness": br
+        })
 
         t = t1
 
     return out
 
 def bpm_effect(glyph: dict, model: str, bpm: float, multiplier: int):
-    n, _, _, start, end, brightness = get_data(glyph, model)
+    n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model)
 
     actual_bpm = bpm * multiplier
     beat_interval = 60000.0 / actual_bpm
@@ -240,43 +259,54 @@ def bpm_effect(glyph: dict, model: str, bpm: float, multiplier: int):
 
     while t < end:
         t_off = min(t + beat_interval / 2, end)
-        out.append(fade_out({
+        glyph = {
             "start": t,
             "duration": t_off - t,
             "track": n,
             "brightness": brightness
-        }, model, bpm)[0])
+        }
+
+        if turned_on_segs:
+            glyph["segments"] = turned_on_segs
+
+        out.append(fade_out(glyph, model, bpm)[0])
         
         t += beat_interval
 
     return out
 
 def fill(glyph: dict, model: str, bpm: int, side=1):
-    n, segs, duration, start, end, brightness = get_data(glyph, model, True)
+    n, segs, duration, start, end, brightness, _ = get_data(glyph, model, True)
     seg_step = duration / segs
     indices = range(segs) if side == 1 else reversed(range(segs))
 
     return [{
         "start": start + i * seg_step,
         "duration": end - (start + i * seg_step),
-        "track": f"{n}.{i + 1}",
+        "track": str(n),
+        "segments": [i],
         "brightness": brightness
     } for i in indices]
 
 def strobe(glyph: dict, model: str, bpm: int, frequency=1):
-    n, _, _, start, end, brightness = get_data(glyph, model)
+    n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model)
     interval = 1000.0 / frequency
     t = start
     out = []
 
     while t < end:
         t_off = min(t + interval / 2, end)
-        out.append({
+        item = {
             "start": t,
             "duration": t_off - t,
             "track": n,
             "brightness": brightness
-        })
+        }
+
+        if turned_on_segs:
+            item["segments"] = turned_on_segs
+
+        out.append(item)
         t += interval
 
     return out
@@ -285,7 +315,7 @@ def soft_or_pseudo_strobe(glyph: dict, model: str, bpm: int, frequency=1, first_
     if bpm_snap:
         frequency = (bpm / 60) * bpm_snap
 
-    n, _, _, start, end, _ = get_data(glyph, model)
+    n, _, _, start, end, _, turned_on_segs = get_data(glyph, model)
     interval = 1000.0 / frequency
     t = start
     out = []
@@ -293,24 +323,35 @@ def soft_or_pseudo_strobe(glyph: dict, model: str, bpm: int, frequency=1, first_
     while t < end:
         t_off = min(t + interval / 2, end)
         duration = t_off - t
-        out.append({
-            "start": t,
-            "duration": duration,
-            "track": n,
-            "brightness": first_brightness
-        })
-        out.append({
-            "start": t_off,
-            "duration": duration,
-            "track": n,
-            "brightness": second_brightness
-        })
+
+        items = [
+            {
+                "start": t,
+                "duration": duration,
+                "track": n,
+                "brightness": first_brightness
+            },
+            {
+                "start": t_off,
+                "duration": duration,
+                "track": n,
+                "brightness": second_brightness
+            }
+        ]
+
+        if turned_on_segs:
+            for item in items:
+                item["segments"] = turned_on_segs
+
+        for item in items:
+            out.append(item)
+        
         t += interval
 
     return out
 
 def sweep(glyph: dict, model: str, bpm: int, side=1):
-    n, segs, duration, start, _, brightness = get_data(glyph, model, True)
+    n, segs, duration, start, _, brightness, turned_on_segs = get_data(glyph, model, True)
     order = list(range(segs, 0, -1)) + list(range(2, segs + 1))
     if side == -1:
         order = order[::-1]
@@ -320,7 +361,8 @@ def sweep(glyph: dict, model: str, bpm: int, side=1):
     return [{
         "start": start + i * step,
         "duration": step,
-        "track": f"{n}.{seg}",
+        "track": str(n),
+        "segments": [seg - 1],
         "brightness": brightness
     } for i, seg in enumerate(order)]
 
@@ -328,12 +370,13 @@ def _tail_brightness(head_br: int, tail_pos: int, tail_len: int) -> int:
     if tail_pos == 0 or tail_len <= 1:
         return head_br
 
-    min_br = max(5, int(head_br * 0.2))
+    min_br = max(5, int(head_br * 0.05))
     span = head_br - min_br
+
     return max(min_br, int(head_br - span * (tail_pos / (tail_len - 1))))
 
 def boomerang(glyph: dict, model: str, bpm: int, jumps: int):
-    n, segs, duration, t, t_end, br = get_data(glyph, model, True)
+    n, segs, duration, t, t_end, br, turned_on_segs = get_data(glyph, model, True)
     jumps += 2
     growth_range = segs - 1
     steps_to_grow = jumps - 1 if jumps > 1 else 1
@@ -365,7 +408,8 @@ def boomerang(glyph: dict, model: str, bpm: int, jumps: int):
                 out.append({
                     "start": t,
                     "duration": STEP,
-                    "track": f"{n}.{seg_idx}",
+                    "track": str(n),
+                    "segments": [seg_idx - 1],
                     "brightness": b
                 })
 
@@ -383,7 +427,7 @@ def boomerang(glyph: dict, model: str, bpm: int, jumps: int):
     return out
 
 def zebra(glyph: dict, model: str, bpm: int, fps=1, on_count=1, off_count=1, side=1, bpm_snap=False):
-    n, segs, duration, start, _, br = get_data(glyph, model, True)
+    n, segs, duration, start, _, br, turned_on_segs = get_data(glyph, model, True)
     if bpm_snap:
         fps = (bpm / 60) * bpm_snap
 
@@ -402,7 +446,8 @@ def zebra(glyph: dict, model: str, bpm: int, fps=1, on_count=1, off_count=1, sid
                 out.append({
                     "start": t0,
                     "duration": t1 - t0,
-                    "track": f"{n}.{i + 1}",
+                    "track": str(n),
+                    "segments": [i],
                     "brightness": br
                 })
 
@@ -412,7 +457,7 @@ def shocker(glyph: dict, model: str, bpm: int, frequency=5.0, fade_out=True, bpm
     if bpm_snap:
         frequency = (bpm / 60) * bpm_snap
 
-    n, segs, duration, start, end, brightness = get_data(glyph, model, True)
+    n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model, True)
     interval = 1000.0 / frequency
     t = start
     out = []
@@ -428,7 +473,8 @@ def shocker(glyph: dict, model: str, bpm: int, frequency=5.0, fade_out=True, bpm
             element = {
                 "start": t,
                 "duration": t_half - t,
-                "track": f"{n}.{i}",
+                "track": str(n),
+                "segments": [i - 1],
                 "brightness": brightness
             }
             
@@ -441,7 +487,8 @@ def shocker(glyph: dict, model: str, bpm: int, frequency=5.0, fade_out=True, bpm
             element = {
                 "start": t_half,
                 "duration": t_next - t_half,
-                "track": f"{n}.{i}",
+                "track": str(n),
+                "segments": [i - 1],
                 "brightness": brightness
             }
             
@@ -457,29 +504,34 @@ def shocker(glyph: dict, model: str, bpm: int, frequency=5.0, fade_out=True, bpm
 EffectsConfig = {
     "None": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/None.gif",
         "settings": {}
     },
     "Fade out": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/FadeOut.gif",
         "function": fade_out,
         "settings": {}
     },
     "Fade in": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/FadeIn.gif",
         "function": fade_in,
         "settings": {}
     },
     "Fade in + out": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/FadeInOut.gif",
         "function": fade_in_out,
         "settings": {}
     },
     "Fill": {
         "segmented": True,
+        "supports_segmentation": False,
         "gif": "System/Media/Effects/Fill.gif",
         "function": fill,
         "settings": {
@@ -493,6 +545,7 @@ EffectsConfig = {
     },
     "Zebra": {
         "segmented": True,
+        "supports_segmentation": False,
         "gif": "System/Media/Effects/Zebra.gif",
         "function": zebra,
         "settings": {
@@ -539,6 +592,7 @@ EffectsConfig = {
     },
     "Strobe": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/Strobe.gif",
         "function": strobe,
         "settings": {
@@ -553,6 +607,7 @@ EffectsConfig = {
     },
     "Soft Strobe": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/SoftStrobe.gif",
         "function": soft_or_pseudo_strobe,
         "settings": {
@@ -593,6 +648,7 @@ EffectsConfig = {
     },
     "Shocker": {
         "segmented": True,
+        "supports_segmentation": False,
         "gif": "System/Media/Effects/Shocker.gif",
         "function": shocker,
         "settings": {
@@ -624,6 +680,7 @@ EffectsConfig = {
     },
     "Sweep": {
         "segmented": True,
+        "supports_segmentation": False,
         "gif": "System/Media/Effects/Sweep.gif",
         "function": sweep,
         "settings": {
@@ -637,6 +694,7 @@ EffectsConfig = {
     },
     "Glitch": {
         "segmented": True,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/Glitch.gif",
         "function": glitch,
         "settings": {
@@ -676,6 +734,7 @@ EffectsConfig = {
     },
     "BPM": {
         "segmented": False,
+        "supports_segmentation": True,
         "gif": "System/Media/Effects/BPM.gif",
         "function": bpm_effect,
         "settings": {
@@ -695,6 +754,7 @@ EffectsConfig = {
     },
     "Sidebeat": {
         "segmented": True,
+        "supports_segmentation": False,
         "gif": "System/Media/Effects/Sidebeat.gif",
         "function": sidebeat,
         "settings": {
@@ -713,6 +773,7 @@ EffectsConfig = {
     },
     "Boomerang": {
         "segmented": True,
+        "supports_segmentation": False,
         "gif": "System/Media/Effects/Boomerang.gif",
         "function": boomerang,
         "settings": {
@@ -726,6 +787,24 @@ EffectsConfig = {
         }
     }
 }
+
+def is_segment_edited(glyph):
+    return "segments" in glyph
+
+def all():
+    return EffectsConfig
+
+def only_non_segmented():
+    return {
+        name: config for name, config in EffectsConfig.items()
+        if not config.get("segmented", False)
+    }
+
+def only_segmentation_supported():
+    return {
+        name: config for name, config in EffectsConfig.items()
+        if config.get("supports_segmentation", False)
+    }
 
 def _preview(effect_fn, glyph=_example_glyph, model="PHONE2A"):
     print(effect_fn(glyph, model, 120))
