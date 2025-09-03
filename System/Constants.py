@@ -43,8 +43,6 @@ def is_segmented(track, model):
         "PHONE3A": {"1": 20, "2": 11, "3": 5}
     }
 
-    print(track, model)
-
     return segments.get(model, {}).get(str(track), False)
 
 # ANIMATIONS :))) (ms)
@@ -123,13 +121,6 @@ class Cols(Enum):
     THREE_ZONE_3A = 6
     THIRTY_SIX_ZONE = 7
 
-STRING_COLS_TO_PHONE_MODEL = {
-    '5cols': PhoneModel.PHONE1,
-    '33cols': PhoneModel.PHONE2,
-    '26cols': PhoneModel.PHONE2A,
-    '36cols': PhoneModel.PHONE3A,
-}
-
 STRING_TO_COLS: dict[ColsModder, str] = {
     ColsModder.FIVE_ZONE: '5cols',
     ColsModder.FIFTEEN_ZONE: '5cols',
@@ -154,12 +145,6 @@ DEVICE_CODENAME = {
     ColsModder.THIRTY_SIX_ZONE: 'Asteroids',
 }
 
-# Regex
-REGEX_PATTERN_LABEL_TEXT_PHONE1 = r'^([1-5])(?:\.((?:(?<![1-24-5]\.)[1-4])|(?:(?<![1-35]\.)[1-8])))?-(\d{1,2}|100)(?:-(\d{1,2}|100))?(?:-(EXP|LIN|LOG))?$'
-REGEX_PATTERN_LABEL_TEXT_PHONE2 = r'^([1-9]|1[0-1])(?:\.((?:(?<![0-35-9]\.)[1-9]|1[0-6])|(?:(?<![1-9]\.)[1-8])))?-(\d{1,2}|100)(?:-(\d{1,2}|100))?(?:-(EXP|LIN|LOG))?$'
-REGEX_PATTERN_LABEL_TEXT_PHONE2A = r'^([1-3])(?:(?<![23])\.([1-9]|1\d|2[0-4]))?-(\d{1,2}|100)(?:-(\d{1,2}|100))?(?:-(EXP|LIN|LOG))?$'
-REGEX_PATTERN_LABEL_TEXT_PHONE3A = r'^([1-3])(?:\.((?:(?<=1\.)(?:[1-9]|1\d|20))|(?:(?<=2\.)(?:[1-9]|1[0-1]))|(?:(?<=3\.)[1-5])))?-(\d{1,2}|100)(?:-(\d{1,2}|100))?(?:-(EXP|LIN|LOG))?$'
-
 # Column Lists
 PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(5)]
 PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_15COL = [[0], [1], list(range(2, 6)), list(range(7, 15)), [6]]
@@ -174,13 +159,6 @@ PHONE2A_26COL_GLYPH_INDEX_TO_ARRAY_INDEXES_26COL = [[23 - i] for i in range(24)]
 PHONE3A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(3)]
 PHONE3A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL = [list(range(0, 20)), list(range(20, 31)), list(range(31, 36))]
 PHONE3A_36COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL = [[i] for i in range(36)]
-
-models = {
-    "Phone (1)": "PHONE1",
-    "Phone (2)": "PHONE2",
-    "Phone (2a)": "PHONE2A",
-    "Phone (3a)": "PHONE3A"
-}
 
 ModelCodes = {
     "A063": "Phone (1)",
