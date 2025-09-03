@@ -2,6 +2,7 @@ import re
 import time
 import math
 import pygame
+import random
 
 import numpy as np
 import multiprocessing as mp
@@ -93,11 +94,15 @@ class AudioLoaderWorker(QObject):
     @pyqtSlot()
     def run(self):
         audio_data, sampling_rate = Audio.load_audio(self.file_path)
+        mins = len(audio_data) / sampling_rate / 60
+        if mins >= 10:
+            UI.ErrorWindow("What the hell??", "Why so long???????").exec_()
 
         peaks = []
         if audio_data is not None and len(audio_data) > 0 and self.target_width > 0:
             num_peaks = self.target_width * 2
             samples_per_peak = max(1, len(audio_data) // num_peaks)
+            
             for i in range(0, len(audio_data), samples_per_peak):
                 chunk = audio_data[i:i + samples_per_peak]
                 if len(chunk) > 0:
@@ -116,6 +121,8 @@ class TrimmingWaveformWidget(QWidget):
         self.duration = 0
         self.peaks = []
         self.is_loading = True
+        self.waveform_pixmap = None
+        self._is_playing = False
 
         self.start_time = 0.0
         self.end_time = 0.0
@@ -125,68 +132,140 @@ class TrimmingWaveformWidget(QWidget):
 
         self.setMinimumHeight(80)
 
-    def set_data(self, audio_data, sampling_rate, peaks):
+    def _generate_pixmap(self):
+        if not hasattr(self, "smooth_top") or len(self.smooth_top) == 0:
+            self.waveform_pixmap = None
+            return
+
+        width = self.width()
+        height = self.height()
+
+        pixmap = QPixmap(width, height)
+        pixmap.fill(QColor("#2b2b2b"))  # фон
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        bar_width = width / len(self.smooth_top)
+        path = QPainterPath()
+
+        for i in range(len(self.smooth_top)):
+            x = i * bar_width
+            y = max(0, min(height, self.smooth_top[i]))
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+
+        for i in reversed(range(len(self.smooth_bottom))):
+            x = i * bar_width
+            y = max(0, min(height, self.smooth_bottom[i]))
+            path.lineTo(x, y)
+
+        path.closeSubpath()
+
+        outline_color = QColor(255, 255, 255, 90)
+        painter.setPen(QPen(outline_color, 2.5))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawPath(path)
+
+        fill_color = QColor(255, 255, 255, 90)
+        painter.setBrush(QBrush(fill_color))
+        painter.setPen(QPen(QColor(255, 255, 255, 160), 0.7))
+        painter.drawPath(path)
+
+        painter.end()
+        self.waveform_pixmap = pixmap
+
+    def set_data(self, audio_data, sampling_rate, peaks=None):
         self.audio_data = audio_data
         self.sampling_rate = sampling_rate
-        self.peaks = peaks
-        self.duration = len(self.audio_data) / self.sampling_rate if self.sampling_rate > 0 else 0
+        self.duration = len(audio_data) / sampling_rate if sampling_rate > 0 else 0
         self.end_time = self.duration
         self.is_loading = False
+
+        self._prepare_waveform()
         self.update()
+    
+    def _prepare_waveform(self, mode="avg"):
+        if self.audio_data is None or len(self.audio_data) == 0:
+            self.smooth_top = []
+            self.smooth_bottom = []
+            return
+
+        width = self.width() if self.width() > 0 else 1000
+        height = self.height() if self.height() > 0 else 80
+        y_center = height / 2.0
+
+        audio = self.audio_data.astype(np.float32)
+        audio = audio - np.mean(audio)
+        max_val = np.max(np.abs(audio))
+        if max_val > 0:
+            audio = audio / max_val
+
+        samples_per_pixel = len(audio) / float(width)
+        step = max(1, int(np.ceil(samples_per_pixel)))
+        padded_len = ((len(audio) + step - 1) // step) * step
+        padded = np.pad(audio, (0, padded_len - len(audio)), mode="constant")
+        reshaped = padded.reshape(-1, step)
+
+        if mode == "minmax":
+            min_vals = np.min(reshaped, axis=1)
+            max_vals = np.max(reshaped, axis=1)
+
+            amplitudes_top = y_center - max_vals * y_center
+            amplitudes_bottom = y_center - min_vals * y_center
+
+        elif mode == "rms":
+            rms_vals = np.sqrt(np.mean(reshaped**2, axis=1))
+            amplitudes_top = y_center - rms_vals * y_center
+            amplitudes_bottom = y_center + rms_vals * y_center
+
+        elif mode == "avg":
+            avg_vals = np.mean(np.abs(reshaped), axis=1)
+            amplitudes_top = y_center - avg_vals * y_center
+            amplitudes_bottom = y_center + avg_vals * y_center
+
+        self.smooth_top = Utils.gaussian_filter1d_np(amplitudes_top, sigma=2)
+        self.smooth_bottom = Utils.gaussian_filter1d_np(amplitudes_bottom, sigma=2)
+
+        self._generate_pixmap()
     
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor("#2b2b2b"))
-        
+
         if self.is_loading:
             painter.setPen(QColor("#888"))
             painter.setFont(Utils.NType(15))
             painter.drawText(self.rect(), Qt.AlignCenter, "Loading the audio...")
             return
 
-        if self.peaks:
-            path = QPainterPath()
-            center_y = self.height() / 2
-            path.moveTo(0, center_y)
-
-            for i, peak in enumerate(self.peaks):
-                x = (i / len(self.peaks)) * self.width() if len(self.peaks) > 0 else 0
-                h = peak * center_y
-                path.lineTo(x, center_y - h)
-
-            for i, peak in reversed(list(enumerate(self.peaks))):
-                x = (i / len(self.peaks)) * self.width() if len(self.peaks) > 0 else 0
-                h = peak * center_y
-                path.lineTo(x, center_y + h)
-
-            path.closeSubpath()
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor("#555"))
-            painter.drawPath(path)
+        if self.waveform_pixmap:
+            painter.drawPixmap(0, 0, self.waveform_pixmap)
 
         start_x = (self.start_time / self.duration) * self.width() if self.duration > 0 else 0
         end_x = (self.end_time / self.duration) * self.width() if self.duration > 0 else 0
 
-        painter.setBrush(QColor(100, 150, 255, 70))
+        start_x = max(0, min(self.width(), start_x))
+        end_x = max(0, min(self.width(), end_x))
+
+        painter.setBrush(QColor(255, 255, 255, 30))
         painter.setPen(Qt.NoPen)
-        painter.drawRect(QRectF(QPointF(start_x, 0), QPointF(end_x, self.height())))
+        painter.drawRoundedRect(QRectF(QPointF(start_x, 0), QPointF(end_x, self.height())), 10, 10)
 
-        painter.setPen(QPen(QColor("#aaffff"), 2))
-        painter.drawLine(int(start_x), 0, int(start_x), self.height())
-        painter.drawLine(int(end_x), 0, int(end_x), self.height())
-
-        painter.setBrush(QColor("#aaffff"))
-        painter.drawPolygon(QPolygonF([QPointF(start_x,0), QPointF(start_x-5, 5), QPointF(start_x+5, 5)]))
-        painter.drawPolygon(QPolygonF([QPointF(end_x,0), QPointF(end_x-5, 5), QPointF(end_x+5, 5)]))
+        painter.setPen(QPen(QColor(Styles.Colors.nothing_accent), 2))
+        painter.drawLine(int(start_x), 10, int(start_x), self.height() - 10)
+        painter.drawLine(int(end_x), 10, int(end_x), self.height() - 10)
 
         playhead_x = (self._playback_position / self.duration) * self.width() if self.duration > 0 else 0
-        width = getattr(self, '_pulsating_width', 2)
-        color = QColor(Styles.Colors.nothing_accent) if getattr(self, '_is_playing', False) else QColor(180, 255, 255, 120)
+        width = 2
+        color = QColor(Styles.Colors.nothing_accent)
         painter.setPen(Qt.NoPen)
         painter.setBrush(color)
-        painter.drawRect(QRectF(playhead_x - width/2, 0, width, self.height()))
+        painter.drawRect(QRectF(playhead_x - width / 2, 0, width, self.height()))
 
     def mousePressEvent(self, event):
         x = event.pos().x()
@@ -204,24 +283,35 @@ class TrimmingWaveformWidget(QWidget):
             
             if self.duration > 0:
                 time_pos = (x / self.width()) * self.duration
-                self.set_playback_position(time_pos)
+
+                #if self._is_playing:
+                #    self.set_is_playing(False)
+
+                if not self._is_playing:
+                    self.set_playback_position(time_pos)
+                
                 logger.info(f"Placing playback on {time_pos}")
                 self.playbackPositionClicked.emit(self.playback_position)
 
     def mouseMoveEvent(self, event):
         if self.dragging_handle:
             x = event.pos().x()
+            x = max(0, min(self.width(), x))
+            
             time = (x / self.width()) * self.duration if self.duration > 0 else 0
             time = max(0, min(self.duration, time))
 
             if self.dragging_handle == 'start':
                 self.start_time = min(time, self.end_time - 0.01)
-                
-                if self.playback_position < self.start_time:
+
+                if not self._is_playing:
+                    print("Not playing")
                     self.set_playback_position(self.start_time)
-            
+
             elif self.dragging_handle == 'end':
                 self.end_time = max(time, self.start_time + 0.01)
+                self.end_time = min(self.end_time, self.duration if self.duration > 0 else self.end_time)
+
                 if self.playback_position > self.end_time:
                     self.set_playback_position(self.end_time)
 
@@ -232,6 +322,16 @@ class TrimmingWaveformWidget(QWidget):
         self.dragging_handle = None
 
     def set_times(self, start, end):
+        dur = getattr(self, "duration", 0) or 0
+        start = max(0.0, start)
+        end = min(dur if dur > 0 else end, end)
+        
+        if end <= start + 0.01:
+            end = start + 0.01
+            if dur > 0 and end > dur:
+                start = max(0.0, dur - 0.01)
+                end = dur
+
         self.start_time = start
         self.end_time = end
         self.update()
@@ -244,25 +344,13 @@ class TrimmingWaveformWidget(QWidget):
         self._playback_position = max(0, min(self.duration, pos))
         self.update()
 
-    @property
-    def pulsating_width(self):
-        return getattr(self, '_pulsating_width', 2)
-
-    def set_pulsating_width(self, width):
-        self._pulsating_width = width
-        self.update()
-
     def set_is_playing(self, is_playing):
         self._is_playing = is_playing
         self.update()
 
-class AudioSetupDialog(QDialog):
-    def __init__(self, file_path, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(file_path.split("/")[-1])
-        self.setMinimumWidth(700)
-        self.setFixedHeight(215)
-        self.resize(700, 215)
+class AudioSetupDialog(UI.FloatingWindow):
+    def __init__(self, file_path):
+        super().__init__("Audio", 700, 290, player = self, max_tilt_angle = 8, fixed_sizes = True)
         
         self.file_path = file_path
         self.audio_data = None
@@ -275,53 +363,57 @@ class AudioSetupDialog(QDialog):
         self.setStyleSheet(Styles.Controls.AudioSetupper)
 
         pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=2048)
-        Utils.ui_sound("MenuOpen")
 
         self.audio_data = None
         self.sampling_rate = 44100
         self.start_time_sec = 0.0
         self.end_time_sec = 1.0
 
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(10, 10, 10, 10)
-        self.layout.setSpacing(10)
-
         self.trim_widget = TrimmingWaveformWidget()
         self.trim_widget.regionChanged.connect(self.update_texboxes)
         self.layout.addWidget(self.trim_widget)
 
         playback_layout = QHBoxLayout()
+
         self.start_time_label = UI.AnimatedLineEdit(0, int(self.end_time_sec - 1), 5, ":time")
-        self.start_time_label.setFixedSize(70, 40)
-        self.start_time_label.setText(0)
-        self.start_time_label.textChanged.connect(self.edit_start_time)
-        
         self.end_time_label = UI.AnimatedLineEdit(1, self.end_time_sec, 5, ":time")
-        self.end_time_label.setFixedSize(70, 40)
-        self.end_time_label.setText(int(self.end_time_sec))
+        
+        self.start_time_label.textChanged.connect(self.edit_start_time)
         self.end_time_label.textChanged.connect(self.edit_end_time)
+
+        self.start_time_label.setText(0)
+        self.end_time_label.setText(int(self.end_time_sec))
         
         self.fade_in_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", "0", "Fade in (Ms)")
-        self.fade_in_textbox.setFixedHeight(40)
+        self.fade_out_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", "0", "Fade out (Ms)")
+
+        self.fade_out_textbox.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
         self.fade_in_textbox.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
         
-        self.fade_out_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", "0", "Fade out (Ms)")
-        self.fade_out_textbox.setFixedHeight(40)
-        self.fade_out_textbox.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
-        
         self.bpm_input = UI.AnimatedLineEdit(1, 400, None, "number", None, "Counting BPM... 120")
-        self.bpm_input.setMinimumWidth(57)
-        self.bpm_input.setMaximumWidth(203)
+        self.bpm_input.setMinimumWidth(63)
+        self.bpm_input.setMaximumWidth(207)
         self.bpm_input.setFixedHeight(Styles.Metrics.element_height)
-        self.bpm_input.setStyleSheet(Styles.Controls.BPMTextBox)
+        self.bpm_input.setStyleSheet(Styles.Controls.FloatingTextBoxRound)
+
+        for textbox in [self.start_time_label, self.end_time_label]:
+            textbox.setFixedSize(70, 40)
+
+        for textbox in [self.fade_in_textbox, self.fade_out_textbox]:
+            textbox.setFixedHeight(40)
+
+        for textbox in [self.fade_in_textbox, self.fade_out_textbox, self.start_time_label, self.end_time_label]:
+            textbox.setStyleSheet(Styles.Controls.FloatingTextBox)
 
         self.bpm_anim_timer = QTimer(self)
         self.bpm_anim_timer.timeout.connect(self.animate_bpm_spinbox)
         self.bpm_animating = True
-        self.bpm_anim_timer.start(14)
+        self.bpm_anim_timer.start(7)
         self._bpm_anim_target = np.random.randint(60, 180)
         self._bpm_real_target = None
-        self._bpm_anim_speed = 14
+        self._bpm_anim_speed = 7
+
+        self.settings = {}
 
         self.snapped_times = None
 
@@ -340,21 +432,20 @@ class AudioSetupDialog(QDialog):
         playback_layout.addWidget(self.fade_out_textbox)
         playback_layout.addWidget(self.end_time_label)
         self.layout.addLayout(playback_layout)
-        self.layout.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
         settings_layout = QHBoxLayout()
         settings_layout.setSpacing(10)
         
         self.model_selector = UI.Selector(["1", "2", "2a", "3a"])
 
-        self.cancel_button = UI.Button("Cancel")
+        self.cancel_button = UI.ButtonWithOutline("Cancel")
         self.ok_button = UI.NothingButton("Ok")
         
         self.ok_button.setMaximumWidth(70)
         self.cancel_button.setMaximumWidth(100)
         
-        self.ok_button.clicked.connect(self.accept)
-        self.cancel_button.clicked.connect(self.reject)
+        self.ok_button.clicked.connect(self.accept_callback)
+        self.cancel_button.clicked.connect(self.reject_callback)
         self.play_button.setEnabled(False)
         self.ok_button.setEnabled(False)
 
@@ -369,16 +460,11 @@ class AudioSetupDialog(QDialog):
         self.playback_timer = QTimer(self)
         self.playback_timer.timeout.connect(self.update_playback)
 
-        self.pulse_timer = QTimer(self)
-        self.pulse_timer.timeout.connect(self.pulse)
-        self.pulse_direction = 1
-
         self.bpm_worker = Audio.BPMWorkerProcess(self.file_path)
         self.bpm_worker.bpm_ready.connect(self.on_bpm_ready)
         self.bpm_worker.start()
 
         self.bpm_input.safeTextChanged.connect(self.on_bpm_changed)
-        self.bpm_input.installEventFilter(self)
         
         self.bpm_remove_timer = QTimer(self)
         self.bpm_remove_timer.timeout.connect(self._bpm_remove_step)
@@ -411,7 +497,7 @@ class AudioSetupDialog(QDialog):
         anim = QPropertyAnimation(self.bpm_input, b"maximumWidth")
         anim.setDuration(300)
         anim.setStartValue(self.bpm_input.width())
-        anim.setEndValue(57)
+        anim.setEndValue(63)
         anim.setEasingCurve(QEasingCurve.OutCubic)
         anim.start()
         
@@ -426,18 +512,8 @@ class AudioSetupDialog(QDialog):
         
         self.start_time_label.blockSignals(False)
         self.end_time_label.blockSignals(False)
-
-    def eventFilter(self, obj, event):
-        if isinstance(obj, QSpinBox) and isinstance(event, QInputMethodQueryEvent):
-            if self.bpm_anim_timer.isActive():
-                self.bpm_anim_timer.stop()
-                self.stop_bpm_worker()
-                self._bpm_real_target = None
-                self.bpm_animating = False
-
-        return super().eventFilter(obj, event)
-        
-    def closeEvent(self, event):
+    
+    def reject_callback(self):
         if hasattr(self, "bpm_worker"):
             self.bpm_worker.stop()
         
@@ -445,14 +521,10 @@ class AudioSetupDialog(QDialog):
             self.audio_loader.stop()
         
         if self.is_playing:
-            self.stop_playback()
-        
-        logger.info("Loaders stopped.")
-        super().closeEvent(event)
-    
-    def reject(self):
-        self.close()
-        super().reject()
+            print("Fading")
+            self.sound_object.fadeout(1500)
+
+        super().on_cancel()
 
     def edit_start_time(self):
         current_text = self.start_time_label.time_text_to_seconds()
@@ -461,7 +533,7 @@ class AudioSetupDialog(QDialog):
             self.trim_widget.start_time = current_text
             self.trim_widget.update()
 
-            self.end_time_label.min_number = self.start_time_label.time_text_to_seconds()
+            self.end_time_label.min_number = self.start_time_label.time_text_to_seconds() + 1
 
     def edit_end_time(self):
         current_text = self.end_time_label.time_text_to_seconds()
@@ -512,7 +584,7 @@ class AudioSetupDialog(QDialog):
             if current == target:
                 self._bpm_anim_target = np.random.randint(60, 180)
 
-    def accept(self):
+    def accept_callback(self):
         is_not_valid = self.end_time_label.is_not_valid()
         
         if is_not_valid or not self.end_time_label.text():
@@ -530,7 +602,13 @@ class AudioSetupDialog(QDialog):
         self.start_sample = int(self.trim_widget.start_time * self.sampling_rate)
         self.end_sample = int(self.trim_widget.end_time * self.sampling_rate)
 
-        super().accept()
+        if self.is_playing:
+            print("Fading")
+            self.sound_object.fadeout(1500)
+        
+        self.saved_settings = self.get_settings()
+
+        super().on_ok()
 
     def on_bpm_ready(self, bpm, first_beat_offset_sec, snapped_times):
         logger.info("BPM found.")
@@ -543,6 +621,10 @@ class AudioSetupDialog(QDialog):
 
         self.bpm_input.setPlaceholderText(f"Counting BPM {self._bpm_final_bpm}")
         self.bpm_remove_timer.start(60)
+
+        if bpm == 0:
+            if random.randint(0, 500) == 500:
+                Utils.ui_sound("Gambling")
 
     def _bpm_remove_step(self):
         current = self.bpm_input.placeholderText()
@@ -557,24 +639,22 @@ class AudioSetupDialog(QDialog):
             else:
                 self.bpm_remove_timer.stop()
                 self.bpm_input.setText(bpm_digits)
-                self.bpm_input.setPlaceholderText("")
+                self.update_bpm(int(bpm_digits))
+                self.bpm_timer.start()
+                self.bpm_input.setPlaceholderText("BPM")
                 self.shrink_bpm_input()
         
         else:
             self.bpm_input.setPlaceholderText(current[1:])
 
     def on_bpm_changed(self, value):
-        value = int(value)
-        
-        if self.is_playing:
-            interval = 60000 / value if value > 0 else 500
-            self.pulse_timer.stop()
-            self.pulse_timer.start(int(interval))
+        self.update_bpm(int(value))
 
     def toggle_playback(self):
         if self.is_playing:
             self.stop_playback()
-        
+            self.trim_widget.set_playback_position(self.trim_widget.start_time)
+
         else:
             self.play_selection()
 
@@ -630,14 +710,6 @@ class AudioSetupDialog(QDialog):
         self.trim_widget.set_is_playing(True)
         self.playback_timer.start(14)
 
-        bpm = self.bpm_input.text()
-        if bpm:
-            bpm = int(bpm)
-            
-            if bpm > 0:
-                interval = 60000 / (bpm * 2)
-                self.pulse_timer.start(int(interval))
-
     def stop_playback(self):
         self.is_playing = False
         pygame.mixer.stop()
@@ -645,8 +717,6 @@ class AudioSetupDialog(QDialog):
         self.play_button.setIcon(self.play_icon)
         self.trim_widget.set_is_playing(False)
         self.playback_timer.stop()
-        self.pulse_timer.stop()
-        self.trim_widget.set_pulsating_width(2)
 
     def update_playback(self):
         if self.is_playing and pygame.mixer.get_busy():
@@ -654,24 +724,15 @@ class AudioSetupDialog(QDialog):
             current_pos_sec = self.playback_start_position + elapsed_time_sec
 
             if current_pos_sec >= self.trim_widget.end_time:
-                current_pos_sec = self.trim_widget.end_time
-                
+                self.trim_widget.set_playback_position(0)
                 self.stop_playback()
-                self.trim_widget.set_playback_position(current_pos_sec)
             
             else:
-                 self.trim_widget.set_playback_position(current_pos_sec)
+                self.trim_widget.set_playback_position(current_pos_sec)
 
         elif self.is_playing:
             self.trim_widget.set_playback_position(self.trim_widget.end_time)
             self.stop_playback()
-
-    def pulse(self):
-        current_width = self.trim_widget.pulsating_width
-        if current_width == 4:
-            self.trim_widget.set_pulsating_width(2)
-        else:
-            self.trim_widget.set_pulsating_width(4)
 
     def get_settings(self):
         if not hasattr(self, 'start_sample'):
