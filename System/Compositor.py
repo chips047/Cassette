@@ -151,17 +151,14 @@ class ScrollableContent(QWidget):
         if cache_key in self._glyph_pixmaps:
             return self._glyph_pixmaps[cache_key]
 
-        # Создаем новый Pixmap и Painter
         rect = self.get_element_rect(glyph_data)
-        pixmap = QPixmap(int(rect.width() + 2), int(rect.height() + 2)) # Добавляем небольшой отступ для контура
+        pixmap = QPixmap(int(rect.width() + 2), int(rect.height() + 2))
         pixmap.fill(Qt.GlobalColor.transparent)
         
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Рисуем глиф на Pixmap
         path = QPainterPath()
-        # Вычитаем offset, чтобы рисовать в координатах Pixmap
         path.addRoundedRect(1, 1, rect.width(), rect.height(), 10, 10) 
 
         fill_brush = QBrush(QColor(255, 255, 255))
@@ -173,7 +170,6 @@ class ScrollableContent(QWidget):
         
         painter.end()
 
-        # Сохраняем в кэш
         self._glyph_pixmaps[cache_key] = pixmap
         return pixmap
     
@@ -198,10 +194,9 @@ class ScrollableContent(QWidget):
         p.end()
 
         self._ruler_cache = pixmap
-        self._ruler_cache_rect = QRectF(visible_rect)  # сохранить область
+        self._ruler_cache_rect = QRectF(visible_rect)
     
     def update_beats_cache(self, visible_rect: QRectF):
-        """Перерисовывает сетку с битами и сохраняет в pixmap"""
         pixmap = QPixmap(int(visible_rect.width()), self.height())
         pixmap.fill(Qt.GlobalColor.transparent)
 
@@ -604,7 +599,7 @@ class ScrollableContent(QWidget):
         if dialog.exec_() != QDialog.Accepted:
             return
 
-        user_input = dialog.get_text()
+        user_input = dialog.result_text
         updated_glyphs = {}
 
         for el_id in self.selected_element_ids:
@@ -1004,11 +999,10 @@ class ScrollableContent(QWidget):
         if popup.exec_() != QDialog.Accepted:
             return
 
-        segments = popup.segments()
+        segments = popup.saved_segments
         turned_on = [i for i, s in enumerate(segments) if s]
         all_turned_on = all(segments)
 
-        print("turned on:", turned_on, segments)
         updated_glyphs = {}
 
         for element_id in self.selected_element_ids:
@@ -1087,11 +1081,7 @@ class ScrollableContent(QWidget):
                 for sel_id in self.selected_element_ids
             ]
 
-            print(has_segmented)
-
             if len(has_segmented) == 1 and all(has_segmented):
-                print("yes")
-
                 segment_editor = QAction("Segments...", self)
                 segment_editor.triggered.connect(lambda: QTimer.singleShot(0, self.segment_control_popup))
                 self.context_menu.addAction(segment_editor)
