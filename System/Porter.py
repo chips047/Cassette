@@ -113,7 +113,7 @@ maps = {
             "PHONE1": {
                 "effects": {
                     "segments": {
-                        "1": ["4"]
+                        "1": ["7"]
                     }
                 },
 
@@ -130,10 +130,10 @@ maps = {
                 "2": {
                     "mode": "random",
                     "variants": [
-                        [("3", 0), ("3", 2)],
-                        [("3", 1), ("3", 3)],
-                        ["3"],
-                        ["3", "5"]
+                        ["3", "5"],
+                        ["4", "6"],
+                        ["3", "4", "5", "6"],
+                        ["3", "4", "5", "6", "7"]
                     ],
                     "randomize": 1
                 },
@@ -141,8 +141,8 @@ maps = {
                 "3": {
                     "mode": "random",
                     "variants": [
-                        ["4"],
-                        ["4", "5"]
+                        ["7"],
+                        ["7", "8"]
                     ],
                     "randomize": 1
                 }
@@ -170,34 +170,34 @@ maps = {
                     "mode": "random",
                     "variants": [
                         ["1", "2"],
-                        [("3", 0), ("3", 2)],
-                        [("3", 1), ("3", 3)]
+                        ["3", "5"],
+                        ["4", "6"]
                     ]
                 },
 
                 "2": {
                     "mode": "random",
                     "variants": [
-                        [("3", 0), ("3", 2)],
-                        [("3", 1), ("3", 3)],
-                        ["3"]
+                        ["3", "5"],
+                        ["4", "6"],
+                        ["3", "4", "5", "6"]
                     ]
                 },
 
                 "3": {
                     "mode": "random",
                     "variants": [
-                        ["4"],
-                        ["5"],
-                        ["4", "5"]
+                        ["7"],
+                        ["8"],
+                        ["7", "8"]
                     ]
                 },
 
                 "effects": {
                     "segments": {
-                        "1": ["4"],
-                        "2": ["4"],
-                        "3": ["4"]
+                        "1": ["7"],
+                        "2": ["7"],
+                        "3": ["7"]
                     }
                 },
             },
@@ -249,13 +249,16 @@ maps = {
             "PHONE2": {
                 "1": ["1", "2"],
                 "2": ["3"],
-                "3": ["4", "5", "6", "7", "8", "9"],
-                "4": ["10"],
-                "5": ["11"],
+                "3": ["4", "5"],
+                "4": ["5", "6"],
+                "5": ["7", "8"],
+                "6": ["8", "9"],
+                "7": ["10"],
+                "8": ["11"],
                 
                 "effects": {
                     "segments": {
-                        "4": ["10"]
+                        "7": ["10"]
                     }
                 }
             }
@@ -267,19 +270,19 @@ maps = {
                 "1": ["1"],
                 "2": ["1"],
                 "3": ["2"],
-                "4": [("3", 0)],
-                "5": [("3", 1)],
-                "6": [("3", 1)],
-                "7": [("3", 2)],
-                "8": [("3", 3)],
-                "9": [("3", 3)],
-                "10": ["4"],
-                "11": ["5"],
+                "4": ["3"],
+                "5": ["4"],
+                "6": ["4"],
+                "7": ["5"],
+                "8": ["6"],
+                "9": ["6"],
+                "10": ["7"],
+                "11": ["8"],
 
                 "effects": {
                     "segments": {
-                        "4": ["4"],
-                        "10": ["4"]
+                        "4": ["7"],
+                        "10": ["7"]
                     }
                 }
             }
@@ -331,49 +334,57 @@ class Port:
             target_track = Port.process_dict_track(glyph, track)
 
         return target_track
+    
+    def _make_glyph(base_glyph, track, segments=None, copy_effects=False):
+        new = base_glyph.copy()
+        new["track"] = track
+
+        if segments is None:
+            new.pop("segments", None)
+        
+        else:
+            new["segments"] = list(segments)
+
+        if copy_effects and "effects" in new:
+            new["effects"] = [e.copy() for e in new["effects"]]
+
+        return new
 
     def port_glyphs(port_to: str, composition):
         only_singles, only_effects = composition.sorted_glyphs()
 
         ported_glyphs = []
 
-        singles = [deepcopy(g) for g in only_singles]
-        effects = [deepcopy(g) for g in only_effects]
-
-        # model to model -> dict ["track"] -> x
-        # if x is list -> list of tracks to add
-        # if x is tuple -> ("track", segment)
-
-        # if x is dict -> 
-        # if mode in dict: mode: random / effect
-        # mode: random. variants: list of lists of tracks. randomizes: number of randomizations.
-        # mode: effect. track: track to apply effect to. trigger_effect: replace if glyph["effect"] == trigger_effect. to_effect: effect to apply.
+        singles = only_singles
+        effects = only_effects
 
         for effect in effects:
             target_track = Port.get_target_track(composition.model, port_to, effect)
             logger.warning(f"RESULT TRACK: {target_track}")
 
             if "segments" in effect:
-                port_segments_from = ModelSegments[composition.model][effect["track"]]
-                port_segments_to = ModelSegments[port_to][target_track[0]]
-                ported_segments = port_segments_func(port_segments_from, port_segments_to, effect["segments"])
+                seg_src = ModelSegments[composition.model][effect["track"]]
+                seg_dst = ModelSegments[port_to][target_track[0]]
+                ported_segments = port_segments_func(seg_src, seg_dst, effect["segments"])
 
-                effect["track"] = target_track[0]
-                effect["segments"] = ported_segments
+                eff_for_conversion = effect.copy()
+                eff_for_conversion["track"] = target_track[0]
+                eff_for_conversion["segments"] = ported_segments
 
-                list_of_glyphs = GlyphEffects.effect_to_glyph(effect, port_to, composition.bpm)
+                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_for_conversion, port_to, composition.bpm)
                 ported_glyphs.extend(list_of_glyphs)
                 logger.error(f"Extending 1: {list_of_glyphs}")
-            
-            for track in target_track:
-                if isinstance(track, tuple):
-                    track, segment = track
-                    effect["segments"] = [segment]
-                
-                effect["track"] = track
-                logger.warning(f"Generating effect: {effect['track']}, segments: {effect.get('segments')}")
 
-                list_of_glyphs = GlyphEffects.effect_to_glyph(effect, port_to, composition.bpm)
+            for track in target_track:
+                eff_copy = Port._make_glyph(effect, track, segments=None, copy_effects=True)
+
+                if isinstance(track, tuple):
+                    tr, segment = track
+                    eff_copy["track"] = tr
+                    eff_copy["segments"] = [segment]
+
+                logger.warning(f"Generating effect: {eff_copy['track']}, segments: {eff_copy.get('segments')}")
+                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_copy, port_to, composition.bpm)
                 ported_glyphs.extend(list_of_glyphs)
                 logger.error(f"Extending 2: {list_of_glyphs}")
 
@@ -384,37 +395,25 @@ class Port:
             if "segments" not in single:
                 for track in target_track:
                     if isinstance(track, tuple):
-                        print(track)
-                        track, segment = track
-                        single["segments"] = [segment]
-                    
-                    print(track)
-                    single["track"] = track
+                        tr, segment = track
+                        new_glyph = Port._make_glyph(single, tr, segments=[segment])
 
-                    logger.warning(f"Adding a simple glyph: {single['track']}, segments: {single.get('segments')}")
-                    ported_glyphs.append(single)
-                    logger.error(f"Extending 3: {single}")
-            
+                    else:
+                        new_glyph = Port._make_glyph(single, track, segments=None)
+
+                    logger.warning(f"Adding a simple glyph: {new_glyph['track']}, segments: {new_glyph.get('segments')}")
+                    ported_glyphs.append(new_glyph)
+                    logger.error(f"Extending 3: {new_glyph}")
+
             else:
-                target_track = Port.get_target_track(composition.model, port_to, single)
-                logger.warning(f"RESULT TRACK: {target_track}")
-
+                chosen_target = target_track[0]
                 port_segments_from = ModelSegments[composition.model][single["track"]]
-                port_segments_to = ModelSegments[port_to][target_track[0]]
+                port_segments_to = ModelSegments[port_to][chosen_target]
                 ported_segments = port_segments_func(port_segments_from, port_segments_to, single["segments"])
 
-                single["track"] = target_track[0]
-                single["segments"] = ported_segments
-
-                logger.warning(f"Adding a complex glyph: {single['track']}, segments: {single.get('segments')}")
-                ported_glyphs.append(single)
-                logger.error(f"Extending 4: {single}")
-
-        with open("data.json", "w", encoding="utf-8") as f:
-            json.dump({"list": ported_glyphs}, f, ensure_ascii=False, indent=4)
+                new_single = Port._make_glyph(single, chosen_target, segments=ported_segments)
+                logger.warning(f"Adding a complex glyph: {new_single['track']}, segments: {new_single.get('segments')}")
+                ported_glyphs.append(new_single)
+                logger.error(f"Extending 4: {new_single}")
         
         return ported_glyphs
-    
-    def export_port(port_from: str, port_to: str, composition):
-        ported_glyphs = Port.port_glyphs(port_from, port_to, composition)
-        Exporter.glyphs_to_ogg()

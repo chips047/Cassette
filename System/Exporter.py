@@ -45,6 +45,7 @@ def get_columns_model(model):
 def parse_glyphs(glyphs, columns_model):
     parsed_glyphs = []
     for glyph in glyphs:
+        print(glyph)
         custom_5col_id = get_custom_5col_id(int(glyph["track"]), columns_model)
 
         dict_glyph = {
@@ -65,7 +66,6 @@ def parse_glyphs(glyphs, columns_model):
             dict_glyph["rastered_delta"] = TIME_STEP_MS
 
         if "segments" in glyph:
-            print(int(glyph["track"]), glyph["segments"])
             dict_glyph["array_indexes"] = [get_glyph_array_indexes(int(glyph["track"]), segment + 1, columns_model)[0] for segment in glyph["segments"]]
             parsed_glyphs.append(dict_glyph)
         
@@ -205,14 +205,11 @@ def get_glyph_array_indexes(glyph_index: int, zone_index: int, columns_model: Co
 
     match columns_model:
         case Cols.FIFTEEN_ZONE:
-            offset += 3 if glyph_index > 2 else 0
-            offset += 7 if glyph_index > 3 else 0
-
             if zone_index == -1:
                 return PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_15COL[glyph_index]
             
             else:
-                return PHONE1_15COL_GLYPH_ZONE_INDEX_TO_ARRAY_INDEXES_15COL[glyph_index + zone_index + offset]
+                return PHONE1_15COL_GLYPH_ZONE_INDEX_TO_ARRAY_INDEXES_15COL[glyph_index + zone_index]
         
         case Cols.THIRTY_THREE_ZONE:
             offset += 15 if glyph_index > 3 else 0
