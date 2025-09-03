@@ -92,6 +92,7 @@ def get_projects_info(songs_folder):
         for file in os.listdir(project_path):
             if file.lower().endswith(('.mp3', '.wav', '.ogg', '.flac')):
                 audio_path = os.path.join(project_path, file)
+            
             elif file.lower().endswith('.json'):
                 json_file = os.path.join(project_path, file)
 
@@ -262,18 +263,20 @@ class MainMenu(QWidget):
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
             "Open Audio File", "",
-            "Audio Files (*.wav *.mp3 *.ogg *.flac);;All Files (*)", 
+            "Audio Files (*.wav *.mp3 *.ogg *.flac *.mp4);;All Files (*)", 
             options=options
         )
         
         if not file_path:
             return
             
-        dialog = AudioSetupDialog(file_path, self)
+        dialog = AudioSetupDialog(file_path)
+        dialog.destroyed.connect(lambda: print("Dialog deleted"))
         if dialog.exec_() == QDialog.Accepted:
             Utils.ui_sound("MenuClose")
-            settings = dialog.get_settings()
+            settings = dialog.saved_settings
             
+            print(file_path)
             composition = ProjectSaver.Composition(
                 file_path,
                 settings
@@ -406,7 +409,7 @@ class MainMenu(QWidget):
             if is_accent:
                 btn.setStyleSheet(f"""
                     QPushButton {{ background-color: {Styles.Colors.nothing_accent}; color: white; border: none; padding: 8px 15px; border-radius: 18px; }}
-                    QPushButton:hover {{ background-color: {Styles.Colors.nothing_accent_second}; }}
+                    QPushButton:hover {{ background-color: {Styles.Colors.nothing_accent_hover}; }}
                 """)
             
             else:
