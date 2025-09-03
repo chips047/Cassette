@@ -3,34 +3,35 @@ def hex_to_rgb(hex_color):
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
 class Colors:
-    effect_menu = "#2d2e31"
-    effect_menu_second = "#28292b"
-    effect_menu_third = "#252628"
+    class EffectMenu:
+        standard = "#2d2e31"
+        hover = "#28292b"
+        press = "#252628"
     
     nothing_accent = "#d6141f"
-    nothing_accent_second = "#c20808"
-    nothing_accent_third = "#ba0505"
+    nothing_accent_hover = "#c20808"
+    nothing_accent_pressed = "#ba0505"
     
-    black = "#000000"
     font_color = "#dddddd"
-    second_font_color = "#9d9d9d"
-    
-    green_button = "#4CAF50"
-    green_button_second = "#45a049"
+    subtle_font_color = "#9d9d9d"
     
     normal_button = "#2b2b2b"
-    normal_button_second = "#444"
+    normal_button_second = "#404040"
     
     background = "#1f1f1f"
     secondary_background = "#2b2b2b"
     third_background = "#232323"
     
-    element_background = "#ffffff"
-    
     glass_border = "#404040"
-    
+
+    class Floating:
+        background = "#2b2b2b"
+        border = "#404040"
+
+        element_background = "#343434"
+
     class Waveline:
-        beat_color = "#888888"
+        beat_color = "#6A6A6A"
         track_name_color = "#bbbbbb"
 
 class Roundings:
@@ -38,7 +39,7 @@ class Roundings:
     slider = 3
     slider_handle = 4
     
-    rmb_menu = 18
+    rmb_menu = 16
     rmb_menu_item = 12
     
     selection = 10
@@ -63,33 +64,59 @@ class Metrics:
         height = 150
 
 class Buttons:
-    rounding = Roundings.button
     height = 50
     
-    green_button = f"""
-        QPushButton {{ background-color: {Colors.green_button}; color: {Colors.font_color}; padding: 0px 15px; border-radius: {rounding}px; min-height: {height}px;}}
-        QPushButton:hover {{ background-color: {Colors.green_button_second}; }}
-    """
-    
-    nothing_styled_button = f"""
-        QPushButton {{background-color: {Colors.nothing_accent}; color: {Colors.font_color}; padding: 0px 15px; border-radius: {rounding}px; height: {height}px;}}
-        QPushButton:hover {{background-color: {Colors.nothing_accent_second}}}
-        QPushButton:disabled {{background-color: #777777; color: #dddddd}}
-    """
-    
-    normal_button = f"""
-        QPushButton {{background-color: {Colors.normal_button}; color: {Colors.font_color}; padding: 0px 15px; border-radius: {rounding}px; height: {height}px;}}
-        QPushButton:hover {{background-color: {Colors.normal_button_second}}}
-    """
+    def make_button_style(
+        bg_color: str,
+        hover_color: str,
+        font_color: str = None,
+        height: int = 30,
+        border: str = None,
+    ) -> str:
+        if font_color is None:
+            font_color = Colors.font_color
 
-    normal_button_with_border = f"""
-        QPushButton {{background-color: {Colors.normal_button}; color: {Colors.font_color}; padding: 0px 15px; border-radius: {rounding}px; height: {height}px; border: {Metrics.glass_border_thick}px solid {Colors.glass_border};}}
-        QPushButton:hover {{background-color: {Colors.normal_button_second}}}
-    """
+        base = f"""
+            QPushButton {{
+                background-color: {bg_color};
+                color: {font_color};
+                padding: 0px 15px;
+                border-radius: {Roundings.button}px;
+                height: {height}px;
+                {f"border: {border};" if border else ""}
+            }}
+            QPushButton:hover {{
+                background-color: {hover_color};
+            }}
+            QPushButton:disabled {{
+                background-color: #777777;
+                color: #dddddd;
+            }}
+        """
+
+        return base.strip()
+
+    nothing_styled_button = make_button_style(
+        bg_color=Colors.nothing_accent,
+        hover_color=Colors.nothing_accent_hover,
+        height=height
+    )
+
+    normal_button = make_button_style(
+        bg_color=Colors.normal_button,
+        hover_color=Colors.normal_button_second,
+        height=height
+    )
+
+    normal_button_with_border = make_button_style(
+        bg_color=Colors.normal_button,
+        hover_color=Colors.normal_button_second,
+        border=f"{Metrics.glass_border_thick}px solid {Colors.glass_border}",
+        height=height
+    )
 
 class Other:
     transparent = "background-color: transparent;"
-    black = "background-color: black;"
     
     status_bar = f"""
         QLabel {{
@@ -103,11 +130,11 @@ class Other:
     
     font = f"""color: {Colors.font_color};"""
     label = f"""color: {Colors.font_color}; background-color: transparent; padding: 0;"""
-    second_font = f"""color: {Colors.second_font_color};"""
+    second_font = f"""color: {Colors.subtle_font_color};"""
     
     Tooltip = f"""
         color: {Colors.font_color};
-        background-color: {Colors.effect_menu_second};
+        background-color: {Colors.secondary_background};
         border-radius: {Roundings.button};
         border: {Metrics.glass_border_thick}px solid {Colors.glass_border}
     """
@@ -117,86 +144,56 @@ class Other:
     """
 
 class Controls:
-    ComboBox = f"""
-        QComboBox {{
-            background-color: {Colors.secondary_background};
-            color: #eeeeee;
-            border: 1px solid {Colors.glass_border};
-            border-radius: {Roundings.button}px;
-            padding-left: 10px;
-        }}
-        QComboBox:hover {{
-            background-color: {Colors.secondary_background};
-            border: 1px solid {Colors.nothing_accent};
-        }}
-        QComboBox::drop-down {{
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 25px;
-            border-left-width: 1px;
-            border-left-color: {Colors.glass_border};
-            border-left-style: solid;
-            border-top-right-radius: {Roundings.button}px;
-            border-bottom-right-radius: {Roundings.button}px;
-        }}
-        QComboBox::down-arrow {{
-            image: url(path/to/your/arrow-down-icon.png);
-            width: 12px;
-            height: 12px;
-        }}
-        QComboBox QAbstractItemView {{
-            background-color: #2c2f33;
-            color: #dddddd;
-            border: 1px solid {Colors.nothing_accent};
-            border-radius: 5px;
-            selection-background-color: {Colors.nothing_accent};
-            selection-color: white;
-            padding: 4px;
-            outline: 0px;
-        }}
-    """
-    
-    Selector = f"""
-        QWidget#selectorRoot {{
-            background-color: {Colors.effect_menu_third};
-            border-radius: {Roundings.button}px;
-        }}
+    @staticmethod
+    def selector_style(enable_checked: bool = True) -> str:
+        base = f"""
+            QWidget#selectorRoot {{
+                background-color: {Colors.EffectMenu.press};
+                border-radius: {Roundings.button}px;
+            }}
 
-        #selectorWidget {{
-            background-color: {Colors.effect_menu_third};
-            border-radius: {Roundings.button}px;
-        }}
-        
-        #backgroundContainer {{
-            background-color: {Colors.effect_menu_third};
-            border-radius: {Roundings.button}px;
-        }}
+            #selectorWidget {{
+                background-color: {Colors.EffectMenu.press};
+                border-radius: {Roundings.button}px;
+            }}
 
-        QPushButton#segmentedButton {{
-            color: {Colors.font_color};
-            background-color: {Colors.effect_menu};
-            border: none;
-            padding: 0;
-            border-radius: {Roundings.button - 5}px;
-        }}
+            #backgroundContainer {{
+                background-color: {Colors.EffectMenu.press};
+                border-radius: {Roundings.button}px;
+            }}
 
-        QPushButton#segmentedButton:hover {{
-            background-color: {Colors.effect_menu_second};
-        }}
+            QPushButton#segmentedButton {{
+                color: {Colors.font_color};
+                background-color: {Colors.EffectMenu.standard};
+                border: none;
+                padding: 0;
+                border-radius: {Roundings.button - 5}px;
+            }}
 
-        QPushButton#segmentedButton:checked {{
-            background-color: {Colors.nothing_accent};
-            color: #ffffff;
-        }}
-        QPushButton#segmentedButton:checked:hover {{
-            background-color: {Colors.nothing_accent_second};
-        }}
-    """
+            QPushButton#segmentedButton:hover {{
+                background-color: {Colors.EffectMenu.hover};
+            }}
+        """
+
+        if enable_checked:
+            base += f"""
+                QPushButton#segmentedButton:checked {{
+                    background-color: {Colors.nothing_accent};
+                    color: #ffffff;
+                }}
+
+                QPushButton#segmentedButton:checked:hover {{
+                    background-color: {Colors.nothing_accent_hover};
+                }}
+            """
+
+        return base.strip()
     
     Selector2 = f"""
         QWidget {{
-            background-color: {Colors.secondary_background};
+            background-color: transparent;
             border-radius: {Roundings.button}px;
+            border: 1.5px solid {Colors.glass_border};
         }}
 
         QPushButton#segmentedButton {{
@@ -217,15 +214,31 @@ class Controls:
         }}
 
         QPushButton#segmentedButton:checked:hover {{
-            background-color: {Colors.nothing_accent_second};
+            background-color: {Colors.nothing_accent_hover};
         }}
     """
     
-    BPMTextBox = f"""
-        background-color: #2b2b2b;
+    TextBoxNoBorder = f"""
+        background-color: transparent;
         color: #fff;
         padding: 8px 12px;
-        border-radius: 12px;
+        border-radius: {Roundings.button}px;
+    """
+
+    FloatingTextBox = f"""
+        background-color: transparent;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: 1.5px solid {Colors.glass_border}
+    """
+
+    FloatingTextBoxRound = f"""
+        background-color: transparent;
+        color: #fff;
+        padding: 8px 12px;
+        border-radius: 16px;
+        border: 1.5px solid {Colors.glass_border}
     """
 
     AudioSetupper = f"""
@@ -281,14 +294,14 @@ class Controls:
     """
     
     EffectSetupper = f"""
-        QWidget {{background-color: {Colors.effect_menu}; color: {Colors.font_color}}}
+        QWidget {{background-color: {Colors.EffectMenu.standard}; color: {Colors.font_color}}}
         QLabel {{padding: 5px}}
         QCheckBox {{margin-left: 5px}}
     """
     
     SliderBackground = f"""
         QWidget {{
-            background-color: {Colors.effect_menu_third};
+            background-color: {Colors.EffectMenu.press};
             border-radius: {Roundings.button}px;
         }}
         """
@@ -296,7 +309,7 @@ class Controls:
     Slider = f"""
         QSlider::groove:horizontal {{
             height: {Metrics.slider_height}px;
-            background: {Colors.effect_menu_second};
+            background: {Colors.EffectMenu.hover};
             border: 1px solid #555;
             border-radius: {Roundings.slider}px;
         }}
@@ -308,7 +321,7 @@ class Controls:
         }}
 
         QSlider::add-page:horizontal {{
-            background: {Colors.effect_menu_second};
+            background: {Colors.EffectMenu.hover};
             border: {Metrics.glass_border_thick} solid #555;
             border-radius: {Roundings.slider}px;
         }}
@@ -323,11 +336,11 @@ class Controls:
         }}
 
         QSlider::handle:horizontal:hover {{
-            background: {Colors.nothing_accent_second};
+            background: {Colors.nothing_accent_hover};
         }}
 
         QSlider::handle:horizontal:pressed {{
-            background: {Colors.nothing_accent_third};
+            background: {Colors.nothing_accent_pressed};
         }}
     """
     
@@ -362,12 +375,12 @@ class Controls:
             width: {Metrics.checkbox_size};
             height: {Metrics.checkbox_size};
             border-radius: 5px;
-            background-color: {Colors.effect_menu_second};
+            background-color: {Colors.EffectMenu.hover};
             border: {Metrics.glass_border_thick} solid #555;
         }}
 
         QCheckBox::indicator:hover {{
-            border: {Metrics.glass_border_thick} solid {Colors.nothing_accent_third};
+            border: {Metrics.glass_border_thick} solid {Colors.nothing_accent_pressed};
         }}
 
         QCheckBox::indicator:checked {{
@@ -392,7 +405,7 @@ class Controls:
 class Menus:
     RMB_element = f"""
         QMenu {{
-            background-color: {Colors.effect_menu};
+            background-color: {Colors.EffectMenu.standard};
             color: {Colors.font_color};
             border: {Metrics.glass_border_thick} solid {Colors.glass_border};
             border-radius: {Roundings.rmb_menu}px;
@@ -401,68 +414,18 @@ class Menus:
 
         QMenu::item {{
             {Other.transparent}
-            padding: 5px 20px;
+            padding: 5px 15px;
             margin: 2px;
             border-radius: {Roundings.rmb_menu_item}px;
         }}
 
         QMenu::item:selected {{
-            background-color: {Colors.effect_menu_second};
+            background-color: {Colors.EffectMenu.hover};
         }}
 
         QMenu::separator {{
             height: {Metrics.glass_border_thick};
             background-color: {Colors.glass_border};
-            margin: 4px 10px;
-        }}
-    """
-
-    audio_setup = f"""
-        QDialog {{
-            background-color: #1e1e1e;
-        }}
-        QLabel {{
-            color: #dddddd;
-        }}
-        QLabel#settingsLabel {{
-            color: #8A8A8A;
-        }}
-        QSpinBox {{
-            background-color: transparent;
-            color: #dddddd;
-            border: none;
-            padding: 5px;
-        }}
-        QComboBox {{
-            background-color: #2b2b2b;
-            color: #dddddd;
-            border: none;
-            padding: 5px;
-        }}
-        
-        QComboBox::down-arrow {{ image: none; }}
-        QComboBox::drop-down {{ width: 0px; border: none; }}
-        
-        QComboBox QAbstractItemView::item:focus {{
-            outline: none;
-        }}
-        
-        QComboBox QAbstractItemView {{
-            background: #2b2b2b;
-            border: none;
-            margin: 2px;
-            color: #dddddd;
-            selection-background-color: #1f1f1f;
-            selection-color: #ffffff;
-            outline: none;
-        }}
-        QComboBox::item:selected {{
-            background: #1f1f1f;
-            color: #ffffff;
-        }}
-        
-        QPushButton#play_button {{
-            background-color: transparent;
-            border: none;
+            margin: 4px 15px;
         }}
     """
