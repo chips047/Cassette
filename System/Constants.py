@@ -37,7 +37,7 @@ def code_to_number_model(code: str):
 
 def is_segmented(track, model):
     segments = {
-        "PHONE1": {"4": 8},
+        "PHONE1": {"7": 8},
         "PHONE2": {"4": 16, "10": 8},
         "PHONE2A": {"1": 24},
         "PHONE3A": {"1": 20, "2": 11, "3": 5}
@@ -79,7 +79,7 @@ FPS_30 = 33
 
 # Models and Related
 ModelSegments = {
-    "PHONE1": {"4": 8},
+    "PHONE1": {"7": 8},
     "PHONE2": {"4": 16, "10": 8},
     "PHONE2A": {"1": 24},
     "PHONE3A": {"1": 20, "2": 11, "3": 5},
@@ -89,7 +89,7 @@ def get_segments(model, track):
     return ModelSegments.get(model, {}).get(track)
 
 ModelTracks = {
-    "PHONE1": 5,
+    "PHONE1": 8,
     "PHONE2": 11,
     "PHONE2A": 3,
     "PHONE3A": 3
@@ -146,8 +146,8 @@ DEVICE_CODENAME = {
 }
 
 # Column Lists
-PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(5)]
-PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_15COL = [[0], [1], list(range(2, 6)), list(range(7, 15)), [6]]
+PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(8)]
+PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_15COL = [[0], [1], [4], [5], [2], [3], list(range(7, 15)), [6]]
 PHONE1_15COL_GLYPH_ZONE_INDEX_TO_ARRAY_INDEXES_15COL = [[0], [1], [4], [5], [2], [3], [14], [13], [12], [11], [10], [9], [8], [7], [6]]
 PHONE2_11COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[0], [0], [1], [2], [2], [2], [2], [2], [2], [3], [4]]
 PHONE2_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_11COL = [list(range(0, 2)), [2], list(range(3, 9)), [9], [10]]
