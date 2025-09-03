@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import pygame
+import random
 import shutil
 import platform
 import subprocess
@@ -68,16 +69,41 @@ def get_time():
     hours = t.tm_hour
     
     if 19 <= hours <= 21:
-        return "Good evening."
+        return random.choice(
+            [
+                "Good evening.",
+                "Evening vibes.",
+                "Time to unwind."
+            ]
+        )
     
     elif hours >= 22 or hours <= 5:
-        return "Nighty night."
+        return random.choice(
+            [
+                "Good night.",
+                "Sleep tight.",
+                "Sweet dreams.",
+                "Nighty night."
+            ]
+        )
     
     elif 7 <= hours <= 11:
-        return "Good morning."
+        return random.choice(
+            [
+                "Good morning.",
+                "Rise and shine.",
+                "Time to start the day. With Cassette."
+            ]
+        )
     
     elif 12 <= hours <= 18:
-        return "Hello."
+        return random.choice(
+            [
+                "Good afternoon.",
+                "Hope you're having a great day.",
+                "Keep up the good work."
+            ]
+        )
     
     else:
         return "what the fuck"
@@ -120,15 +146,6 @@ def open_file(path):
 def get_songs_path(relative_path: str) -> str:
     normalized_parts = os.path.normpath(relative_path).split(os.sep)
     full_path = os.path.join(os.path.expanduser("~"), "Songs", *normalized_parts)
-    
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-    return full_path
-
-def get_cache_path(relative_path: str) -> str:
-    base_path = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else os.path.abspath(__file__))
-    cassette_root = os.path.abspath(os.path.join(base_path, ".."))
-    normalized_parts = os.path.normpath(relative_path).split(os.sep)
-    full_path = os.path.join(cassette_root, "Cache", *normalized_parts)
     
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     return full_path
