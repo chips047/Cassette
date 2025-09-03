@@ -3,6 +3,7 @@ import json
 import socket
 import copy
 
+from System import UI
 from System import Utils
 
 from PyQt5.QtCore import *
@@ -54,8 +55,6 @@ class GlyphSyncer:
 
         self._scanner_thread = None
         self._scanner_worker = None
-        
-        self.scan_devices()
         
         if self.devices:
             self.client_sock = socket.create_connection(("127.0.0.1", 7777))
@@ -164,6 +163,15 @@ class GlyphSyncer:
     
     def stop(self):
         self._send_json({"action": "stop"})
+    
+    def attempt_connect(self):
+        try:
+            self.client_sock = socket.create_connection(("127.0.0.1", 7777))
+            self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        
+        except Exception as e:
+            error = UI.ErrorWindow("Failed to communicate with Phone", str(e))
+            error.exec_()
 
     def _send_json(self, payload: dict):
         if not self.devices:
@@ -173,8 +181,8 @@ class GlyphSyncer:
             self.client_sock.sendall(json.dumps(payload).encode() + b"\n")
 
         except Exception as e:
-            self.client_sock = socket.create_connection(("127.0.0.1", 7777))
-            self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            error = UI.ErrorWindow("Failed to communicate with Phone", str(e))
+            error.exec_()
 
     def sync(self, current: dict):
         print("- - - - - SYNC - - - - -")
