@@ -1,4 +1,4 @@
-import os
+import math
 import random
 import string
 import traceback
@@ -11,10 +11,23 @@ from PyQt5.QtWidgets import *
 
 from . import Utils
 from . import Styles
-from . import Porter
 from . import GlyphEffects
 
 from .Constants import *
+
+def get_scale(
+    width, height,
+    min_scale = 1.05,
+    ref_width = 500,
+    ref_height = 150,
+    ref_scale = 1.4
+):
+    ref_diagonal = math.sqrt(ref_width**2 + ref_height**2)
+    diagonal = math.sqrt(width**2 + height**2)
+
+    scale = min_scale + (ref_scale - min_scale) * ((ref_diagonal / diagonal))
+
+    return max(scale, min_scale)
 
 class GlitchyButton(QPushButton):
     glitch_started = pyqtSignal()
@@ -199,7 +212,7 @@ class SelectorWithLabel(QWidget):
 
         self.container_background = QWidget(self)
         self.container_background.setObjectName("backgroundContainer")
-        self.container_background.setStyleSheet(Styles.Controls.Selector)
+        self.container_background.setStyleSheet(Styles.Controls.selector_style())
 
         inner_layout = QVBoxLayout(self.container_background)
         inner_layout.setContentsMargins(15, 10, 15, 15)
@@ -300,7 +313,7 @@ class CheckboxWithLabel(QWidget):
 
         self.description_label = QLabel(description, self.container_background)
         self.description_label.setFont(Utils.NType(13))
-        self.description_label.setStyleSheet(f"color: {Styles.Colors.second_font_color}; padding: 0px;")
+        self.description_label.setStyleSheet(f"color: {Styles.Colors.subtle_font_color}; padding: 0px;")
         inner_layout.addWidget(self.description_label, 1, Qt.AlignmentFlag.AlignVCenter)
 
         main_layout.addWidget(self.container_background)
@@ -694,7 +707,7 @@ class ValuePopup(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        bg_color = QColor(*Styles.hex_to_rgb(Styles.Colors.secondary_background))
+        bg_color = QColor(Styles.Colors.secondary_background)
         painter.setBrush(bg_color)
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(self.fixed_rect, 8, 8)
@@ -841,7 +854,7 @@ class AnimatedTooltip(QWidget):
 
         rect = self.rect().adjusted(1, 1, -1, -1)
 
-        bg = QColor(*Styles.hex_to_rgb(Styles.Colors.secondary_background))
+        bg = QColor(Styles.Colors.secondary_background)
         painter.setBrush(bg)
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(rect, Styles.Roundings.button, Styles.Roundings.button)
@@ -1354,7 +1367,7 @@ class NavButton(QPushButton):
                 text-align: left;
             }}
             QPushButton:hover {{
-                background-color: {Styles.Colors.nothing_accent_second};
+                background-color: {Styles.Colors.nothing_accent_hover};
             }}
         """
         self.inactive_style = f"""
@@ -1638,12 +1651,12 @@ class Settings(QDialog):
             
             painter.setTransform(transform)
         
-        bg_color = QColor(*Styles.hex_to_rgb(Styles.Colors.secondary_background))
+        bg_color = QColor(Styles.Colors.secondary_background)
         painter.setBrush(bg_color)
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(content_rect, 16, 16)
-        
-        border = QColor(*Styles.hex_to_rgb(Styles.Colors.glass_border))
+
+        border = QColor(Styles.Colors.glass_border)
         pen = QPen(border, 1.5)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
@@ -1654,17 +1667,23 @@ class Settings(QDialog):
 class FloatingWindow(QDialog):
     MARGIN = 120
     
-    def __init__(self, title: str, width: int, height: int, bpm: int = None, player = None):
+    def __init__(self, title: str, width: int, height: int, bpm: int = None, player = None, max_tilt_angle = 15, fixed_sizes = False):
         super().__init__()
         self.content_width = width
         self.content_height = height
         self.bpm = bpm
         self.player = player
+        self.max_tilt_angle = max_tilt_angle
 
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
         
-        self.setFixedWidth(self.content_width + self.MARGIN * 2)
+        if fixed_sizes:
+            self.setFixedHeight(self.content_height + self.MARGIN * 2)
+        else:
+            self.setFixedWidth(self.content_width + self.MARGIN * 2)
+        
         self.setMinimumHeight(self.content_height + self.MARGIN * 2)
 
         self.setupLayout(title)
@@ -1677,16 +1696,25 @@ class FloatingWindow(QDialog):
         self.animation_timer.start()
         
         self.bpm_timer = QTimer(self)
-        if self.bpm and self.player:
-            self.bpm_timer.setInterval(int(60000 / self.bpm))
-            self.bpm_timer.timeout.connect(self.bpm_tick_animation)
+        self.bpm_timer.timeout.connect(self.bpm_tick_animation)
+
+        if self.bpm:
+            if self.bpm >= 200:
+                self.bpm = int(self.bpm / 2)
+
             self.bpm_timer.start()
         
         self.was_cancelled = False
         self.anim_scale = None
         
         QTimer.singleShot(0, self.start_entry_animation)
-        QTimer.singleShot(20000, lambda: self.title_label.setText("Yes, this is trippy."))
+    
+    def update_bpm(self, bpm):
+        self.bpm = bpm
+        if self.bpm >= 200:
+            self.bpm = int(self.bpm / 2)
+
+        self.bpm_timer.setInterval(int(60000 / self.bpm))
 
     def resizeEvent(self, event):
         self.content_width  = self.width()  - self.MARGIN * 2
@@ -1711,7 +1739,6 @@ class FloatingWindow(QDialog):
 
     def setupMouseTracking(self):
         self.setMouseTracking(True)
-        self.max_tilt_angle = 25
         
         self.current_tilt_x = 0.0
         self.current_tilt_y = 0.0
@@ -1907,13 +1934,14 @@ class FloatingWindow(QDialog):
 
     def start_exit_animation(self):
         self.bpm_timer.stop()
-        self.target_tilt_y = random.randint(10, 30)
-        self.target_rotation = random.randint(-15, 15)
+        self.target_tilt_y = random.randint(5, 15)
+        self.target_rotation = random.randint(-7, 7)
 
         anim_scale = QPropertyAnimation(self, b"exitScale")
         anim_scale.setDuration(450)
         anim_scale.setStartValue(1.0)
-        anim_scale.setEndValue(1.5)
+        print(get_scale(self.content_width, self.content_height, ref_width = 500, ref_height = 150))
+        anim_scale.setEndValue(get_scale(self.content_width, self.content_height, ref_width = 500, ref_height = 150))
         anim_scale.setEasingCurve(QEasingCurve.OutCubic)
 
         anim_opacity = QPropertyAnimation(self, b"windowOpacity")
@@ -1926,6 +1954,17 @@ class FloatingWindow(QDialog):
         self.anim_group.addAnimation(anim_scale)
         self.anim_group.addAnimation(anim_opacity)
         self.anim_group.finished.connect(self._really_close)
+
+        self.title_label.setText(
+            random.choice(
+                [
+                    "Bye",
+                    "Awawa",
+                    ":3",
+                    
+                ]
+            )
+        )
         self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
     
     def event(self, event):
@@ -2037,7 +2076,7 @@ class ExportDialogWindow(FloatingWindow):
     selection_changed = pyqtSignal(str)
     
     def __init__(self, title, composition, bpm = None, player = None):
-        super().__init__(title, 600, 250, bpm, player)
+        super().__init__(title, 400, 250, bpm, player)
         self.composition = composition
         self.original_model = composition.model
         
@@ -2061,24 +2100,17 @@ class ExportDialogWindow(FloatingWindow):
         self.choices = PortVariants[composition.model]
 
         self.combobox = SelectorWithLabel("Tap a model to port the song to it.", self.choices)
+        self.combobox.container_background.setStyleSheet(Styles.Controls.selector_style(False))
         self.combobox.selection_changed.connect(self.request_port)
-
-        self.checkbox = CheckboxWithLabel("Port Segments", "Ports glyph segments to other devices")
-        self.checkbox.stateChanged(self.port_segments_callback)
         
         self.layout.insertWidget(1, self.combobox)
-        self.layout.insertWidget(1, self.checkbox)
     
     def request_port(self, _, text):
         code_model = number_model_to_code(text)
         
         try:
-            ported, ported_to = Porter.Port.port(self.original_model, code_model, self.composition, self.port_segments)
-            Porter.Port.export_port(ported, ported_to, self.composition.audio_duration, self.composition.id)
+            self.composition.export_port(code_model)
 
-            Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.composition.id))))
-            Utils.ui_sound("Export")
-        
         except Exception as e:
             tb_last_line = "\n".join(traceback.format_exc().strip().splitlines()[-4:])
             print("\n".join(traceback.format_exc().strip().splitlines()))
@@ -2088,16 +2120,6 @@ class ExportDialogWindow(FloatingWindow):
                 f"Report this error to chips047:\n{tb_last_line}"
             )
             error.exec_()
-    
-    def port_segments_callback(self, state):
-        if state == 2:
-            warning = ErrorWindow("Wait a second!", "Porting segments means that the zones you configured will attempt to adapt to a different device model. This may cause the zones to appear differently than intended. It is recommended not to enable this feature.")
-            warning.exec_()
-
-            self.port_segments = True
-        
-        else:
-            self.port_segments = False
 
 class DialogWindow(FloatingWindow):
     def __init__(self, title):
@@ -2120,7 +2142,7 @@ class SegmentEditor(FloatingWindow):
         self.ok_button = NothingButton("Apply!")
         self.cancel_button = ButtonWithOutline("Nah")
         
-        self.ok_button.clicked.connect(self.on_ok)
+        self.ok_button.clicked.connect(self.accept_callback)
         self.cancel_button.clicked.connect(self.on_cancel)
 
         button_row = QHBoxLayout()
@@ -2134,6 +2156,10 @@ class SegmentEditor(FloatingWindow):
         self.layout.addLayout(button_row)
 
         self.segmented_bar.segment_changed.connect(self.wobble)
+    
+    def accept_callback(self):
+        self.saved_segments = self.segments()
+        super().on_ok()
     
     def segments(self):
         return self.segmented_bar.active
