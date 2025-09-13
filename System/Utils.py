@@ -4,6 +4,7 @@ import time
 import pygame
 import random
 import shutil
+import requests
 import platform
 import subprocess
 
@@ -12,6 +13,18 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
 import numpy as np
+
+from System.Constants import *
+
+def get_fox_image(url="https://randomfox.ca/floof/"):
+    try:
+        resp = requests.get(url, timeout = 2)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("image")
+    
+    except requests.Timeout:
+        return
 
 def gaussian_filter1d_np(data, sigma):
     radius = int(3 * sigma)
@@ -158,6 +171,12 @@ def run(*args, **kwargs):
 
 def ui_sound(name, tone = None):
     try:
+        if CurrentSettings["disable_sounds"]:
+            return
+
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+
         sound = pygame.mixer.Sound(f"System/Sounds/{name}.wav")
 
         array = pygame.sndarray.array(sound)
@@ -177,3 +196,26 @@ def ui_sound(name, tone = None):
         new_sound.play()
 
     except Exception as e: print(str(e))
+
+def auto_cast(value: str):
+    if value is None:
+        return None
+
+    v = str(value).strip()
+
+    if v.lower() in {"true", "yes", "1"}:
+        return True
+    if v.lower() in {"false", "no", "0"}:
+        return False
+
+    try:
+        return int(v)
+    except ValueError:
+        pass
+
+    try:
+        return float(v)
+    except ValueError:
+        pass
+
+    return value
