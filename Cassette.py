@@ -28,7 +28,7 @@ app = QApplication(sys.argv)
 
 from System import Utils
 from loguru import logger
-from System import UI
+from System.Constants import *
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
 
@@ -40,11 +40,14 @@ class ApplicationWindow(QMainWindow):
         self.setWindowTitle("Cassette")
         self.resize(1280, 800)
         logger.info("Starting up...")
+
+        prepare_default_settings(SettingsDict)
+        load_settings()
         
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        self.main_menu_widget = MainMenu()
+        self.main_menu_widget = MainMenu(self)
         self.compositor_widget = CompositorWidget()
 
         self.stack.addWidget(self.main_menu_widget)
@@ -108,7 +111,7 @@ class ApplicationWindow(QMainWindow):
             logger.info("Showing compositor...")
             Utils.ui_sound("Eject")
             self.stack.setCurrentWidget(self.compositor_widget)
-            target_geometry = self.stack.geometry() 
+            target_geometry = self.stack.geometry()
 
             self.anim_move = QPropertyAnimation(self.compositor_widget, b"geometry")
             self.anim_move.setDuration(700)
@@ -127,7 +130,6 @@ class ApplicationWindow(QMainWindow):
     @pyqtSlot()
     def hide_compositor_and_show_main_menu(self):
         if hasattr(self.compositor_widget, "composition"):
-            print("Stopping detector...")
             self.compositor_widget.composition.syncer.stop_scanning_loop()
         
         anim_out_compositor = self.fade_out(self.compositor_widget)
@@ -150,8 +152,10 @@ class ApplicationWindow(QMainWindow):
             self.anim_move_main_menu = QPropertyAnimation(self.main_menu_widget, b"geometry")
             self.anim_move_main_menu.setDuration(700)
             self.anim_move_main_menu.setStartValue(
-                QRect(initial_main_menu_geometry.x(), initial_main_menu_geometry.y() + offset_y,
-                      initial_main_menu_geometry.width(), initial_main_menu_geometry.height())
+                QRect(
+                    initial_main_menu_geometry.x(), initial_main_menu_geometry.y() + offset_y,
+                    initial_main_menu_geometry.width(), initial_main_menu_geometry.height()
+                )
             )
             self.anim_move_main_menu.setEndValue(initial_main_menu_geometry)
             self.anim_move_main_menu.setEasingCurve(QEasingCurve.OutElastic)
