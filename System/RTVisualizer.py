@@ -32,6 +32,7 @@ class DeviceScanner(QObject):
 
     @pyqtSlot()
     def scan(self):
+        print("Scanning...")
         if not self._running:
             if self._timer:
                 self._timer.stop()
@@ -44,6 +45,10 @@ class DeviceScanner(QObject):
 
     def stop(self):
         self._running = False
+        if self._timer:
+            self._timer.stop()
+            self._timer.deleteLater()
+            self._timer = None
 
 class GlyphSyncer:
     def __init__(self, composition):
@@ -75,8 +80,17 @@ class GlyphSyncer:
     def stop_scanning_loop(self):
         if self._scanner_thread and self._scanner_thread.isRunning():
             self._scanner_worker.stop()
+
+            QMetaObject.invokeMethod(
+                self._scanner_worker,
+                "scan",
+                Qt.BlockingQueuedConnection
+            )
+
             self._scanner_thread.quit()
-            self._scanner_thread.wait(3000)
+            self._scanner_thread.wait(5000)
+            self._scanner_worker.deleteLater()
+            self._scanner_thread.deleteLater()
 
     def _init_worker_timer(self):
         self._scanner_timer = QTimer()
