@@ -1,3 +1,4 @@
+import random
 import aubio
 import tempfile
 
@@ -7,8 +8,50 @@ import multiprocessing as mp
 from PyQt5.QtCore import *
 from pydub import AudioSegment
 
-from System import Utils
 from System.Constants import *
+
+def variable_tape_stop_array(src_arr: np.ndarray, sample_rate: int, end_speed: float = 0.05, fade_to: float = 0.0) -> np.ndarray:
+    orig_dtype = src_arr.dtype
+    if np.issubdtype(orig_dtype, np.integer):
+        norm = float(np.iinfo(orig_dtype).max) + 1.0
+        x = src_arr.astype(np.float32) / norm
+    else:
+        x = src_arr.astype(np.float32)
+
+    mono = False
+    if x.ndim == 1:
+        x = x[:, None]
+        mono = True
+
+    N_src = x.shape[0]
+    channels = x.shape[1]
+    src_duration_sec = N_src / float(sample_rate)
+
+    T_out = 2.0 * src_duration_sec / (1.0 + end_speed)
+    N_out = max(1, int(np.ceil(T_out * sample_rate)))
+
+    t_out = np.linspace(0.0, T_out, N_out, endpoint=False, dtype=np.float64)
+
+    a = (end_speed - 1.0) / T_out
+    src_pos_sec = t_out + 0.5 * a * (t_out ** 2)
+    src_pos_idx = src_pos_sec * sample_rate
+
+    src_pos_idx_clipped = np.clip(src_pos_idx, 0, N_src - 1 - 1e-6)
+    src_indices = np.arange(N_src, dtype=np.float32)
+
+    out = np.zeros((N_out, channels), dtype=np.float32)
+    for ch in range(channels):
+        out[:, ch] = np.interp(src_pos_idx_clipped, src_indices, x[:, ch])
+
+    gain = np.linspace(1.0, fade_to, N_out, dtype=np.float32)[:, None]
+    out *= gain
+
+    out_int16 = np.clip(out * 32767.0, -32768, 32767).astype(np.int16)
+
+    if out_int16.shape[1] == 1:
+        out_int16 = np.repeat(out_int16, 2, axis=1)
+
+    return out_int16
 
 def ensure_wav(path):
     if path.lower().endswith(".wav"):
@@ -31,10 +74,9 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda:
         samplerate = s.samplerate
     
     except Exception as e:
-        print(f"Error opening audio file: {e}")
         return 0, 0, []
 
-    onset_detector = aubio.onset("hfc", 1024, hop_size, samplerate)
+    onset_detector = aubio.onset("energy", 1024, hop_size, samplerate)
     tempo_detector = aubio.tempo("default", 1024, hop_size, samplerate)
 
     onset_times, onset_strengths, tempo_estimates = [], [], []
@@ -58,12 +100,14 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda:
             break
             
     if not tempo_estimates or not onset_times:
+        print("No valid tempo found.")
         return 0, 0, []
 
     median_tempo_aubio = np.median(tempo_estimates)
     intervals = np.diff(onset_times)
     
     if len(intervals) == 0:
+        print("No intervals found.")
         return 0, 0, []
 
     hist, bins = np.histogram(intervals, bins=50)
@@ -83,6 +127,7 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda:
     def score_tempo(test_tempo):
         if test_tempo <= 0:
             return -1
+
         beat_interval = 60.0 / test_tempo
         score = np.sum(np.abs(intervals - beat_interval) < (beat_interval * 0.05))
         score += np.sum(np.abs(intervals - beat_interval * 2) < (beat_interval * 2 * 0.05))
@@ -108,6 +153,7 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda:
     best_tempo = max(scores, key=lambda t: scores[t] if 60 <= t <= 160 else -1)
 
     if best_tempo == 0:
+        print("No valid tempo found.")
         return 0, 0, []
 
     strongest_onset_time = onset_times[np.argmax(onset_strengths)]
