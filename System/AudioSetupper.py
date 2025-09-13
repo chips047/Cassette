@@ -33,82 +33,66 @@ def audio_loader_task(file_path, target_width, queue):
 
     queue.put((audio_data, sampling_rate, peaks))
 
-class AudioLoaderProcess(QObject):
+class AudioLoaderWorker(QObject):
     dataReady = pyqtSignal(object, int, list)
+    long_audio_detected = pyqtSignal()
 
     def __init__(self, file_path, target_width):
         super().__init__()
-        self.file_path = file_path
-        self.target_width = target_width
-        self.proc = None
-        self.queue = mp.Queue()
-
-    def start(self):
-        if self.proc and self.proc.is_alive():
-            return
-
-        self.proc = mp.Process(target=audio_loader_task, args=(self.file_path, self.target_width, self.queue))
-        self.proc.start()
-
-        self.timer = QTimer()
-        self.timer.timeout.connect(self._check_result)
-        self.timer.start(100)
-
-    def _task(self, file_path, target_width, queue):
-        audio_data, sampling_rate = Audio.load_audio(file_path)
-
-        peaks = []
-        if audio_data is not None and len(audio_data) > 0 and target_width > 0:
-            num_peaks = target_width * 2
-            samples_per_peak = max(1, len(audio_data) // num_peaks)
-            for i in range(0, len(audio_data), samples_per_peak):
-                chunk = audio_data[i:i + samples_per_peak]
-                if len(chunk) > 0:
-                    peaks.append(np.max(np.abs(chunk)))
-
-        queue.put((audio_data, sampling_rate, peaks))
-
-    def _check_result(self):
-        if not self.queue.empty():
-            audio_data, sr, peaks = self.queue.get()
-            self.dataReady.emit(audio_data, sr, peaks)
-            self.stop()
-
-    def stop(self):
-        if hasattr(self, "timer") and self.timer.isActive():
-            self.timer.stop()
-
-        if self.proc and self.proc.is_alive():
-            self.proc.terminate()
-            self.proc.join()
-        self.proc = None
-
-class AudioLoaderWorker(QObject):
-    dataReady = pyqtSignal(np.ndarray, int, list)
-
-    def __init__(self, file_path, target_width, parent=None):
-        super().__init__(parent)
         self.file_path = file_path
         self.target_width = target_width
 
     @pyqtSlot()
     def run(self):
         audio_data, sampling_rate = Audio.load_audio(self.file_path)
+
         mins = len(audio_data) / sampling_rate / 60
         if mins >= 10:
-            UI.ErrorWindow("What the hell??", "Why so long???????").exec_()
+            self.long_audio_detected.emit()
 
         peaks = []
         if audio_data is not None and len(audio_data) > 0 and self.target_width > 0:
             num_peaks = self.target_width * 2
             samples_per_peak = max(1, len(audio_data) // num_peaks)
-            
             for i in range(0, len(audio_data), samples_per_peak):
                 chunk = audio_data[i:i + samples_per_peak]
                 if len(chunk) > 0:
                     peaks.append(np.max(np.abs(chunk)))
-        
+
         self.dataReady.emit(audio_data, sampling_rate, peaks)
+
+class AudioLoaderThread(QObject):
+    dataReady = pyqtSignal(object, int, list)
+    long_audio_detected = pyqtSignal()
+
+    def __init__(self, file_path, target_width):
+        super().__init__()
+        self.file_path = file_path
+        self.target_width = target_width
+        self.thread = None
+
+    def start(self):
+        self.thread = QThread()
+
+        self.worker = AudioLoaderWorker(self.file_path, self.target_width)
+        self.worker.moveToThread(self.thread)
+
+        self.thread.finished.connect(self.worker.deleteLater)
+        self.worker.long_audio_detected.connect(self.long_audio_detected.emit)
+
+        self.thread.started.connect(self.worker.run)
+        self.worker.dataReady.connect(self.dataReady.emit)
+        self.worker.dataReady.connect(self.thread.quit)
+        self.worker.dataReady.connect(self.worker.deleteLater)
+
+        self.thread.start()
+
+    def stop(self):
+        if self.thread and self.thread.isRunning():
+            self.thread.quit()
+            self.thread.wait()
+
+        self.thread = None
 
 class TrimmingWaveformWidget(QWidget):
     regionChanged = pyqtSignal(float, float)
@@ -141,7 +125,7 @@ class TrimmingWaveformWidget(QWidget):
         height = self.height()
 
         pixmap = QPixmap(width, height)
-        pixmap.fill(QColor("#2b2b2b"))  # фон
+        pixmap.fill(QColor(Styles.Colors.Floating.background))
 
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
@@ -235,7 +219,7 @@ class TrimmingWaveformWidget(QWidget):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#2b2b2b"))
+        painter.fillRect(self.rect(), QColor(Styles.Colors.Floating.background))
 
         if self.is_loading:
             painter.setPen(QColor("#888"))
@@ -284,9 +268,6 @@ class TrimmingWaveformWidget(QWidget):
             if self.duration > 0:
                 time_pos = (x / self.width()) * self.duration
 
-                #if self._is_playing:
-                #    self.set_is_playing(False)
-
                 if not self._is_playing:
                     self.set_playback_position(time_pos)
                 
@@ -302,14 +283,14 @@ class TrimmingWaveformWidget(QWidget):
             time = max(0, min(self.duration, time))
 
             if self.dragging_handle == 'start':
-                self.start_time = min(time, self.end_time - 0.01)
+                self.start_time = min(time, self.end_time - 0.1)
 
                 if not self._is_playing:
                     print("Not playing")
                     self.set_playback_position(self.start_time)
 
             elif self.dragging_handle == 'end':
-                self.end_time = max(time, self.start_time + 0.01)
+                self.end_time = max(time, self.start_time + 0.1)
                 self.end_time = min(self.end_time, self.duration if self.duration > 0 else self.end_time)
 
                 if self.playback_position > self.end_time:
@@ -470,10 +451,39 @@ class AudioSetupDialog(UI.FloatingWindow):
         self.bpm_remove_timer.timeout.connect(self._bpm_remove_step)
         self._bpm_final_bpm = None
         
-        self.audio_loader = AudioLoaderProcess(self.file_path, self.width())
+        self.audio_loader = AudioLoaderThread(self.file_path, self.width())
         self.audio_loader.dataReady.connect(self.on_audio_loaded)
+        self.audio_loader.long_audio_detected.connect(
+            lambda: UI.ErrorWindow("What the hell??", "Why so long???????").exec_()
+        )
+
         logger.info("Loading audio...")
         self.audio_loader.start()
+    
+    def cleanup(self):
+        self.play_tail_with_tape_stop()
+
+        self.playback_timer.stop()
+        self.bpm_anim_timer.stop()
+        self.bpm_remove_timer.stop()
+
+        if hasattr(self, "audio_loader"):
+            self.audio_loader.stop()
+            try: self.audio_loader.dataReady.disconnect()
+            except TypeError: pass
+
+        if hasattr(self, "bpm_worker"):
+            self.bpm_worker.stop()
+            try: self.bpm_worker.bpm_ready.disconnect()
+            except TypeError: pass
+        
+        self.audio_data = None
+        self.trim_widget.audio_data = None
+        self.sound_object = None
+
+        self.trim_widget.audio_data = None
+        self.trim_widget.smooth_top = []
+        self.trim_widget.smooth_bottom = []
     
     @pyqtSlot(np.ndarray, int, list)
     def on_audio_loaded(self, audio_data, sampling_rate, peaks):
@@ -514,16 +524,7 @@ class AudioSetupDialog(UI.FloatingWindow):
         self.end_time_label.blockSignals(False)
     
     def reject_callback(self):
-        if hasattr(self, "bpm_worker"):
-            self.bpm_worker.stop()
-        
-        if hasattr(self, "audio_loader"):
-            self.audio_loader.stop()
-        
-        if self.is_playing:
-            print("Fading")
-            self.sound_object.fadeout(1500)
-
+        self.cleanup()
         super().on_cancel()
 
     def edit_start_time(self):
@@ -602,12 +603,9 @@ class AudioSetupDialog(UI.FloatingWindow):
         self.start_sample = int(self.trim_widget.start_time * self.sampling_rate)
         self.end_sample = int(self.trim_widget.end_time * self.sampling_rate)
 
-        if self.is_playing:
-            print("Fading")
-            self.sound_object.fadeout(1500)
+        self.cleanup()
         
         self.saved_settings = self.get_settings()
-
         super().on_ok()
 
     def on_bpm_ready(self, bpm, first_beat_offset_sec, snapped_times):
@@ -709,6 +707,26 @@ class AudioSetupDialog(UI.FloatingWindow):
         self.play_button.setIcon(self.pause_icon)
         self.trim_widget.set_is_playing(True)
         self.playback_timer.start(14)
+
+    def play_tail_with_tape_stop(self):
+        if not self.is_playing:
+            return
+
+        start = time.time()
+
+        current_pos_sec = self.trim_widget.playback_position
+        start_sample_offset = int(current_pos_sec * self.sampling_rate)
+        end_idx = min(len(self.audio_data), start_sample_offset + int(1 * self.sampling_rate))
+
+        src_segment = self.audio_data[start_sample_offset:end_idx]
+        processed_seg = Audio.variable_tape_stop_array(src_segment, self.sampling_rate)
+
+        self.stop_playback()
+        sound = pygame.sndarray.make_sound(processed_seg.copy())
+        sound.play()
+
+        end = time.time()
+        print(f"Tape done in: {end - start:.6f} sec")
 
     def stop_playback(self):
         self.is_playing = False
