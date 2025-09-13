@@ -1,4 +1,53 @@
 from enum import Enum
+from PyQt5.QtCore import *
+
+from System import Utils
+
+CurrentSettings = {}
+
+def load_settings():
+    qsettings_cache = QSettings("chips047", "Cassette")
+
+    CurrentSettings.clear()
+    CurrentSettings.update(
+        {
+            k: Utils.auto_cast(qsettings_cache.value(k)) for k in qsettings_cache.allKeys()
+        }
+    )
+
+def prepare_default_settings(setting_components):
+    settings = QSettings("chips047", "Cassette")
+    existing_keys = set(settings.allKeys())
+    new_keys = set()
+
+    for page_name, components in setting_components.items():
+        for element_key, params in components.items():
+            key = params["key"]
+            new_keys.add(key)
+
+            if not settings.contains(key):
+                if element_key.startswith("checkbox"):
+                    default_val = params.get("default", False)
+                
+                elif element_key.startswith("slider"):
+                    default_val = params.get("default", params.get("min", 0))
+                
+                elif element_key.startswith("selector"):
+                    default_index = params.get("default", 0)
+                    options = list(params.get("map", {}).values())
+                    default_val = options[default_index] if 0 <= default_index < len(options) else None
+                
+                else:
+                    default_val = None
+
+                if default_val is not None:
+                    settings.setValue(key, default_val)
+
+    obsolete_keys = existing_keys - new_keys
+    for key in obsolete_keys:
+        settings.remove(key)
+
+    settings.sync()
 
 PortVariants = {
     "PHONE1": [
@@ -68,7 +117,7 @@ DEFAULT_SCALING = 200.0
 GLYPH_RESIZE_SENSITIVITY = 10
 ARROW_KEY_INCREMENT = 1
 
-STATUS_BAR_DEFAULT = f"Cassette - Preview ({open('version').read()})"
+STATUS_BAR_DEFAULT = f"Cassette {open('version').read()}"
 
 SAMPLING_RATE = 22050
 
@@ -168,4 +217,96 @@ ModelCodes = {
     "A142P": "Phone (2a)",
     "A059": "Phone (3a)",
     "A059P": "Phone (3a)"
+}
+
+DEFAULT_DURATION = 100
+DEFAULT_BRIGHTNESS = 100
+
+SettingsDict = {
+    "Visuals and Performance": {
+        "checkbox1": {
+            "title": "Reduce Animations",
+            "key": "reduce_animations",
+            "description": "Reduce all these cool animations :(",
+            "default": False
+        },
+        "checkbox2": {
+            "title": "Antialiasing",
+            "key": "antialiasing",
+            "description": "Strongly affects performance on weak computers.",
+            "default": True
+        },
+        "selector3": {
+            "title": "Waveform Tile Width",
+            "key": "tile_width",
+            "choices": ["512", "1024", "2048"],
+            "map": {
+                "512": 512,
+                "1024": 1024,
+                "2048": 2048
+            },
+            "default": 1
+        },
+        "selector4": {
+            "title": "Waveform Smoothing",
+            "key": "waveform_smoothing",
+            "choices": ["Accuracy", "Balance", "Smooth"],
+            "map": {
+                "Accuracy": 0.5,
+                "Balance": 1.7,
+                "Smooth": 3
+            },
+            "default": 1
+        },
+        "checkbox5": {
+            "title": "Center Playhead",
+            "description": "Move the playhead to the center.",
+            "key": "center_playhead",
+            "default": False
+        },
+        "selector5": {
+            "title": "Default Scaling (ms / px)",
+            "key": "default_scaling",
+            "choices": ["100", "200", "300", "400", "500"],
+            "map": {
+                "100": 100,
+                "200": 200,
+                "300": 300,
+                "400": 400,
+                "500": 500
+            },
+            "default": 1
+        }
+    },
+
+    "Connectivity & Devices": {
+        "checkbox1": {
+            "title": "Device Auto - Search",
+            "key": "auto_search",
+            "description": "Automatically searches for a connected Nothing Phone.",
+            "default": True
+        },
+        "checkbox2": {
+            "title": "Instant Device Export",
+            "key": "device_export",
+            "description": "Exported ringtones will be copied to your Nothing Phone.",
+            "default": True
+        }
+    },
+
+    "User Experience": {
+        "checkbox1": {
+            "title": "Disable sounds",
+            "key": "disable_sounds",
+            "description": "All UI sounds will be disabled :(",
+            "default": False
+        },
+        "slider2": {
+            "title": "Playhead Arrow Move Increment",
+            "min": 1,
+            "max": 10,
+            "key": "arrow_increment",
+            "default": 1
+        }
+    }
 }
