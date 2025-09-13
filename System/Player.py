@@ -5,13 +5,13 @@ import numpy as np
 
 from PyQt5.QtCore import *
 from System.Constants import *
+
 from System import Audio
 
 class PlaybackManager(QObject):
     playback_position_updated = pyqtSignal(float)
     playback_state_changed = pyqtSignal(bool)
     audio_loaded = pyqtSignal(np.ndarray, int, float)
-    status_message_requested = pyqtSignal(str, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -31,7 +31,7 @@ class PlaybackManager(QObject):
             pygame.init()
         
         except Exception as e:
-            self.status_message_requested.emit(f"Could not initialize audio playback (Pygame Mixer): {e}.", 0)
+            pass
 
     def load_audio(self, file_path):
         try:
@@ -44,7 +44,7 @@ class PlaybackManager(QObject):
             pygame.mixer.init(self.sampling_rate, channels=1 if y.ndim == 1 else 2)
 
             self.playback_position_updated.emit(0.0)
-            self.audio_loaded.emit(self.audio_data, self.sampling_rate, len(self.audio_data) / self.sampling_rate)
+            
             
             if self.audio_data.dtype != np.int16:
                 max_val = np.max(np.abs(self.audio_data))
@@ -54,11 +54,11 @@ class PlaybackManager(QObject):
                 self.audio_data = np.column_stack([self.audio_data, self.audio_data])
             
             self.audio_data = np.ascontiguousarray(self.audio_data)
+            self.audio_loaded.emit(self.audio_data, self.sampling_rate, len(self.audio_data) / self.sampling_rate)
             
             return True
         
         except Exception as e:
-            self.status_message_requested.emit(f"Failed to load the audio: {str(e)}", 0)
             self.audio_loaded.emit(None, 0, 0)
 
     def toggle_playback(self, current_playhead_ms):
@@ -80,14 +80,14 @@ class PlaybackManager(QObject):
                 playback_rate = self.current_playback_speed_multiplier
                 sampling_rate = int(self.sampling_rate * playback_rate)
 
-            pygame.mixer.quit()
-            pygame.mixer.init(sampling_rate)
+                pygame.mixer.quit()
+                pygame.mixer.init(sampling_rate)
 
             start_sample_offset = int((self.playback_start_audio_ms / 1000.0) * self.sampling_rate)
             segment_to_play = self.audio_data[start_sample_offset:]
 
             if len(segment_to_play) == 0:
-                self.status_message_requested.emit("Nothing to play from current position.", 3000)
+                self.start_playback(0)
                 return
 
             sound = pygame.sndarray.make_sound(segment_to_play)
@@ -99,9 +99,28 @@ class PlaybackManager(QObject):
             self.playback_state_changed.emit(True)
 
         except Exception as e:
-            self.status_message_requested.emit(f"Error during playback: {e}", 0)
             self.is_playing = False
             self.playback_state_changed.emit(False)
+    
+    def play_tail_with_tape_stop(self):
+        start = time.time()
+
+        sr = int(self.sampling_rate)
+        start_sample_offset = int((self.playback_current_position / 1000.0) * sr)
+        if start_sample_offset >= len(self.audio_data):
+            return
+
+        end_idx = min(len(self.audio_data), start_sample_offset + int(1 * sr)) # magic bro
+
+        src_segment = self.audio_data[start_sample_offset:end_idx]
+        processed_seg = Audio.variable_tape_stop_array(src_segment, sr)
+
+        pygame.mixer.stop()
+        sound = pygame.sndarray.make_sound(processed_seg.copy())
+        sound.play()
+
+        end = time.time()
+        print(f"Tape done in: {end - start:.6f} sec")
 
     def stop_playback(self):
         if self.is_playing:
@@ -109,7 +128,6 @@ class PlaybackManager(QObject):
             self.is_playing = False
             self.playback_timer.stop()
             self.playback_state_changed.emit(False)
-            self.status_message_requested.emit("Paused.", 2000)
 
     def set_playback_speed_multiplier(self, speed_multiplier):
         self.current_playback_speed_multiplier = speed_multiplier
