@@ -31,6 +31,8 @@ def effect_to_glyph(element, model, bpm):
     name = element["effect"]["name"]
     config = element["effect"]["settings"]
 
+    if name == "None": return
+
     effect_info = EffectsConfig[name]
     effect_fn = effect_info.get("function")
     settings_meta = effect_info.get("settings", {})
@@ -173,7 +175,7 @@ def glitch(glyph: dict, model: str, bpm: int, fps=20.0, duty_cycle=0.7, min_br_r
 
     return out
 
-def ripple(glyph: dict, model: str, bpm: int, tail=4):
+def ripple(glyph: dict, model: str, bpm: int, tail=4, clip_to_duration=True):
     n, segs, duration, start, end, br, turned_on_segs = get_data(glyph, model, True)
     if segs is None or segs <= 0 or (end - start) <= 0:
         return []
@@ -187,13 +189,18 @@ def ripple(glyph: dict, model: str, bpm: int, tail=4):
 
     actual_duration = end - start
     max_radius_glyph = max(center_indices[-1], segs - 1 - center_indices[0])
-    
+
     max_total_radius = max_radius_glyph + tail
 
     if max_radius_glyph <= 0:
         full_duration = actual_duration
     else:
         full_duration = (max_total_radius / max_radius_glyph) * actual_duration
+
+    full_duration = min(full_duration, actual_duration)
+
+    if full_duration <= 1e-12:
+        return []
 
     frame = 20
     t = start
@@ -204,7 +211,7 @@ def ripple(glyph: dict, model: str, bpm: int, tail=4):
     while t < end_time - 1e-9:
         t1 = min(t + frame, end_time)
         elapsed = t - start
-        
+
         progress = elapsed / full_duration
         radius = int(progress * max_total_radius)
 
@@ -213,7 +220,7 @@ def ripple(glyph: dict, model: str, bpm: int, tail=4):
         for r in range(radius + 1):
             left = center_indices[0] - r
             right = center_indices[-1] + r
-            
+
             if 0 <= left < segs:
                 active_segs.add(left)
             if 0 <= right < segs:
@@ -223,16 +230,16 @@ def ripple(glyph: dict, model: str, bpm: int, tail=4):
             dist = radius - r
             decay = 1.0 - (dist / max(1, tail))
             br_now = max(0, int(br * decay))
-            
+
             left = center_indices[0] - r
             right = center_indices[-1] + r
-            
+
             inds = []
             if 0 <= left < segs:
                 inds.append(left)
             if 0 <= right < segs and right != left:
                 inds.append(right)
-                
+
             for i in inds:
                 out.append({
                     "start": t,
@@ -248,6 +255,7 @@ def ripple(glyph: dict, model: str, bpm: int, tail=4):
 
         if 0 <= left < segs:
             head_segs.append(left)
+        
         if 0 <= right < segs and right != left:
             head_segs.append(right)
 
@@ -259,10 +267,11 @@ def ripple(glyph: dict, model: str, bpm: int, tail=4):
                 "segments": head_segs,
                 "brightness": br
             })
-        
+
         t = t1
 
     return out
+
 
 def bpm_effect(glyph: dict, model: str, bpm: float, multiplier: int, enable_fading: bool):
     n, segs, duration, start, end, br, turned_on_segs = get_data(glyph, model)
