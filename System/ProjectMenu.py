@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+import random
 import webbrowser
 
 from PyQt5.QtGui import *
@@ -14,67 +15,6 @@ from System import ProjectSaver
 
 from System.Constants import *
 from System.AudioSetupper import AudioSetupDialog
-
-settings = {
-    "Visuals & Performance": {
-        "checkbox1": {
-            "title": "Reduce animations",
-            "key": "reduce_animations",
-            "description": "Reduce all these cool animations.",
-            "default": False
-        },
-        "checkbox2": {
-            "title": "Antialiasing",
-            "key": "antialiasing",
-            "description": "Strongly affects performance on weak computers.",
-            "default": True
-        },
-        "selector1": {
-            "title": "Waveform tile width",
-            "key": "tile_width",
-            "choices": ["512", "1024", "2048"],
-            "map": {
-                "512": 512,
-                "1024": 1024,
-                "2048": 2048
-            }
-        },
-        "selector2": {
-            "title": "Waveform smoothing",
-            "key": "waveform_smoothing",
-            "choices": ["Accuracy", "Balance", "Smooth"],
-            "map": {
-                "Accuracy": 0.5,
-                "Balance": 1.7,
-                "Smooth": 2.5
-            }
-        }
-    },
-
-    "Connectivity & Devices": {
-        "checkbox1": {
-            "title": "Device auto-search",
-            "key": "auto_search",
-            "description": "Automatically searches for a connected Nothing Phone.",
-            "default": True
-        },
-        "checkbox2": {
-            "title": "Instant device export",
-            "key": "device_export",
-            "description": "Exported ringtones will be copied to your Nothing Phone.",
-            "default": True
-        }
-    },
-
-    "User Experience": {
-        "checkbox1": {
-            "title": "Disable sounds",
-            "key": "disable_sounds",
-            "description": "All UI sounds will be disabled.",
-            "default": False
-        }
-    }
-}
 
 def get_projects_info(songs_folder):
     projects = {}
@@ -219,8 +159,8 @@ class TrackItemWidget(QWidget):
 class MainMenu(QWidget):
     composition_created = pyqtSignal(object)
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent):
+        super().__init__(parent)
 
         self.container = QFrame(self)
         self.container.setObjectName("container")
@@ -264,19 +204,19 @@ class MainMenu(QWidget):
             self, 
             "Open Audio File", "",
             "Audio Files (*.wav *.mp3 *.ogg *.flac *.mp4);;All Files (*)", 
-            options=options
+            options = options
         )
         
         if not file_path:
             return
-            
+        
+        QApplication.processEvents() # to fix center issues
+
         dialog = AudioSetupDialog(file_path)
-        dialog.destroyed.connect(lambda: print("Dialog deleted"))
         if dialog.exec_() == QDialog.Accepted:
             Utils.ui_sound("MenuClose")
             settings = dialog.saved_settings
             
-            print(file_path)
             composition = ProjectSaver.Composition(
                 file_path,
                 settings
@@ -288,7 +228,22 @@ class MainMenu(QWidget):
         webbrowser.open("https://glyphtones.firu.dev/")
     
     def go_to_github(self):
-        webbrowser.open("") # need to add the link to the GitHub repository...
+        github = "https://www.github.com/Chipik0/Cassette/releases/latest"
+        if random.random() < 0.95:
+            webbrowser.open(github) # lol
+        
+        else:
+            fomx = Utils.get_fox_image()
+            fomx = fomx # what
+            fox = fomx
+            foox = fox
+            foks = foox
+
+            if foks:
+                webbrowser.open(foks)
+            
+            else:
+                webbrowser.open(github)
     
     def center_on_parent(self):
         self.move(0, 0)
@@ -322,7 +277,7 @@ class MainMenu(QWidget):
         button_container = QFrame()
         button_container.setStyleSheet(card_style)
         button_layout = QVBoxLayout(button_container)
-        button_layout.setContentsMargins(10, 10, 10, 10)
+        button_layout.setContentsMargins(5, 5, 5, 5)
         
         button_panel = self.create_button_panel()
         button_layout.addWidget(button_panel)
@@ -379,7 +334,7 @@ class MainMenu(QWidget):
 
     def on_settings(self):
         settings_dialog = UI.Settings()
-        settings_dialog.init_settings(settings)
+        settings_dialog.init_settings(SettingsDict)
         settings_dialog.exec_()
     
     def on_import(self):
@@ -395,43 +350,48 @@ class MainMenu(QWidget):
         version = open("version").read()
 
         buttons_data = [
-            ("New composition", True),
-            ("Import", False),
-            ("Go to glyphtones", False),
-            ("Settings", False),
-            (version, False)
+            ("New composition",  True,  "on_new_composition"),
+            ("Import",           False, "on_import"),
+            ("Go to glyphtones", False, "go_to_glyphtones"),
+            ("Settings",         False, "on_settings"),
+            (version,            False, "go_to_github"),
         ]
 
-        for text, is_accent in buttons_data:
+        accent_style = f"""
+            QPushButton {{
+                background-color: {Styles.Colors.nothing_accent};
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 20px;
+            }}
+            QPushButton:hover {{
+                background-color: {Styles.Colors.nothing_accent_hover};
+            }}
+        """
+
+        default_style = """
+            QPushButton {
+                background-color: #333;
+                color: #ccc;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 20px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+        """
+
+        for text, is_accent, slot_name in buttons_data:
             btn = QPushButton(text)
             btn.setFont(Utils.NType(13))
             btn.setCursor(Qt.PointingHandCursor)
-            if is_accent:
-                btn.setStyleSheet(f"""
-                    QPushButton {{ background-color: {Styles.Colors.nothing_accent}; color: white; border: none; padding: 8px 15px; border-radius: 18px; }}
-                    QPushButton:hover {{ background-color: {Styles.Colors.nothing_accent_hover}; }}
-                """)
-            
-            else:
-                btn.setStyleSheet("""
-                    QPushButton { background-color: #333; color: #ccc; border: none; padding: 8px 15px; border-radius: 18px; }
-                    QPushButton:hover { background-color: #444; }
-                """)
-            
-            if text == "Go to glyphtones":
-                btn.clicked.connect(self.go_to_glyphtones)
-            
-            if text == version:
-                btn.clicked.connect(self.go_to_github)
-            
-            if text == "New composition":
-                btn.clicked.connect(self.on_new_composition)
-            
-            if text == "Settings":
-                btn.clicked.connect(self.on_settings)
-            
-            if text == "Import":
-                btn.clicked.connect(self.on_import)
+
+            btn.setStyleSheet(accent_style if is_accent else default_style)
+
+            if hasattr(self, slot_name):
+                btn.clicked.connect(getattr(self, slot_name))
 
             layout.addWidget(btn)
         
@@ -459,10 +419,6 @@ class MainMenu(QWidget):
             layout.addWidget(track_item, row, col)
         
         return widget
-    
-    def resizeEvent(self, event):
-        self.resize(self.width(), self.height())
-        super().resizeEvent(event)
     
     def showEvent(self, event):
         self.refresh_tracks()
