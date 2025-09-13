@@ -24,6 +24,7 @@ def glyphs_to_ogg(path_to_audio: str, destination: str, glyphs: dict, model_code
     
     author_compressed_base64, custom1_compressed_base64 = compress_and_encode_data(nglyph_data)
     
+    print(nglyph_data)
     columns_mode, custom2 = get_columns_mode_and_custom2(nglyph_data)
     
     metadata = prepare_metadata(audio_json_data, author_compressed_base64, custom1_compressed_base64, columns_mode, custom2)
@@ -45,7 +46,6 @@ def get_columns_model(model):
 def parse_glyphs(glyphs, columns_model):
     parsed_glyphs = []
     for glyph in glyphs:
-        print(glyph)
         custom_5col_id = get_custom_5col_id(int(glyph["track"]), columns_model)
 
         dict_glyph = {
@@ -132,8 +132,8 @@ def compress_and_encode_data(nglyph_data):
     return author_compressed_base64, custom1_compressed_base64
 
 def get_columns_mode_and_custom2(nglyph_data):
-    columns = len(nglyph_data['AUTHOR'][0])
-    columns_mode = N_COLUMNS_TO_COLS[columns / 2]
+    columns = len([x for x in nglyph_data['AUTHOR'][0].split(',') if x])
+    columns_mode = N_COLUMNS_TO_COLS[columns]
     custom2 = STRING_TO_COLS.get(columns_mode, None)
     
     return columns_mode, custom2
