@@ -169,8 +169,6 @@ class BaseComposition:
         for effect in effects:
             temp_glyphs.extend(GlyphEffects.effect_to_glyph(effect, self.model, self.bpm))
 
-        print(temp_glyphs)
-
         Exporter.glyphs_to_ogg(self.cropped_audiofile_path, out_path or Utils.get_songs_path(f"{self.id}/Composed.ogg"), temp_glyphs, self.model)
         Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
     
@@ -192,8 +190,8 @@ class Composition(BaseComposition):
         self.audiofile_path = audiofile_path
         self.audio_data = self.audio_settings.get("audio_data")
 
-        self.brightness = 100
-        self.duration_ms = 100
+        self.brightness = DEFAULT_BRIGHTNESS
+        self.duration_ms = DEFAULT_DURATION
         self.default_effect = "None"
 
         self.syncer = RTVisualizer.GlyphSyncer(self)
@@ -201,7 +199,9 @@ class Composition(BaseComposition):
         self.glyphs = SyncedDict(settings.get("glyphs", {}), sync_callback=self.syncer.sync, composition=self)
         self.cached_effects = {}
         self.last_glyph_id = max(map(int, self.glyphs.keys())) if self.glyphs else 0
-        self.syncer.start_scanning_loop()
+
+        if CurrentSettings["auto_search"]:
+            self.syncer.start_scanning_loop()
 
         for gid, glyph in self.glyphs.items():
             if "effect" in glyph:
