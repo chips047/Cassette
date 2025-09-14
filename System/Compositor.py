@@ -864,9 +864,7 @@ class ScrollableContent(QWidget):
         pixmap.fill(Qt.GlobalColor.transparent)
         
         painter = QPainter(pixmap)
-
-        if CurrentSettings["antialiasing"]:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
         
         path = QPainterPath()
         path.addRoundedRect(1, 1, rect.width(), rect.height(), 10, 10) 
@@ -888,9 +886,7 @@ class ScrollableContent(QWidget):
         pixmap.fill(Qt.GlobalColor.transparent)
 
         p = QPainter(pixmap)
-
-        if CurrentSettings["antialiasing"]:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        CurrentSettings["antialiasing"] and p.setRenderHint(QPainter.Antialiasing)
         
         p.setFont(self._ruler_font)
         p.setPen(QPen(QColor(255, 255, 255), 0.5))
@@ -917,8 +913,7 @@ class ScrollableContent(QWidget):
 
         p = QPainter(pixmap)
 
-        if CurrentSettings["antialiasing"]:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        CurrentSettings["antialiasing"] and p.setRenderHint(QPainter.Antialiasing)
 
         beat_times = self.composition.beats
         if beat_times:
@@ -1141,8 +1136,7 @@ class ScrollableContent(QWidget):
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
 
-        if CurrentSettings["antialiasing"]:
-            painter.setRenderHint(QPainter.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
         bar_width = float(self.tile_width) / len(smooth_top)
 
@@ -1188,11 +1182,10 @@ class ScrollableContent(QWidget):
             self.frame_times.append(1.0 / delta)
             self.fps = sum(self.frame_times) / len(self.frame_times)
         
-        self.main_window_ref.top_status_label.setText(f"FPS {self.fps:.1f}")
+        if self.playback_manager.is_playing:
+            self.main_window_ref.top_status_label.setText(f"{STATUS_BAR_DEFAULT} - FPS {self.fps:.1f}")
 
-        if CurrentSettings["antialiasing"]:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), Qt.GlobalColor.black)
 
         visible_rect = self.get_visible_rect()
@@ -1602,7 +1595,8 @@ class CompositorWidget(QWidget):
 
         if self.content_widget.playback_manager.is_playing:
             self.content_widget.playback_manager.play_tail_with_tape_stop()
-        
+    
+    def cleanup(self):
         self.mini_preview_widget.audio_data = None
         self.mini_preview_widget.peaks = None
         self.content_widget.deleteLater()

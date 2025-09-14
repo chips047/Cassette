@@ -128,7 +128,7 @@ class TrimmingWaveformWidget(QWidget):
         pixmap.fill(QColor(Styles.Colors.Floating.background))
 
         painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
         bar_width = width / len(self.smooth_top)
         path = QPainterPath()
@@ -218,7 +218,7 @@ class TrimmingWaveformWidget(QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
         painter.fillRect(self.rect(), QColor(Styles.Colors.Floating.background))
 
         if self.is_loading:
@@ -286,7 +286,6 @@ class TrimmingWaveformWidget(QWidget):
                 self.start_time = min(time, self.end_time - 0.1)
 
                 if not self._is_playing:
-                    print("Not playing")
                     self.set_playback_position(self.start_time)
 
             elif self.dragging_handle == 'end':
@@ -726,7 +725,6 @@ class AudioSetupDialog(UI.FloatingWindow):
         sound.play()
 
         end = time.time()
-        print(f"Tape done in: {end - start:.6f} sec")
 
     def stop_playback(self):
         self.is_playing = False
