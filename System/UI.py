@@ -83,9 +83,9 @@ class GlitchyButton(QPushButton):
             if not CurrentSettings["reduce_animations"]:
                 self.move(self.original_pos)
                 self.resize(self.original_size)
+                self.glitch_timer.stop()
             
             self.setText(self.original_button_text)
-            self.glitch_timer.stop()
             return
 
         font_metrics = QFontMetrics(self.font())
@@ -303,7 +303,6 @@ class SelectorWithLabel(QWidget):
 
     def setCurrentData(self, key):
         for idx, k in self._keys.items():
-            print(f"IDX {idx} k: {k} key: {key}")
             if str(k) == str(key):
                 self._group.button(idx).setChecked(True)
                 break
@@ -717,7 +716,6 @@ class EffectPreviewWidget(QWidget):
         self.apply_button.setStyleSheet(Styles.Buttons.normal_button_with_border)
         current_settings = self.get_settings()
 
-        print(f"Emiting: {self.effect_name}, {current_settings}")
         self.apply_requested.emit(self.effect_name, current_settings)
     
     def mousePressEvent(self, event):
@@ -808,7 +806,6 @@ class AnimatedTooltipManager(QWidget):
         pos = self._calculate_position(final_size)
         
         self.setGeometry(QRect(pos, final_size))
-        
 
         if not CurrentSettings["reduce_animations"]:
             self._opacity_effect.setOpacity(0.0)
@@ -2073,7 +2070,6 @@ class ExportDialogWindow(FloatingWindow):
 
         except Exception as e:
             tb_last_line = "\n".join(traceback.format_exc().strip().splitlines()[-4:])
-            print("\n".join(traceback.format_exc().strip().splitlines()))
 
             error = ErrorWindow(
                 "Somethin' went wrong...",
@@ -2236,11 +2232,9 @@ class Settings(FloatingWindow):
 
     def load_setting(self, key, widget, params):
         if self.settings.contains(key):
-            print(f"KEY: {key}")
             saved_value = self.settings.value(key)
             
             if isinstance(widget, CheckboxWithLabel):
-                print(saved_value)
                 widget.setChecked(saved_value.lower() == "true")
             
             elif isinstance(widget, SliderWithLabel):
@@ -2271,10 +2265,8 @@ class Settings(FloatingWindow):
             
             elif isinstance(widget, SelectorWithLabel):
                 value = widget.currentData()
-                print(f"Value: {value}")
 
             if value is not None:
-                print(f"Setting: {key}, {value}")
                 self.settings.setValue(key, value)
         
         self.settings.sync()
