@@ -1,4 +1,7 @@
+import time
 import random
+import collections
+
 import numpy as np
 
 from PyQt5.QtGui import *
@@ -11,6 +14,7 @@ from System import ProjectSaver
 from System import GlyphEffects
 
 from System.Constants import *
+from loguru import logger
 
 from System import UI
 from System import Utils
@@ -33,6 +37,8 @@ class DataManager(QObject):
         
         ids_to_delete = list(self.selected_element_ids)
         self.composition.delete_glyphs(ids_to_delete)
+
+        logger.info(f"Deleted glyphs with ids: {ids_to_delete}")
         
         self.selected_element_ids.clear()
         self.elements_changed.emit()
@@ -42,6 +48,8 @@ class DataManager(QObject):
 
         for el_id in self.selected_element_ids:
             el = self.composition.get_glyph(el_id)
+
+            logger.info(f"Copied: {el_id}")
             
             if el:
                 self.copied_elements.append(el.copy())
@@ -57,6 +65,7 @@ class DataManager(QObject):
         new_ids = []
         for el in self.copied_elements:
             new_ids.append(self.composition.copy_glyph(el, offset))
+            logger.info(f"Pasting glyphs: {new_ids}")
         
         self.selected_element_ids = set(new_ids)
         self.elements_changed.emit()
@@ -69,6 +78,8 @@ class KeyboardController:
         self.glyph_manager = glyph_manager
 
         self.playhead_move_increment = CurrentSettings["arrow_increment"]
+
+        logger.info("Keyboard Controller initialized")
     
     def _handle_copy_paste(self, event) -> bool:
         if event.matches(QKeySequence.Copy):
@@ -77,9 +88,9 @@ class KeyboardController:
             return True
 
         if event.matches(QKeySequence.Paste):
-            print("Pasting")
             self.glyph_manager.paste_elements()
             event.accept()
+
             return True
 
         return False
@@ -177,6 +188,8 @@ class WheelController:
         self._scroll_timer = QTimer(conductor)
         self._scroll_timer.timeout.connect(self._update_smooth_scroll)
         self._scroll_timer.setInterval(FPS_120)
+
+        logger.info("Mouse Wheel Controller initialized")
     
     def process_wheel_event(self, event):
         delta = event.angleDelta().y()
@@ -243,6 +256,8 @@ class InteractionHandler:
         self._tone_min = 0.6                # минимальный допустимый тон
         self._tone_max = 1.2                # максимальный допустимый тон
         self._tone_jitter = 0.02
+
+        logger.info("Mouse Controller initialized")
 
     def process_mouse_press_event(self, event: QMouseEvent):
         if event.button() != Qt.MouseButton.LeftButton:
@@ -359,8 +374,6 @@ class InteractionHandler:
 
         if velocity < 0:
             final += 0.2
-        
-        print(f"FINAL TONE: {final}")
 
         return final
 
@@ -424,19 +437,14 @@ class InteractionHandler:
 
                     self._update_marquee(fake_event)
                     self.conductor.update()
-            
-            else:
-                print("Same 2")
         
         if not CurrentSettings["disable_sounds"]:
             if abs(self._edge_scroll_velocity) >= 1 and self._edge_sound_active:
                 norm = min(1.0, abs(self._edge_scroll_velocity) / max(1e-6, self._edge_scroll_max_speed))
                 tone = self._compute_tone_from_velocity(self._edge_scroll_velocity)
-                print(self._edge_scroll_velocity)
     
                 freq_hz = self._rewind_min_hz + (self._rewind_max_hz - self._rewind_min_hz) * norm
                 interval = 1.0 / max(1e-6, freq_hz)
-                print(interval)
     
                 self._rewind_sound_accumulator += dt
     
@@ -603,13 +611,6 @@ class InteractionHandler:
             max_start = self.conductor.total_content_width * self.conductor.ms_per_pixel - element['duration']
             new_start = orig_state['start'] + delta_ms
             new_start = max(min_start, min(new_start, max_start))
-
-            if new_start == max_start:
-                self.mouse_at_the_end_of_scroll = True
-                print("SAME!!!")
-            
-            else:
-                self.mouse_at_the_end_of_scroll = False
 
             element['start'] = new_start
             self.updated_elements[el_id] = element
@@ -791,10 +792,17 @@ class ScrollableContent(QWidget):
         self.mouse_controller    = InteractionHandler(self, self.playback_manager, self.composition, self.glyph_manager)
         self.keyboard_controller = KeyboardController(self, self.playback_manager, self.composition, self.glyph_manager)
 
+        # FPS
+        self.last_time = time.time()
+        self.frame_times = collections.deque(maxlen = 30)
+        self.fps = 0.0
+
         # Shortcuts
         QShortcut(QKeySequence("Ctrl+="), self).activated.connect(self.on_scale_plus)
         QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(self.on_scale_minus)
         QShortcut(QKeySequence(Qt.Key_Delete), self).activated.connect(self.glyph_manager.delete_selected_elements)
+
+        logger.info("Compositor is now running")
     
     def get_opacity_for_position(self, x_pos):
         widget_width = self.get_visible_rect().width()
@@ -1023,6 +1031,8 @@ class ScrollableContent(QWidget):
             self.ms_per_pixel = 1000.0 / 100.0
     
     def generate_tile(self, tile_index):
+        logger.warning(f"Tile {tile_index} created")
+
         if self.playback_manager.audio_data is None or len(self.playback_manager.audio_data) == 0:
             return None
 
@@ -1062,8 +1072,8 @@ class ScrollableContent(QWidget):
         padded_length = ((num_samples + step - 1) // step) * step
         pad_amount = padded_length - num_samples
 
-        padded_min = np.pad(min_samples, (0, pad_amount), mode='constant')
-        padded_max = np.pad(max_samples, (0, pad_amount), mode='constant')
+        padded_min = np.pad(min_samples, (0, pad_amount), mode = 'constant')
+        padded_max = np.pad(max_samples, (0, pad_amount), mode = 'constant')
 
         reshaped_min = padded_min.reshape(-1, step)
         reshaped_max = padded_max.reshape(-1, step)
@@ -1082,6 +1092,7 @@ class ScrollableContent(QWidget):
         
         if np.issubdtype(dtype, np.integer):
             scale = 32767.0
+        
         else:
             scale = 1.0
 
@@ -1103,8 +1114,8 @@ class ScrollableContent(QWidget):
             pad = int(np.ceil(sigma * 3.0))
             pad = min(pad, len(amplitudes_top) - 1)
         
-            top_padded = np.pad(amplitudes_top, (pad, pad), mode='reflect')
-            bottom_padded = np.pad(amplitudes_bottom, (pad, pad), mode='reflect')
+            top_padded = np.pad(amplitudes_top, (pad, pad), mode = 'reflect')
+            bottom_padded = np.pad(amplitudes_bottom, (pad, pad), mode = 'reflect')
         
             smooth_top_padded = Utils.gaussian_filter1d_np(top_padded, sigma=sigma)
             smooth_bottom_padded = Utils.gaussian_filter1d_np(bottom_padded, sigma=sigma)
@@ -1168,6 +1179,16 @@ class ScrollableContent(QWidget):
     
     def paintEvent(self, event):
         painter = QPainter(self)
+
+        now = time.time()
+        delta = now - self.last_time
+        self.last_time = now
+
+        if delta > 0:
+            self.frame_times.append(1.0 / delta)
+            self.fps = sum(self.frame_times) / len(self.frame_times)
+        
+        self.main_window_ref.top_status_label.setText(f"FPS {self.fps:.1f}")
 
         if CurrentSettings["antialiasing"]:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -1380,7 +1401,6 @@ class ScrollableContent(QWidget):
                     element = self.composition.get_glyph(sel_id)
                     if element:
                         result = GlyphEffects.effectCallback(name, settings, element)
-                        print(f"Result: {result}")
                         self.composition.replace_glyph(sel_id, result)
                     
                 self.update()
