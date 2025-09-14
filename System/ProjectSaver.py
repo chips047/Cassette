@@ -57,7 +57,6 @@ class SyncedDict(dict):
 
     def __setitem__(self, key, value):
         if "effect" in value:
-            print(value["effect"]["name"])
             if value["effect"]["name"] != "None":
                 self.composition.cached_effects[str(key)] = GlyphEffects.effect_to_glyph(
                     value, self.composition.model, self.composition.bpm

@@ -1,10 +1,10 @@
-import random
 import aubio
 import tempfile
 
 import numpy as np
 import multiprocessing as mp
 
+from loguru import logger
 from PyQt5.QtCore import *
 from pydub import AudioSegment
 
@@ -100,14 +100,14 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda:
             break
             
     if not tempo_estimates or not onset_times:
-        print("No valid tempo found.")
+        logger.error("No valid tempo found.")
         return 0, 0, []
 
     median_tempo_aubio = np.median(tempo_estimates)
     intervals = np.diff(onset_times)
     
     if len(intervals) == 0:
-        print("No intervals found.")
+        logger.error("No intervals found.")
         return 0, 0, []
 
     hist, bins = np.histogram(intervals, bins=50)
@@ -153,7 +153,7 @@ def analyze_bpm_and_beat_grid(audio_path, hop_size=256, should_interrupt=lambda:
     best_tempo = max(scores, key=lambda t: scores[t] if 60 <= t <= 160 else -1)
 
     if best_tempo == 0:
-        print("No valid tempo found.")
+        logger.error("No valid tempo found.")
         return 0, 0, []
 
     strongest_onset_time = onset_times[np.argmax(onset_strengths)]

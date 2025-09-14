@@ -24,7 +24,6 @@ def glyphs_to_ogg(path_to_audio: str, destination: str, glyphs: dict, model_code
     
     author_compressed_base64, custom1_compressed_base64 = compress_and_encode_data(nglyph_data)
     
-    print(nglyph_data)
     columns_mode, custom2 = get_columns_mode_and_custom2(nglyph_data)
     
     metadata = prepare_metadata(audio_json_data, author_compressed_base64, custom1_compressed_base64, columns_mode, custom2)

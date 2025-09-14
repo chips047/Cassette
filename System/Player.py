@@ -120,7 +120,6 @@ class PlaybackManager(QObject):
         sound.play()
 
         end = time.time()
-        print(f"Tape done in: {end - start:.6f} sec")
 
     def stop_playback(self):
         if self.is_playing:

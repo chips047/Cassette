@@ -32,7 +32,6 @@ class DeviceScanner(QObject):
 
     @pyqtSlot()
     def scan(self):
-        print("Scanning...")
         if not self._running:
             if self._timer:
                 self._timer.stop()
@@ -199,7 +198,6 @@ class GlyphSyncer:
             error.exec_()
 
     def sync(self, current: dict):
-        print("- - - - - SYNC - - - - -")
         current = {str(k): v for k, v in current.items()}
         deleted = set(self.last_synced) - set(current)
         
