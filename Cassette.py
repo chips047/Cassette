@@ -101,47 +101,61 @@ class ApplicationWindow(QMainWindow):
     @pyqtSlot(object)
     def show_compositor(self, composition):
         self.compositor_widget.initialize_compositor(composition.cropped_audiofile_path, composition)
-        initial_compositor_geometry = self.stack.geometry()
-        offset_y = 200
-
-        self.compositor_widget.setGeometry(initial_compositor_geometry.x(), initial_compositor_geometry.y() + offset_y, initial_compositor_geometry.width(), initial_compositor_geometry.height())
-        anim_out = self.fade_out(self.main_menu_widget)
+        anim_out_menu = self.fade_out(self.main_menu_widget)
 
         def on_fade_out_finished():
-            logger.info("Showing compositor...")
-            Utils.ui_sound("Eject")
+            self.main_menu_widget.setVisible(False)
+            self.main_menu_widget.setGraphicsEffect(None)
+
             self.stack.setCurrentWidget(self.compositor_widget)
-            target_geometry = self.stack.geometry()
+
+            initial_compositor_geometry = self.stack.geometry()
+            offset_y = 350
+            self.compositor_widget.setGeometry(
+                initial_compositor_geometry.x(),
+                initial_compositor_geometry.y() + offset_y,
+                initial_compositor_geometry.width(),
+                initial_compositor_geometry.height()
+            )
 
             self.anim_move = QPropertyAnimation(self.compositor_widget, b"geometry")
             self.anim_move.setDuration(700)
-            self.anim_move.setStartValue(QRect(initial_compositor_geometry.x(), initial_compositor_geometry.y() + offset_y, initial_compositor_geometry.width(), initial_compositor_geometry.height()))
-
-            self.anim_move.setEndValue(target_geometry) 
+            self.anim_move.setStartValue(QRect(
+                initial_compositor_geometry.x(),
+                initial_compositor_geometry.y() + offset_y,
+                initial_compositor_geometry.width(),
+                initial_compositor_geometry.height()
+            ))
+            self.anim_move.setEndValue(initial_compositor_geometry)
             self.anim_move.setEasingCurve(QEasingCurve.OutElastic)
 
-            anim_in = self.fade_in(self.compositor_widget)
-            anim_in.start()
+            anim_in_compositor = self.fade_in(self.compositor_widget)
+            anim_in_compositor.start()
+
+            Utils.ui_sound("Eject")
             self.anim_move.start(QAbstractAnimation.DeleteWhenStopped)
 
-        anim_out.finished.connect(on_fade_out_finished)
-        anim_out.start(QAbstractAnimation.DeleteWhenStopped)
+        anim_out_menu.finished.connect(on_fade_out_finished)
+        anim_out_menu.start()
     
     @pyqtSlot()
     def hide_compositor_and_show_main_menu(self):
         if hasattr(self.compositor_widget, "composition"):
-            self.compositor_widget.composition.syncer.stop_scanning_loop()
-        
-        anim_out_compositor = self.fade_out(self.compositor_widget)
+            try:
+                self.compositor_widget.composition.syncer.stop_scanning_loop()
+            
+            except Exception:
+                pass
+
+        logger.info("Fading out compositor")
+        self.anim_out_compositor = self.fade_out(self.compositor_widget)
 
         def on_fade_out_compositor_finished():
-            Utils.ui_sound("Eject")
-            logger.info("Showing main menu...")
-            self.stack.setCurrentWidget(self.main_menu_widget)
+            self.compositor_widget.setVisible(False)
+            self.compositor_widget.cleanup()
 
             initial_main_menu_geometry = self.stack.geometry()
-            offset_y = 200
-
+            offset_y = 350
             self.main_menu_widget.setGeometry(
                 initial_main_menu_geometry.x(),
                 initial_main_menu_geometry.y() + offset_y,
@@ -149,23 +163,42 @@ class ApplicationWindow(QMainWindow):
                 initial_main_menu_geometry.height()
             )
 
+            self.stack.setCurrentWidget(self.main_menu_widget)
+            self.main_menu_widget.setVisible(True)
+
+            menu_effect = self.main_menu_widget.graphicsEffect()
+            if not isinstance(menu_effect, QGraphicsOpacityEffect):
+                menu_effect = QGraphicsOpacityEffect(self.main_menu_widget)
+                self.main_menu_widget.setGraphicsEffect(menu_effect)
+            
+            menu_effect.setOpacity(0.0)
+
+            self.anim_in_main_menu = QPropertyAnimation(menu_effect, b"opacity")
+            self.anim_in_main_menu.setDuration(500)
+            self.anim_in_main_menu.setStartValue(0.0)
+            self.anim_in_main_menu.setEndValue(1.0)
+            self.anim_in_main_menu.setEasingCurve(QEasingCurve.InCubic)
+
             self.anim_move_main_menu = QPropertyAnimation(self.main_menu_widget, b"geometry")
             self.anim_move_main_menu.setDuration(700)
             self.anim_move_main_menu.setStartValue(
                 QRect(
-                    initial_main_menu_geometry.x(), initial_main_menu_geometry.y() + offset_y,
-                    initial_main_menu_geometry.width(), initial_main_menu_geometry.height()
+                    initial_main_menu_geometry.x(),
+                    initial_main_menu_geometry.y() + offset_y,
+                    initial_main_menu_geometry.width(),
+                    initial_main_menu_geometry.height()
                 )
             )
             self.anim_move_main_menu.setEndValue(initial_main_menu_geometry)
             self.anim_move_main_menu.setEasingCurve(QEasingCurve.OutElastic)
 
-            anim_in_main_menu = self.fade_in(self.main_menu_widget)
-            anim_in_main_menu.start()
-            self.anim_move_main_menu.start(QAbstractAnimation.DeleteWhenStopped)
+            Utils.ui_sound("Eject")
 
-        anim_out_compositor.finished.connect(on_fade_out_compositor_finished)
-        anim_out_compositor.start(QAbstractAnimation.DeleteWhenStopped)
+            self.anim_in_main_menu.start()
+            self.anim_move_main_menu.start()
+
+        self.anim_out_compositor.finished.connect(on_fade_out_compositor_finished)
+        self.anim_out_compositor.start()
     
     def closeEvent(self, event):
         self.compositor_widget.closeEvent(event)
