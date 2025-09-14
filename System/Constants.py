@@ -286,12 +286,12 @@ SettingsDict = {
             "description": "Automatically searches for a connected Nothing Phone.",
             "default": True
         },
-        "checkbox2": {
-            "title": "Instant Device Export",
-            "key": "device_export",
-            "description": "Exported ringtones will be copied to your Nothing Phone.",
-            "default": True
-        }
+#        "checkbox2": {
+#            "title": "Instant Device Export",
+#            "key": "device_export",
+#            "description": "Exported ringtones will be copied to your Nothing Phone.",
+#            "default": True
+#        }
     },
 
     "User Experience": {
