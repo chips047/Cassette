@@ -26,10 +26,8 @@ To ensure a smooth experience, we recommend running Cassette on the following sy
 - When launching **Cassette** for the first time, the app **may experience noticeable lag** while loading the initial ringtone. Please be patient — it gets better after the first run.  
 - Don’t expect perfection just yet — crashes, slowdowns, or glitches may occur. If you encounter bugs, please report them so I can improve!  
 - Certain features are **not implemented yet**, including:
-  - Segmented editor  
   - Undo/Redo functionality  
   - Glyph UI preview
-  - Settings aren't working right now
   
   But don’t worry — they’re on the roadmap!
 
