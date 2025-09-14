@@ -322,6 +322,7 @@ class MainMenu(QWidget):
                 height: 0px;
             }
         """)
+
         tracks_container.setStyleSheet("""
             QFrame {
                 border-radius: 30px;
@@ -338,8 +339,16 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        dialog = UI.ErrorWindow("Lmao!", "You got rick rolled. This is so cool. You got rick rolled. This is so cool. You got rick rolled. This is so cool.")
-        dialog.exec_()
+        UI.ErrorWindow(
+            "Lmao!", 
+            "This feature is in development process."
+        ).exec_()
+    
+    def on_about(self):
+        UI.ErrorWindow(
+            "Oh, hello.",
+            f"The best compositor that is still in development.\n\n- Developed entirely by chips047\n- Version: {open('version').read()}\n- UI is inspired by R.E.P.O. game"
+        ).exec_()
 
     def create_button_panel(self):
         panel = QWidget()
@@ -354,6 +363,7 @@ class MainMenu(QWidget):
             ("Import",           False, "on_import"),
             ("Go to glyphtones", False, "go_to_glyphtones"),
             ("Settings",         False, "on_settings"),
+            ("About",            False, "on_about"),
             (version,            False, "go_to_github"),
         ]
 
