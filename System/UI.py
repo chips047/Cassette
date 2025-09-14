@@ -850,7 +850,7 @@ class AnimatedTooltipManager(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
         rect = self.rect().adjusted(1, 1, -1, -1)
 
@@ -902,7 +902,7 @@ class ValuePopup(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
         bg_color = QColor(Styles.Colors.secondary_background)
         painter.setBrush(bg_color)
@@ -1067,7 +1067,7 @@ class MiniWaveformPreview(QWidget):
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
         if not self.peaks:
             painter.setPen(Qt.GlobalColor.darkGray)
@@ -1937,7 +1937,7 @@ class FloatingWindow(QDialog):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, True)
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
         content_rect = QRect(self.MARGIN, self.MARGIN, self.content_width, self.content_height)
         
@@ -2024,7 +2024,7 @@ class DialogInputWindow(FloatingWindow):
             return
 
         self.result_text = text
-        self.start_exit_animation()
+        super().on_ok()
 
     def get_text(self) -> str:
         return self.input_field.text()
@@ -2349,8 +2349,11 @@ class GlitchLabel(QWidget):
 
     def paintEvent(self, ev):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.TextAntialiasing)
+
+        if CurrentSettings["antialiasing"]:
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.TextAntialiasing)
+        
         painter.setFont(self.font)
 
         rect = self.rect()
