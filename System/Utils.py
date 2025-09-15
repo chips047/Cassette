@@ -169,7 +169,7 @@ def run(*args, **kwargs):
     
     return subprocess.run(*args, **kwargs)
 
-def ui_sound(name, tone = None):
+def ui_sound(name, tone=None):
     try:
         if CurrentSettings["disable_sounds"]:
             return
@@ -178,24 +178,39 @@ def ui_sound(name, tone = None):
             pygame.mixer.init()
 
         sound = pygame.mixer.Sound(f"System/Sounds/{name}.wav")
-
         array = pygame.sndarray.array(sound)
+
         rate = np.random.uniform(0.97, 1.03)
-        
         if tone:
             rate = tone
-        
+
         if tone == 1:
             sound.play()
             return
+
+        if array.ndim == 1:
+            array_resample = array
         
-        new_length = int(len(array) / rate)
-        resampled = np.interp(np.linspace(0, len(array), new_length), np.arange(len(array)), array[:, 0]).astype(np.int16)
-        
-        new_sound = pygame.sndarray.make_sound(np.column_stack((resampled, resampled)))
+        else:
+            array_resample = array.mean(axis=1)
+
+        new_length = int(len(array_resample) / rate)
+        resampled = np.interp(
+            np.linspace(0, len(array_resample), new_length),
+            np.arange(len(array_resample)),
+            array_resample
+        ).astype(np.int16)
+
+        mixer_channels = pygame.mixer.get_init()[2]
+        resampled_multi = np.repeat(resampled[:, None], mixer_channels, axis=1)
+
+        print(f"- - - UI Sound Array Depth: {resampled_multi.ndim}")
+
+        new_sound = pygame.sndarray.make_sound(np.ascontiguousarray(resampled_multi))
         new_sound.play()
 
-    except Exception as e: print(str(e))
+    except Exception as e:
+        print(str(e))
 
 def auto_cast(value: str):
     if value is None:

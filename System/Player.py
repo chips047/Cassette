@@ -2,6 +2,7 @@ import time
 import pygame
 
 import numpy as np
+from loguru import logger
 
 from PyQt5.QtCore import *
 from System.Constants import *
@@ -27,11 +28,12 @@ class PlaybackManager(QObject):
         self.playback_current_position = 0
 
         try:
-            pygame.mixer.pre_init(frequency=44100, size=-16, channels=2, buffer=512)
+            pygame.mixer.pre_init(frequency=44100, size=-16, channels = 2, buffer = 512)
             pygame.init()
+            logger.warning(f"Mixer initialized: {pygame.mixer.get_init()}")
         
         except Exception as e:
-            pass
+            logger.error(f"Failed to initialize Playback Manager: {str(e)}")
 
     def load_audio(self, file_path):
         try:
@@ -41,24 +43,27 @@ class PlaybackManager(QObject):
             self.sampling_rate = sr
 
             pygame.mixer.quit()
-            pygame.mixer.init(self.sampling_rate, channels=1 if y.ndim == 1 else 2)
+            pygame.mixer.init(self.sampling_rate, channels = 2)
+
+            logger.warning(f"Mixer initialized while audio load: {pygame.mixer.get_init()}")
 
             self.playback_position_updated.emit(0.0)
-            
             
             if self.audio_data.dtype != np.int16:
                 max_val = np.max(np.abs(self.audio_data))
                 self.audio_data = np.int16(self.audio_data / max_val * 32767)
             
-            if self.audio_data.ndim == 1:
-                self.audio_data = np.column_stack([self.audio_data, self.audio_data])
-            
             self.audio_data = np.ascontiguousarray(self.audio_data)
+
+            mixer_channels = pygame.mixer.get_init()[2]
+            self.audio_data = self._ensure_audio_channels(self.audio_data, mixer_channels)
+
             self.audio_loaded.emit(self.audio_data, self.sampling_rate, len(self.audio_data) / self.sampling_rate)
             
             return True
         
         except Exception as e:
+            logger.error(f"Audio cannot be loaded: {str(e)}")
             self.audio_loaded.emit(None, 0, 0)
 
     def toggle_playback(self, current_playhead_ms):
@@ -76,15 +81,25 @@ class PlaybackManager(QObject):
 
         try:
             sampling_rate = self.sampling_rate
-            if self.current_playback_speed_multiplier != 1.0:
+            print(self.current_playback_speed_multiplier)
+            if float(self.current_playback_speed_multiplier) != 1.0:
                 playback_rate = self.current_playback_speed_multiplier
                 sampling_rate = int(self.sampling_rate * playback_rate)
 
                 pygame.mixer.quit()
-                pygame.mixer.init(sampling_rate)
+                pygame.mixer.init(sampling_rate, channels = 2)
+                logger.warning(f"Playback reinitialized: {pygame.mixer.get_init()}")
+
+            else:
+                if pygame.mixer.get_init()[0] != self.sampling_rate:
+                    pygame.mixer.quit()
+                    pygame.mixer.init(self.sampling_rate, channels = 2)
+                    logger.warning(f"Playback reinitialized: {pygame.mixer.get_init()}")
 
             start_sample_offset = int((self.playback_start_audio_ms / 1000.0) * self.sampling_rate)
             segment_to_play = self.audio_data[start_sample_offset:]
+            
+            logger.warning(f"Number of channels: {segment_to_play.ndim}")
 
             if len(segment_to_play) == 0:
                 self.start_playback(0)
@@ -99,6 +114,7 @@ class PlaybackManager(QObject):
             self.playback_state_changed.emit(True)
 
         except Exception as e:
+            logger.error(f"Audio cannot be played: {str(e)}")
             self.is_playing = False
             self.playback_state_changed.emit(False)
     
@@ -134,6 +150,34 @@ class PlaybackManager(QObject):
         if self.is_playing:
             self.stop_playback()
             self.start_playback(self.playback_current_position)
+    
+    def _ensure_audio_channels(self, arr: np.ndarray, target_channels: int) -> np.ndarray:
+        if arr is None:
+            return arr
+
+        if arr.dtype != np.int16:
+            arr = arr.astype(np.int32)
+
+        if arr.ndim == 1:
+            out = np.column_stack([arr] * target_channels)
+        
+        else:
+            cur_ch = arr.shape[1]
+            if cur_ch == target_channels:
+                out = arr
+            
+            elif cur_ch < target_channels:
+                reps = (target_channels + cur_ch - 1) // cur_ch
+                out = np.tile(arr, (1, reps))[:, :target_channels]
+            
+            else:
+                mono = arr.mean(axis=1).astype(np.int16)
+                out = np.column_stack([mono] * target_channels)
+
+        array = np.ascontiguousarray(out.astype(np.int16))
+        logger.warning(f"Array depth is now {array.ndim}")
+
+        return array
 
     def _update_playback_position(self):
         if self.is_playing and self.audio_data is not None:
