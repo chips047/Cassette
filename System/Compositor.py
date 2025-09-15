@@ -137,8 +137,10 @@ class KeyboardController:
 
         duration = self.composition.duration_ms
 
-        if getattr(self.playback_manager, "is_playing", False):
+        if self.playback_manager.is_playing:
             el_x_start -= 120
+        
+        el_x_start = max(el_x_start, 0)
 
         max_ms = self.conductor.total_content_width * self.conductor.ms_per_pixel
         if el_x_start + duration > max_ms:
@@ -196,12 +198,24 @@ class WheelController:
 
         if event.modifiers() & Qt.ControlModifier:
             self.conductor.scale_view(+10 if delta > 0 else -10)
-        
+            event.accept()
+
+        elif event.modifiers() & Qt.ShiftModifier:
+            scroll_area = self.conductor.parentWidget().parentWidget()
+
+            if isinstance(scroll_area, QScrollArea):
+                v_bar = scroll_area.verticalScrollBar()
+                v_bar.setValue(v_bar.value() - delta)
+            
+            event.accept()
+
         else:
             self._scroll_target_velocity += -delta * 0.2
-            
+
             if not self._scroll_timer.isActive():
                 self._scroll_timer.start()
+
+            event.accept()
 
     def _update_smooth_scroll(self):
         scroll_area = self.conductor.parentWidget().parentWidget()
@@ -633,6 +647,7 @@ class InteractionHandler:
                 new_duration = 1
                 new_start = main_element['start'] + main_element['duration'] - 1
 
+            new_start = max(new_start, 0)
             actual_delta_ms = new_start - orig_main['start']
 
             for el_id, orig_state in self.dragging_element_info['selection_orig_state'].items():
@@ -726,6 +741,7 @@ class ScrollableContent(QWidget):
         super().__init__(parent)
         
         self.composition = composition
+        self.composition.syncer.error_occurred.connect(self.show_error_dialog)
 
         # References
         self.main_window_ref = main_window_ref
@@ -1459,6 +1475,10 @@ class ScrollableContent(QWidget):
             QMessageBox.critical(None, "Context menu failed to show.", f"Report this error to chips047: {str(e)}")
             return
     
+    def show_error_dialog(self, title, message):
+        error_dialog = UI.ErrorWindow(title, message, "Oh nah", self.composition.bpm, self.playback_manager)
+        error_dialog.exec_()
+    
     def get_element_at(self, pos):
         for id, element in reversed(self.composition.all_glyphs().items()):
             element_rect = self.get_element_rect(element)
@@ -1582,7 +1602,7 @@ class CompositorWidget(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet("QScrollArea { border: none; }")
         
-        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.export_button.clicked.connect(self.export_ringtone)
@@ -1648,6 +1668,13 @@ class CompositorWidget(QWidget):
             self.content_widget.playback_manager.stop_playback()
         
         self.content_widget.playback_manager.load_audio(audio_path)
+
+        # Focus Fix
+        for child in self.findChildren(QWidget):
+            if child is not self.content_widget:
+                child.setFocusPolicy(Qt.NoFocus)
+
+        self.content_widget.setFocus()
     
     def closeEvent(self, event):
         if hasattr(self, "content_widget"):
