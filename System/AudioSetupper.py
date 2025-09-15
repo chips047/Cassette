@@ -601,10 +601,9 @@ class AudioSetupDialog(UI.FloatingWindow):
         
         self.start_sample = int(self.trim_widget.start_time * self.sampling_rate)
         self.end_sample = int(self.trim_widget.end_time * self.sampling_rate)
+        self.saved_settings = self.get_settings()
 
         self.cleanup()
-        
-        self.saved_settings = self.get_settings()
         super().on_ok()
 
     def on_bpm_ready(self, bpm, first_beat_offset_sec, snapped_times):
@@ -756,6 +755,8 @@ class AudioSetupDialog(UI.FloatingWindow):
         
         if not hasattr(self, 'end_sample'):
             self.end_sample = int(self.trim_widget.end_time * self.sampling_rate)
+        
+        print(self.end_sample)
             
         return {
             "audio": {
