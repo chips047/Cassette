@@ -201,7 +201,6 @@ class ApplicationWindow(QMainWindow):
         self.anim_out_compositor.start()
     
     def closeEvent(self, event):
-        self.compositor_widget.closeEvent(event)
         super().closeEvent(event)
 
 if __name__ == '__main__':
