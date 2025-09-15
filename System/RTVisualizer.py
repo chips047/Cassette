@@ -26,7 +26,7 @@ class DeviceScanner(QObject):
             return
 
         self._timer = QTimer(self)
-        self._timer.setInterval(3000)
+        self._timer.setInterval(2000)
         self._timer.timeout.connect(self.scan)
         self._timer.start()
 
@@ -49,13 +49,17 @@ class DeviceScanner(QObject):
             self._timer.deleteLater()
             self._timer = None
 
-class GlyphSyncer:
+class GlyphSyncer(QObject):
+    error_occurred = pyqtSignal(str, str)
+
     def __init__(self, composition):
+        super().__init__()
         self.last_synced = {}
 
         self.composition = composition
         self.connected_model = None
         self.devices = []
+        self.blocked_devices = []
 
         self._scanner_thread = None
         self._scanner_worker = None
@@ -96,8 +100,27 @@ class GlyphSyncer:
         self._scanner_timer.setInterval(3000)
         self._scanner_timer.timeout.connect(self._scanner_worker.scan)
         self._scanner_timer.start()
+    
+    def is_package_installed(self, package_name: str, device_id) -> bool:
+        try:
+            result = Utils.run([ADB_PATH, "-s", device_id, "shell", "pm", "path", package_name], capture_output=True, text=True)
+            return result.returncode == 0 and result.stdout.startswith("package:")
+
+        except Exception as e:
+            return False
 
     def init_device(self, device_id):
+        package_installed = self.is_package_installed("com.glyph.receiver", device_id)
+        if not package_installed:
+            if device_id not in self.blocked_devices:
+                self.blocked_devices.append(device_id)
+
+            self.error_occurred.emit(
+                "Oops!",
+                "We could not find an installed Cassette Receiver on your smartphone. Install it from System/ADB folder."
+            )
+            return
+
         Utils.run([ADB_PATH, "-s", device_id, "forward", "tcp:7777", "tcp:7777"], check=True)
         Utils.run([ADB_PATH, "shell", "settings", "put", "global", "nt_glyph_interface_debug_enable", "1"])
         Utils.run([ADB_PATH, "shell", "am", "force-stop", "com.glyph.receiver"], check = True)
@@ -151,20 +174,40 @@ class GlyphSyncer:
         result = Utils.run([ADB_PATH, "devices"], capture_output=True, text=True, check=True)
         lines = result.stdout.strip().splitlines()
         devices = [line.split()[0] for line in lines[1:] if "device" in line]
+        print(devices)
+        print(self.devices)
         
         if self.devices != devices:
+            print("!=")
             old_devices = self.devices
             new_devices = devices
 
             disconnected = list(set(old_devices) - set(new_devices))
             connected = list(set(new_devices) - set(old_devices))
+
+            print(f"Disconnected: {disconnected}, connected: {connected}")
             
             self.devices = devices
             
+            for device in disconnected:
+                if device in self.blocked_devices:
+                    print(f"{device} removed.")
+                    self.blocked_devices.remove(device)
+
+            self.devices = new_devices
+            
             for device in connected:
+                if device in self.blocked_devices:
+                    print(f"This device is blocked")
+                    if device in self.devices:
+                        print("Removed from devices")
+                        self.devices.remove(device)
+                    
+                    continue
+
                 if self.get_model(device):
                     self.init_device(device)
-                    break
+                    break 
     
     def play(self, ms: int):
         self._send_json(
@@ -176,26 +219,34 @@ class GlyphSyncer:
     
     def stop(self):
         self._send_json({"action": "stop"})
-    
+
+    def _has_unblocked_devices(self) -> bool:
+        return bool(set(self.devices) - set(self.blocked_devices))
+
     def attempt_connect(self):
+        if not self._has_unblocked_devices():
+            return
+
         try:
             self.client_sock = socket.create_connection(("127.0.0.1", 7777))
             self.client_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         
         except Exception as e:
-            error = UI.ErrorWindow("Failed to communicate with Phone", str(e))
-            error.exec_()
+            if self._has_unblocked_devices():
+                error = UI.ErrorWindow("Failed to communicate with Phone", str(e))
+                error.exec_()
 
     def _send_json(self, payload: dict):
-        if not self.devices:
+        if not self._has_unblocked_devices():
             return
         
         try:
             self.client_sock.sendall(json.dumps(payload).encode() + b"\n")
 
         except Exception as e:
-            error = UI.ErrorWindow("Failed to communicate with Phone", str(e))
-            error.exec_()
+            if self._has_unblocked_devices():
+                error = UI.ErrorWindow("Failed to communicate with Phone", str(e))
+                error.exec_()
 
     def sync(self, current: dict):
         current = {str(k): v for k, v in current.items()}
