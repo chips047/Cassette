@@ -97,7 +97,10 @@ class KeyboardController:
 
     def _handle_playhead_movement_and_playback(self, event, new_playhead_x):
         if event.key() == Qt.Key.Key_Space:
-            self.playback_manager.toggle_playback(self.conductor.get_playhead_ms())
+            pos = self.conductor.get_playhead_ms()
+            if pos < self.playback_manager.duration_ms:
+                self.playback_manager.toggle_playback(pos)
+            
             return new_playhead_x
 
         if event.key() == Qt.Key.Key_Left:
@@ -798,8 +801,7 @@ class ScrollableContent(QWidget):
         # Final init
         self.update_minimum_height()
         
-        self.playback_manager = Player.PlaybackManager(self)
-        self.playback_manager.playback_position_updated.connect(self._on_playback_position_updated)
+        self.playback_manager = Player.PlaybackManager()
         self.playback_manager.audio_loaded.connect(self._on_audio_loaded_from_manager)
         self.playback_manager.playback_state_changed.connect(self._on_playback_state_changed)
 
@@ -812,6 +814,10 @@ class ScrollableContent(QWidget):
         self.last_time = time.time()
         self.frame_times = collections.deque(maxlen = 30)
         self.fps = 0.0
+
+        self.playhead_timer = QTimer(self)
+        self.playhead_timer.setInterval(FPS_120)
+        self.playhead_timer.timeout.connect(self._on_playback_position_updated)
 
         # Shortcuts
         QShortcut(QKeySequence("Ctrl+="), self).activated.connect(self.on_scale_plus)
@@ -951,9 +957,14 @@ class ScrollableContent(QWidget):
     
     def _on_playback_state_changed(self, is_playing):
         if is_playing:
+            print("Playing")
             self.composition.syncer.play(self.get_playhead_ms())
+            self.playhead_timer.start()
             
         else:
+            print("Stopped yaaaaay")
+            self.playhead_timer.stop()
+            self.playback_timer.stop()
             self.composition.syncer.stop()
 
     def change_brightness(self, brightness):
@@ -962,13 +973,17 @@ class ScrollableContent(QWidget):
     def change_duration(self, duration):
         self.composition.set_duration(duration)
 
-    def _on_playback_position_updated(self, new_playhead_ms):
-        self.set_playhead_from_ms(new_playhead_ms)
+    def _on_playback_position_updated(self):
+        pos = self.playback_manager.get_position_ms()
+
+        if pos >= self.playback_manager.duration_ms:
+            self.playback_manager.stop()
+
+        self.set_playhead_from_ms(pos)
         self.ensure_playhead_visible()
 
     def _on_audio_loaded_from_manager(self, audio_data, sampling_rate, duration_seconds):
         self.waveform_tiles = {}
-        self.sampling_rate = sampling_rate
         self.total_content_width = duration_seconds * self.pixels_per_major_tick
         
         self.setMinimumWidth(int(self.total_content_width))
@@ -998,7 +1013,7 @@ class ScrollableContent(QWidget):
             if viewport_widget and hasattr(viewport_widget, 'viewport'):
                 visible_width = viewport_widget.viewport().width()
             
-            duration_seconds = len(self.playback_manager.audio_data) / self.sampling_rate
+            duration_seconds = self.playback_manager.duration_ms / 1000
             if duration_seconds > 0:
                 min_pixels_per_major_tick = max(
                     min_pixels_per_major_tick,
@@ -1044,20 +1059,20 @@ class ScrollableContent(QWidget):
     def generate_tile(self, tile_index):
         logger.warning(f"Tile {tile_index} created")
 
-        if self.playback_manager.audio_data is None or len(self.playback_manager.audio_data) == 0:
+        if self.playback_manager.data is None or len(self.playback_manager.data) == 0:
             return None
 
         total_px_width = self.total_content_width
-        samples_per_pixel_overall = len(self.playback_manager.audio_data) / float(total_px_width) if total_px_width > 0 else 1.0
+        samples_per_pixel_overall = len(self.playback_manager.data) / float(total_px_width) if total_px_width > 0 else 1.0
 
         start_px = tile_index * self.tile_width
         start_sample = int(start_px * samples_per_pixel_overall)
         end_sample = int((start_px + self.tile_width) * samples_per_pixel_overall)
 
         start_sample = max(0, start_sample)
-        end_sample = min(len(self.playback_manager.audio_data), end_sample)
+        end_sample = min(len(self.playback_manager.data), end_sample)
 
-        audio_chunk = self.playback_manager.audio_data[start_sample:end_sample]
+        audio_chunk = self.playback_manager.data[start_sample:end_sample]
 
         if audio_chunk.size == 0:
             return None
@@ -1093,13 +1108,13 @@ class ScrollableContent(QWidget):
         max_vals = np.max(reshaped_max, axis=1)
 
         if not hasattr(self, "global_waveform_max"):
-            dtype = self.playback_manager.audio_data.dtype
+            dtype = self.playback_manager.data.dtype
             scale = 32767.0 if np.issubdtype(dtype, np.integer) else 1.0
-            self.global_waveform_max = np.max(np.abs(self.playback_manager.audio_data.astype(np.float32) / scale))
+            self.global_waveform_max = np.max(np.abs(self.playback_manager.data.astype(np.float32) / scale))
             if self.global_waveform_max == 0:
                 self.global_waveform_max = 1.0
 
-        dtype = self.playback_manager.audio_data.dtype
+        dtype = self.playback_manager.data.dtype
         
         if np.issubdtype(dtype, np.integer):
             scale = 32767.0
@@ -1219,7 +1234,7 @@ class ScrollableContent(QWidget):
         painter.drawPixmap(int(visible_rect.left()), 0, self._beats_cache)
 
         # Waveform
-        if self.playback_manager.audio_data is not None and len(self.playback_manager.audio_data) > 0:
+        if self.playback_manager.data is not None and len(self.playback_manager.data) > 0:
             start_tile_index = int(visible_rect.left() // self.tile_width)
             end_tile_index = int(visible_rect.right() // self.tile_width)
 
@@ -1521,7 +1536,7 @@ class ScrollableContent(QWidget):
         if self.ms_per_pixel > 0:
             self.playhead_x_position = time_ms / self.ms_per_pixel
             self.playhead_x_position = max(0, min(self.playhead_x_position, self.total_content_width))
-            self.update() 
+            self.update()
         
         else: 
             self.playhead_x_position = 0
@@ -1531,8 +1546,7 @@ class ScrollableContent(QWidget):
         self.playhead_x_position = max(0.0, min(target_x_pixels, self.total_content_width))
 
         if self.playback_manager.is_playing:
-            self.playback_manager.stop_playback()
-            self.playback_manager.start_playback(self.get_playhead_ms())
+            self.playback_manager.toggle_playback(self.get_playhead_ms())
 
         self.update()
         self.ensure_playhead_visible()
@@ -1547,6 +1561,17 @@ class ScrollableContent(QWidget):
             target_scroll_value = max(0, min(target_scroll_value, h_bar.maximum()))
             
             h_bar.setValue(target_scroll_value)
+    
+    def check_tutorial(self):
+        # new shit
+        self.tutorial_window = UI.Tutorial(
+            self.composition.bpm,
+            self.composition.audiofile_path
+        )
+#
+        QTimer.singleShot(0, self.tutorial_window.exec_)
+
+        pass
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
@@ -1585,7 +1610,6 @@ class CompositorWidget(QWidget):
         self.top_control_bar_layout.addWidget(self.default_effect)
 
         self.export_button = UI.NothingButton("Export")
-        self.export_button.setEnabled(False)
         
         self.top_control_bar_layout.addWidget(self.export_button)
 
@@ -1610,13 +1634,14 @@ class CompositorWidget(QWidget):
         self.default_effect.state_changed.connect(self.on_default_effect_change)
     
     def on_eject_button_clicked(self):
-        self.content_widget.composition.syncer.stop_scanning_loop()
         self.back_to_main_menu_requested.emit()
 
         if self.content_widget.playback_manager.is_playing:
-            self.content_widget.playback_manager.play_tail_with_tape_stop()
+            self.content_widget.playback_manager.tape(end_speed = 0.0, duration = 2.5)
     
     def cleanup(self):
+        self.content_widget.composition.syncer.stop_scanning_loop()
+
         self.mini_preview_widget.audio_data = None
         self.mini_preview_widget.peaks = None
         self.content_widget.deleteLater()
@@ -1636,14 +1661,14 @@ class CompositorWidget(QWidget):
         self.content_widget.scroll_to_normalized_position(normalized_pos)
 
     def on_playspeed_changed(self, text_part, speed_value):
-        self.content_widget.playback_manager.set_playback_speed_multiplier(speed_value)
+        self.content_widget.playback_manager.set_speed(speed_value, duration = 2.0)
 
     def on_default_effect_change(self, text_part, effect_value):
         self.content_widget.composition.set_default_effect(effect_value)
 
     def update_ui_on_audio_state_change(self):
         self.mini_preview_widget.setVisible(True)
-        self.mini_preview_widget.set_audio_data(self.content_widget.playback_manager.audio_data, self.content_widget.sampling_rate)
+        self.mini_preview_widget.set_audio_data(self.content_widget.playback_manager.data)
 
         self.update_export_button_state()
 
@@ -1663,10 +1688,7 @@ class CompositorWidget(QWidget):
         self.brightness_control.valueChanged.connect(self.content_widget.change_brightness)
 
         self.scroll_area.setWidget(self.content_widget)
-                
-        if self.content_widget.playback_manager.is_playing: 
-            self.content_widget.playback_manager.stop_playback()
-        
+
         self.content_widget.playback_manager.load_audio(audio_path)
 
         # Focus Fix
