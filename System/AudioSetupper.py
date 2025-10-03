@@ -2,6 +2,8 @@ import re
 import time
 import math
 import random
+import atexit
+import faulthandler
 
 import numpy as np
 
@@ -13,12 +15,18 @@ from loguru import logger
 from .Constants import *
 
 import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 
 from . import UI
 from . import Utils
 from . import Styles
 from . import Audio
 from . import Player
+
+faulthandler.enable()
+
+_SHARED_AUDIO_EXECUTOR = ThreadPoolExecutor(max_workers=2)
+atexit.register(lambda: _SHARED_AUDIO_EXECUTOR.shutdown(wait=True))
 
 def _audio_loader_task(file_path, target_width):
     audio_data, sampling_rate = Audio.load_audio(file_path)
@@ -47,7 +55,7 @@ class AudioLoader(QObject):
         super().__init__()
         self.file_path = file_path
         self.target_width = target_width
-        self._executor = concurrent.futures.ProcessPoolExecutor(max_workers=1)
+        self._executor = _SHARED_AUDIO_EXECUTOR
         self._future = None
 
     def start(self):
@@ -81,8 +89,10 @@ class AudioLoader(QObject):
         self.dataReady.emit(audio_data, sampling_rate, peaks)
 
     def shutdown(self):
-        self.stop()
-        self._executor.shutdown(wait=False)
+        if self._future and not self._future.done():
+            self._future.cancel()
+        
+        self._future = None
 
 class TrimmingWaveformWidget(QWidget):
     regionChanged = pyqtSignal(float, float)
@@ -443,7 +453,7 @@ class AudioSetupDialog(UI.FloatingWindow):
     
     def cleanup(self):
         if self.player.is_playing:
-            self.player.tape(end_speed = 0.0)
+            self.player.tape(end_speed = 0.0, cleanup_on_finish = True)
 
         self.playback_timer.stop()
         self.bpm_anim_timer.stop()
@@ -451,7 +461,6 @@ class AudioSetupDialog(UI.FloatingWindow):
 
         if hasattr(self, "audio_loader"):
             self.audio_loader.shutdown()
-
 
         if hasattr(self, "bpm_worker"):
             self.bpm_worker.stop()
@@ -507,25 +516,30 @@ class AudioSetupDialog(UI.FloatingWindow):
         super().on_cancel()
 
     def edit_start_time(self):
-        current_text = self.start_time_label.time_text_to_seconds()
+        start_s = self.start_time_label.time_text_to_seconds()
         
-        if current_text:
-            self.trim_widget.start_time = current_text
+        if start_s:
+            self.trim_widget.set_playback_position(start_s)
+
+            self.trim_widget.start_time = start_s
             self.trim_widget.update()
 
             self.end_time_label.min_number = self.start_time_label.time_text_to_seconds()
 
     def edit_end_time(self):
-        current_text = self.end_time_label.time_text_to_seconds()
+        end_s = self.end_time_label.text()
+        start_s = self.start_time_label.text()
         
-        if not self.start_time_label.text():
+        if end_s is None or start_s is None:
             return
 
-        if current_text > self.start_time_label.time_text_to_seconds():
-            self.trim_widget.end_time = current_text
+        if end_s > start_s:
+            self.trim_widget.set_playback_position(start_s)
+
+            self.trim_widget.end_time = end_s
             self.trim_widget.update()
 
-            self.start_time_label.max_number = current_text - 1
+            self.start_time_label.max_number = end_s - 1
 
     def stop_bpm_animation(self):
         self.bpm_animating = False
@@ -662,18 +676,17 @@ class AudioSetupDialog(UI.FloatingWindow):
 
     def update_playback(self):
         if self.player.is_playing:
-            elapsed_time_sec = time.time() - self.playback_start_time_in_channel
-            current_pos_sec = self.playback_start_position + elapsed_time_sec
-
-            if current_pos_sec >= self.trim_widget.end_time:
-                self.trim_widget.set_playback_position(0)
+            current_pos_ms = self.player.get_position_ms()
+            if current_pos_ms > self.trim_widget.end_time * 1000:
+                self.trim_widget.set_playback_position(self.trim_widget.start_time)
                 self.stop_playback()
-            
-            else:
-                self.trim_widget.set_playback_position(current_pos_sec)
+                return
+
+            self.trim_widget.set_playback_position(current_pos_ms / 1000)
 
         else:
-            self.trim_widget.set_playback_position(self.trim_widget.end_time)
+            print("what")
+            self.trim_widget.set_playback_position(0)
             self.stop_playback()
 
     def get_settings(self):
@@ -682,8 +695,6 @@ class AudioSetupDialog(UI.FloatingWindow):
         
         if not hasattr(self, 'end_sample'):
             self.end_sample = int(self.trim_widget.end_time * self.sampling_rate)
-        
-        print(self.end_sample)
             
         return {
             "audio": {
