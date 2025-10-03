@@ -64,30 +64,28 @@ class Metrics:
         height = 150
 
 class Buttons:
-    height = 50
-    
     def make_button_style(
         bg_color: str,
         hover_color: str,
-        font_color: str = None,
-        height: int = 30,
+        height: int = 50,
         border: str = None,
+        rounding = Roundings.button
     ) -> str:
-        if font_color is None:
-            font_color = Colors.font_color
 
         base = f"""
             QPushButton {{
                 background-color: {bg_color};
-                color: {font_color};
+                color: {Colors.font_color};
                 padding: 0px 15px;
-                border-radius: {Roundings.button}px;
+                border-radius: {rounding}px;
                 height: {height}px;
                 {f"border: {border};" if border else ""}
             }}
+
             QPushButton:hover {{
                 background-color: {hover_color};
             }}
+
             QPushButton:disabled {{
                 background-color: #777777;
                 color: #dddddd;
@@ -97,22 +95,28 @@ class Buttons:
         return base.strip()
 
     nothing_styled_button = make_button_style(
-        bg_color=Colors.nothing_accent,
-        hover_color=Colors.nothing_accent_hover,
-        height=height
+        Colors.nothing_accent,
+        Colors.nothing_accent_hover
     )
 
     normal_button = make_button_style(
-        bg_color=Colors.normal_button,
-        hover_color=Colors.normal_button_second,
-        height=height
+        Colors.normal_button,
+        Colors.normal_button_second
     )
 
     normal_button_with_border = make_button_style(
-        bg_color=Colors.normal_button,
-        hover_color=Colors.normal_button_second,
-        border=f"{Metrics.glass_border_thick}px solid {Colors.glass_border}",
-        height=height
+        Colors.normal_button,
+        Colors.normal_button_second,
+        50,
+        f"{Metrics.glass_border_thick}px solid {Colors.glass_border}"
+    )
+
+    normal_button_with_border_slim = make_button_style(
+        Colors.normal_button,
+        Colors.normal_button_second,
+        35,
+        f"{Metrics.glass_border_thick}px solid {Colors.glass_border}",
+        12
     )
 
 class Other:
@@ -144,50 +148,39 @@ class Other:
     """
 
 class Controls:
-    @staticmethod
-    def selector_style(enable_checked: bool = True) -> str:
-        base = f"""
-            QWidget#selectorRoot {{
-                background-color: {Colors.EffectMenu.press};
-                border-radius: {Roundings.button}px;
-            }}
+    Selector = f"""
+        QWidget#selectorRoot {{
+            background-color: {Colors.EffectMenu.press};
+            border-radius: {Roundings.button}px;
+        }}
 
-            #selectorWidget {{
-                background-color: {Colors.EffectMenu.press};
-                border-radius: {Roundings.button}px;
-            }}
+        #selectorWidget {{
+            background-color: {Colors.EffectMenu.press};
+            border-radius: {Roundings.button}px;
+        }}
 
-            #backgroundContainer {{
-                background-color: {Colors.EffectMenu.press};
-                border-radius: {Roundings.button}px;
-            }}
+        #backgroundContainer {{
+            background-color: {Colors.EffectMenu.press};
+            border-radius: {Roundings.button}px;
+        }}
 
-            QPushButton#segmentedButton {{
-                color: {Colors.font_color};
-                background-color: {Colors.EffectMenu.standard};
-                border: none;
-                padding: 0;
-                border-radius: {Roundings.button - 5}px;
-            }}
+        QPushButton#segmentedButton {{
+            color: {Colors.font_color};
+            background-color: {Colors.EffectMenu.standard};
+            border: none;
+            padding: 0;
+            border-radius: {Roundings.button - 5}px;
+        }}
 
-            QPushButton#segmentedButton:hover {{
-                background-color: {Colors.EffectMenu.hover};
-            }}
+        QPushButton#segmentedButton:hover {{
+            background-color: {Colors.EffectMenu.hover};
+        }}
+
+        QPushButton#segmentedButton:checked {{
+            background-color: {Colors.nothing_accent};
+            color: #ffffff;
+        }}
         """
-
-        if enable_checked:
-            base += f"""
-                QPushButton#segmentedButton:checked {{
-                    background-color: {Colors.nothing_accent};
-                    color: #ffffff;
-                }}
-
-                QPushButton#segmentedButton:checked:hover {{
-                    background-color: {Colors.nothing_accent_hover};
-                }}
-            """
-
-        return base.strip()
     
     Selector2 = f"""
         QWidget {{
