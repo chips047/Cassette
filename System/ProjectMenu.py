@@ -66,6 +66,7 @@ class TrackItemWidget(QWidget):
         self.setMinimumWidth(250)
         self.setFixedHeight(150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
         self.project_id = project_id
         self.main_menu = main_menu
 
@@ -151,10 +152,10 @@ class TrackItemWidget(QWidget):
     def on_export_clicked(self):
         composition = ProjectSaver.MinimalComposition(self.project_id)
         
-        dialog = UI.ExportDialogWindow("Export?", composition)
-        if dialog.exec_() == QDialog.Accepted:
-            composition.export()
-            Utils.ui_sound("Export")
+        UI.ExportDialogWindow(
+            "Export?",
+            composition
+        ).exec_()
 
 class MainMenu(QWidget):
     composition_created = pyqtSignal(object)
@@ -217,6 +218,7 @@ class MainMenu(QWidget):
             Utils.ui_sound("MenuClose")
             settings = dialog.saved_settings
             
+            print(f"file path provided to composition: {file_path}")
             composition = ProjectSaver.Composition(
                 file_path,
                 settings
@@ -226,27 +228,6 @@ class MainMenu(QWidget):
     
     def go_to_glyphtones(self):
         webbrowser.open("https://glyphtones.firu.dev/")
-    
-    def go_to_github(self):
-        github = "https://www.github.com/Chipik0/Cassette/releases/latest"
-        if random.random() < 0.95:
-            webbrowser.open(github) # lol
-        
-        else:
-            fomx = Utils.get_fox_image()
-            fomx = fomx # what
-            fox = fomx
-            foox = fox
-            foks = foox
-
-            if foks:
-                webbrowser.open(foks)
-            
-            else:
-                webbrowser.open(github)
-    
-    def center_on_parent(self):
-        self.move(0, 0)
 
     def setup_ui(self):
         container_layout = QVBoxLayout(self.container)
@@ -339,16 +320,13 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        UI.ErrorWindow(
+        UI.DialogInputWindow(
             "Lmao!", 
             "This feature is in development process."
         ).exec_()
     
     def on_about(self):
-        UI.ErrorWindow(
-            "Oh, hello.",
-            f"The best compositor that is still in development.\n\n- Developed entirely by chips047\n- Version: {open('version').read()}\n- UI is inspired by R.E.P.O. game"
-        ).exec_()
+        UI.About().exec_()
 
     def create_button_panel(self):
         panel = QWidget()
@@ -363,8 +341,7 @@ class MainMenu(QWidget):
             ("Import",           False, "on_import"),
             ("Go to glyphtones", False, "go_to_glyphtones"),
             ("Settings",         False, "on_settings"),
-            ("About",            False, "on_about"),
-            (version,            False, "go_to_github"),
+            (version,            False, "on_about")
         ]
 
         accent_style = f"""
