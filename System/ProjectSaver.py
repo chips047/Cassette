@@ -2,6 +2,7 @@ import os
 import copy
 import json
 import random
+import shutil
 import subprocess
 
 import numpy as np
@@ -33,22 +34,6 @@ def get_metadata(file_path):
     
     return title, artist
 
-def audiosegment_from_numpy(np_array, sample_rate):
-    if np_array.ndim == 2:
-        interleaved = (np_array.T * 32767).astype(np.int16).flatten()
-        channels = np_array.shape[0]
-    
-    else:
-        interleaved = (np_array * 32767).astype(np.int16)
-        channels = 1
-
-    return AudioSegment(
-        interleaved.tobytes(),
-        frame_rate=sample_rate,
-        sample_width=2,
-        channels=channels
-    )
-
 class SyncedDict(dict):
     def __init__(self, *args, sync_callback, composition, **kwargs):
         super().__init__(*args, **kwargs)
@@ -59,7 +44,7 @@ class SyncedDict(dict):
         if "effect" in value:
             if value["effect"]["name"] != "None":
                 self.composition.cached_effects[str(key)] = GlyphEffects.effect_to_glyph(
-                    value, self.composition.model, self.composition.bpm
+                    value, self.composition
                 )
             
             else:
@@ -87,7 +72,7 @@ class SyncedDict(dict):
 
             for id, glyph in glyphs.items():
                 if "effect" in glyph:
-                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, self.composition.model, self.composition.bpm)
+                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, self.composition)
 
             super().update(glyphs, *args[1:], **kwargs)
         
@@ -104,18 +89,17 @@ class BaseComposition:
         self.audio_settings = settings.get("audio", {})
 
         self.bpm = self.audio_settings.get("bpm")
-        self.audio_duration = self.audio_settings.get("duration")
         self.sampling_rate = self.audio_settings.get("sampling_rate")
-        self.start_sample = self.audio_settings.get("start_sample")
-        self.end_sample = self.audio_settings.get("end_sample")
+        self.start_ms = self.audio_settings.get("start_ms")
+        self.end_ms = self.audio_settings.get("end_ms")
         self.fade_in_duration = self.audio_settings.get("fade_in", 0)
         self.fade_out_duration = self.audio_settings.get("fade_out", 0)
         self.beats = self.audio_settings.get("beats", [])
 
         self.glyphs = settings.get("glyphs", {})
 
-        self.cropped_audiofile_path = Utils.get_songs_path(f"{self.id}/cropped_song.ogg")
-        self.full_audiofile_path = Utils.get_songs_path(f"{self.id}/full_song.ogg")
+        self.cropped_song_path = Utils.get_songs_path(f"{self.id}/cropped_song.ogg")
+        self.full_song_path = Utils.get_songs_path(f"{self.id}/full_song.ogg")
 
     def export_segment(self, segment, path, fade_in = 0, fade_out = 0):
         segment = segment.normalize()
@@ -143,39 +127,54 @@ class BaseComposition:
 
         return singles, effects
 
-    def prepare_cropped_audio(self, audio_path: str | None = None, audio_data = None):
-        os.makedirs(Utils.get_songs_path(str(self.id)), exist_ok=True)
-
-        if audio_data is not None:
-            segment = audio_data[self.start_sample:self.end_sample]
-            audio = audiosegment_from_numpy(segment, self.sampling_rate)
-        
-        else:
-            full_song = AudioSegment.from_file(audio_path or self.full_audiofile_path)
-            audio = full_song[self.start_sample:self.end_sample]
+    def prepare_cropped_audio(self, audio_path: str | None = None):
+        print(f"loaded {audio_path}")
+        full_song = AudioSegment.from_file(audio_path)
+        audio = full_song[self.start_ms:self.end_ms]
 
         self.export_segment(
             audio,
-            self.cropped_audiofile_path,
+            self.cropped_song_path,
             self.fade_in_duration,
             self.fade_out_duration
         )
 
-    def export(self, out_path: str | None = None):
-        singles, effects = self.sorted_glyphs()
-        temp_glyphs = singles
-
-        for effect in effects:
-            temp_glyphs.extend(GlyphEffects.effect_to_glyph(effect, self.model, self.bpm))
-
-        Exporter.glyphs_to_ogg(self.cropped_audiofile_path, out_path or Utils.get_songs_path(f"{self.id}/Composed.ogg"), temp_glyphs, self.model)
-        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
+    def export(self, model: str | None = None, open_folder: bool = False):
+        if model != self.model and model:
+            ported_glyphs = Porter.Port.port_glyphs(model, self)
+            Exporter.glyphs_to_ogg(
+                Utils.get_songs_path(f"{self.id}/cropped_song.ogg"),
+                Utils.get_songs_path(f"{self.id}/Composed_{model}.ogg"),
+                ported_glyphs,
+                model
+            )
+        
+        else:
+            singles, effects = self.sorted_glyphs()
     
-    def export_port(self, port_to: str):
-        ported_glyphs = Porter.Port.port_glyphs(port_to, self)
-        Exporter.glyphs_to_ogg(Utils.get_songs_path(f"{self.id}/cropped_song.ogg"), Utils.get_songs_path(f"{self.id}/Composed_{port_to}.ogg"), ported_glyphs, port_to)
+            for effect in effects:
+                singles.extend(GlyphEffects.effect_to_glyph(effect, self))
+            
+            Exporter.glyphs_to_ogg(
+                self.cropped_song_path,
+                Utils.get_songs_path(f"{self.id}/Composed.ogg"),
+                singles,
+                self.model
+            )
+        
+        if open_folder:
+            Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
+            Utils.ui_sound("Export")
+    
+    def export_all(self):
+        Utils.ui_sound("ExportLong")
 
-        Utils.ui_sound("Export")
+        self.export()
+        for model in PortVariants[self.model]:
+            print("model ", model)
+            self.export(number_model_to_code(model))
+        
+        Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
 
 class Composition(BaseComposition):
     def __init__(self, audiofile_path: str | None = None, settings: dict = {}, id: int | None = None):
@@ -183,11 +182,14 @@ class Composition(BaseComposition):
             settings = json.load(open(Utils.get_songs_path(f"{id}/Save.json"), "r", encoding="utf-8"))
         
         super().__init__(id, settings)
+        print(f"id: {self.id}")
 
         self.version = open("version").read()
         self.track_number = ModelTracks.get(self.model)
-        self.audiofile_path = audiofile_path
-        self.audio_data = self.audio_settings.get("audio_data")
+
+        print(f"paths: {self.full_song_path}, {self.cropped_song_path}")
+
+        self.song_path = audiofile_path
 
         self.brightness = DEFAULT_BRIGHTNESS
         self.duration_ms = DEFAULT_DURATION
@@ -204,16 +206,16 @@ class Composition(BaseComposition):
 
         for gid, glyph in self.glyphs.items():
             if "effect" in glyph:
-                self.cached_effects[gid] = GlyphEffects.effect_to_glyph(glyph, self.model, self.bpm)
+                self.cached_effects[gid] = GlyphEffects.effect_to_glyph(glyph, self)
 
         self.syncer.full_load(self.glyphs)
+        os.makedirs(Utils.get_songs_path(str(self.id)), exist_ok=True)
 
-        if not os.path.exists(self.cropped_audiofile_path):
-            if settings:
-                self.prepare_cropped_audio(self.audiofile_path, self.audio_data)
-            
-            else:
-                self.prepare_cropped_audio(self.audiofile_path)
+        if audiofile_path:
+            shutil.copyfile(audiofile_path, self.full_song_path)
+
+        if not os.path.exists(self.cropped_song_path):
+            self.prepare_cropped_audio(self.full_song_path)
 
     def new_glyph(self, track, start, duration=None, brightness=None):
         self.last_glyph_id += 1
@@ -257,22 +259,21 @@ class Composition(BaseComposition):
                 json.dump(data, f, ensure_ascii=False, indent=4)
         
         else:
-            title, author = get_metadata(self.full_audiofile_path)
-            title = title or os.path.basename(self.audiofile_path)
+            title, author = get_metadata(self.full_song_path)
+            title = title or os.path.basename(self.song_path)
             author = author or "Unknown Artist"
 
             dict_data = {
                 "audio": {
-                    "title": title or self.audiofile_path.split("/")[-1], 
-                    "artist": author, 
-                    "start_sample": self.start_sample, 
-                    "end_sample": self.end_sample, 
-                    "sampling_rate": self.sampling_rate, 
-                    "duration": self.audio_duration, 
-                    "bpm": self.bpm, 
-                    "beats": self.beats, 
-                    "fade_in": self.fade_in_duration, 
-                    "fade_out": self.fade_out_duration 
+                    "title": title,
+                    "artist": author,
+                    "start_ms": self.start_ms,
+                    "end_ms": self.end_ms,
+                    "sampling_rate": self.sampling_rate,
+                    "bpm": self.bpm,
+                    "beats": self.beats,
+                    "fade_in": self.fade_in_duration,
+                    "fade_out": self.fade_out_duration
                 },
                 "progress": 0,
                 "model": self.model,
@@ -312,12 +313,16 @@ class Composition(BaseComposition):
 class MinimalComposition(BaseComposition):
     def __init__(self, id: int):
         settings = json.load(open(Utils.get_songs_path(f"{id}/Save.json"), "r", encoding="utf-8"))
+
+        self.cropped_song_path = Utils.get_songs_path(f"{id}/cropped_song.ogg")
+        self.full_song_path = Utils.get_songs_path(f"{id}/full_song.ogg")
+
         super().__init__(id, settings)
 
-        if not os.path.exists(self.cropped_audiofile_path):
-            if not os.path.exists(self.full_audiofile_path):
+        if not os.path.exists(self.cropped_song_path):
+            if not os.path.exists(self.full_song_path):
                 error = UI.ErrorWindow("Corrupted!", "This save is corrupted.")
                 error.exec_()
                 return
 
-            self.prepare_cropped_audio(self.full_audiofile_path, settings.get("audio_data") if settings else None)
+            self.prepare_cropped_audio(self.full_song_path)
