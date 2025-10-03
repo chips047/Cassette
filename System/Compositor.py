@@ -22,11 +22,12 @@ from System import Utils
 class DataManager(QObject):
     elements_changed = pyqtSignal()
 
-    def __init__(self, conductor, composition):
+    def __init__(self, conductor, composition, playback_manager):
         super().__init__()
 
         self.composition = composition
         self.conductor = conductor
+        self.playback_manager = playback_manager
 
         self.selected_element_ids = set()
         self.copied_elements = []
@@ -64,8 +65,9 @@ class DataManager(QObject):
     
         new_ids = []
         for el in self.copied_elements:
-            new_ids.append(self.composition.copy_glyph(el, offset))
-            logger.info(f"Pasting glyphs: {new_ids}")
+            if el["start"] + el["duration"] + offset <= self.conductor.total_content_width * self.conductor.ms_per_pixel:
+                new_ids.append(self.composition.copy_glyph(el, offset))
+                logger.info(f"Pasting glyphs: {new_ids}")
         
         self.selected_element_ids = set(new_ids)
         self.elements_changed.emit()
@@ -98,17 +100,15 @@ class KeyboardController:
     def _handle_playhead_movement_and_playback(self, event, new_playhead_x):
         if event.key() == Qt.Key.Key_Space:
             pos = self.conductor.get_playhead_ms()
-            if pos < self.playback_manager.duration_ms:
-                self.playback_manager.toggle_playback(pos)
+            self.playback_manager.toggle_playback(pos if pos < self.playback_manager.duration_ms else 0)
             
             return new_playhead_x
 
-        if event.key() == Qt.Key.Key_Left:
-            if not getattr(self.playback_manager, "_is_playing", False):
+        if not self.playback_manager.is_playing:
+            if event.key() == Qt.Key.Key_Left:
                 new_playhead_x -= self.playhead_move_increment
 
-        elif event.key() == Qt.Key.Key_Right:
-            if not getattr(self.playback_manager, "_is_playing", False):
+            elif event.key() == Qt.Key.Key_Right:
                 new_playhead_x += self.playhead_move_increment
 
         return new_playhead_x
@@ -179,6 +179,9 @@ class KeyboardController:
 
         if event.key() != Qt.Key.Key_Space:
             self._finalize_playhead_update(new_playhead_x)
+        
+        if event.key() == Qt.Key.Key_Delete:
+            self.glyph_manager.delete_selected_elements()
 
         event.accept()
 
@@ -643,27 +646,40 @@ class InteractionHandler:
         orig_main = self.dragging_element_info['selection_orig_state'][main_element_id]
 
         if mode == 'resize_left':
-            new_start = orig_main['start'] + delta_ms
-            new_duration = orig_main['duration'] - delta_ms
-
-            if new_duration < 1:
-                new_duration = 1
-                new_start = main_element['start'] + main_element['duration'] - 1
-
-            new_start = max(new_start, 0)
-            actual_delta_ms = new_start - orig_main['start']
-
+            # Просто итерируем по всем выделенным элементам
             for el_id, orig_state in self.dragging_element_info['selection_orig_state'].items():
                 element = self.composition.get_glyph(el_id)
-                if element and orig_state['duration'] - actual_delta_ms >= 1:
-                    element['start'] = orig_state['start'] + actual_delta_ms
-                    element['duration'] = orig_state['duration'] - actual_delta_ms
+                if not element:
+                    continue
+
+                # 1. Рассчитываем "идеальное" смещение для этого элемента на основе движения мыши
+                potential_new_start = orig_state['start'] + delta_ms
+                potential_new_duration = orig_state['duration'] - delta_ms
+
+                # 2. Проверяем, не стала ли длительность слишком маленькой
+                if potential_new_duration < 1:
+                    # Если элемент "схлопывается", просто не даем ему меняться дальше
+                    continue
+
+                # 3. Применяем ограничение start >= 0 ИНДИВИДУАЛЬНО
+                final_start = max(potential_new_start, 0)
+
+                # 4. Пересчитываем длительность, чтобы правый край остался на месте.
+                # Это ключевой момент, чтобы элемент правильно "растягивался", упираясь в 0.
+                end_position = orig_state['start'] + orig_state['duration']
+                final_duration = end_position - final_start
+
+                # 5. Присваиваем финальные значения
+                element['start'] = final_start
+                element['duration'] = final_duration
                 self.updated_elements[el_id] = element
 
+            # Обновляем всплывающее окно
             self._show_value_popup(main_element, f"{main_element['duration']:.0f} ms")
 
         elif mode == 'resize_right':
             new_duration = orig_main['duration'] + delta_ms
+
             if new_duration < 1:
                 new_duration = 1
 
@@ -671,9 +687,15 @@ class InteractionHandler:
 
             for el_id, orig_state in self.dragging_element_info['selection_orig_state'].items():
                 element = self.composition.get_glyph(el_id)
-                
-                if element and orig_state['start'] + orig_state['duration'] + actual_delta <= self.conductor.total_content_width * self.conductor.ms_per_pixel:
+                if orig_state['duration'] + actual_delta < 1:
+                    continue
+
+                end = orig_state['start'] + orig_state['duration'] + actual_delta
+                total_width = self.conductor.total_content_width * self.conductor.ms_per_pixel
+
+                if element and end <= total_width:
                     element['duration'] = orig_state['duration'] + actual_delta
+                
                 self.updated_elements[el_id] = element
 
             self._show_value_popup(main_element, f"{main_element['duration']:.0f} ms")
@@ -711,6 +733,7 @@ class InteractionHandler:
 
     def _update_tooltip_and_cursor(self, event: QMouseEvent):
         eid, hovered_element, edge = self.conductor.get_element_at(event.pos())
+        print(hovered_element)
 
         if hovered_element:
             if self._mouse_pressed or self.is_marquee_selecting or self.playback_manager.is_playing:
@@ -738,16 +761,17 @@ class InteractionHandler:
             self.conductor.setCursor(Qt.CursorShape.ArrowCursor)
 
 class ScrollableContent(QWidget):
-    audio_state_changed = pyqtSignal()
+    _instances = 0
 
-    def __init__(self, parent, main_window_ref, composition: ProjectSaver.Composition):
+    def __init__(self, parent):
         super().__init__(parent)
-        
-        self.composition = composition
-        self.composition.syncer.error_occurred.connect(self.show_error_dialog)
+
+        ScrollableContent._instances += 1
+        logger.info(f"ScrollableContent instances: {ScrollableContent._instances}")
 
         # References
-        self.main_window_ref = main_window_ref
+        self.main_window_ref = parent
+        self.composition = None
     
         # UI Configuration
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -763,15 +787,12 @@ class ScrollableContent(QWidget):
         self.current_playback_speed_multiplier = 1.0
         self.playback_start_audio_ms = 0
     
-        # Playback
-        self.playback_timer = QTimer(self)
-    
         # Track Management
-        self.track_names = [f"{i + 1}" for i in range(composition.track_number)]
+        self.track_names = []
         self.total_content_width = 2000
 
         # Tooltip
-        self.tooltip_manager = UI.AnimatedTooltipManager(main_window_ref)
+        self.tooltip_manager = UI.AnimatedTooltipManager(self)
     
         # Caching
         self._element_rects = []
@@ -798,21 +819,12 @@ class ScrollableContent(QWidget):
         self._marquee_pen = QPen(QColor(f"#C8{accent}"), 1, Qt.PenStyle.DashLine)
         self._marquee_brush = QBrush(QColor(f"#32{accent}"))
 
-        # Final init
-        self.update_minimum_height()
-        
-        self.playback_manager = Player.PlaybackManager()
-        self.playback_manager.audio_loaded.connect(self._on_audio_loaded_from_manager)
+        self.playback_manager = parent.playback_manager
         self.playback_manager.playback_state_changed.connect(self._on_playback_state_changed)
-
-        self.wheel_controller    = WheelController(self)
-        self.glyph_manager       = DataManager(self, self.composition)
-        self.mouse_controller    = InteractionHandler(self, self.playback_manager, self.composition, self.glyph_manager)
-        self.keyboard_controller = KeyboardController(self, self.playback_manager, self.composition, self.glyph_manager)
 
         # FPS
         self.last_time = time.time()
-        self.frame_times = collections.deque(maxlen = 30)
+        self.frame_times = collections.deque(maxlen = 60)
         self.fps = 0.0
 
         self.playhead_timer = QTimer(self)
@@ -822,10 +834,54 @@ class ScrollableContent(QWidget):
         # Shortcuts
         QShortcut(QKeySequence("Ctrl+="), self).activated.connect(self.on_scale_plus)
         QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(self.on_scale_minus)
-        QShortcut(QKeySequence(Qt.Key_Delete), self).activated.connect(self.glyph_manager.delete_selected_elements)
 
         logger.info("Compositor is now running")
     
+    def _clear_caches_and_state(self):
+        self.track_names = []
+        self.total_content_width = 2000
+        self.playhead_x_position = 0
+        
+        self.waveform_tiles = {}
+        self._glyph_pixmaps = {}
+        self._ruler_cache = None
+        self._beats_cache = None
+
+        self.setMinimumWidth(self.total_content_width)
+        self.update_minimum_height()
+    
+    def load_composition(self, composition):
+        self._clear_caches_and_state()
+        self.prepare_audio()
+
+        self.composition = composition
+        self.composition.syncer.error_occurred.connect(self.show_error_dialog)
+
+        self.track_names = [f"{i + 1}" for i in range(composition.track_number)]
+
+        self.wheel_controller    = WheelController(self)
+        self.glyph_manager       = DataManager(self, self.composition, self.playback_manager)
+        self.mouse_controller    = InteractionHandler(self, self.playback_manager, self.composition, self.glyph_manager)
+        self.keyboard_controller = KeyboardController(self, self.playback_manager, self.composition, self.glyph_manager)
+
+        self.glyph_manager.elements_changed.connect(self.main_window_ref.on_elements_changed)
+        
+        self.update()
+    
+    def unload_composition(self):
+        if self.composition:
+            self.composition.syncer.stop_scanning_loop()
+            self.composition.syncer.error_occurred.disconnect(self.show_error_dialog)
+            self.composition = None
+        
+        self.glyph_manager = None
+        self.wheel_controller = None
+        self.mouse_controller = None
+        self.keyboard_controller = None
+
+        self._clear_caches_and_state()
+        self.update()
+
     def get_opacity_for_position(self, x_pos):
         widget_width = self.get_visible_rect().width()
         fade_margin = 100
@@ -929,6 +985,9 @@ class ScrollableContent(QWidget):
         self._ruler_cache = pixmap
         self._ruler_cache_rect = QRectF(visible_rect)
     
+    def init_composition(self, composition):
+        self.composition = composition
+    
     def update_beats_cache(self, visible_rect: QRectF):
         pixmap = QPixmap(int(visible_rect.width()), self.height())
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -957,14 +1016,11 @@ class ScrollableContent(QWidget):
     
     def _on_playback_state_changed(self, is_playing):
         if is_playing:
-            print("Playing")
             self.composition.syncer.play(self.get_playhead_ms())
             self.playhead_timer.start()
-            
+        
         else:
-            print("Stopped yaaaaay")
             self.playhead_timer.stop()
-            self.playback_timer.stop()
             self.composition.syncer.stop()
 
     def change_brightness(self, brightness):
@@ -982,19 +1038,18 @@ class ScrollableContent(QWidget):
         self.set_playhead_from_ms(pos)
         self.ensure_playhead_visible()
 
-    def _on_audio_loaded_from_manager(self, audio_data, sampling_rate, duration_seconds):
+    def prepare_audio(self):
         self.waveform_tiles = {}
-        self.total_content_width = duration_seconds * self.pixels_per_major_tick
-        
+        self.total_content_width = self.playback_manager.duration_ms / 1000 * self.pixels_per_major_tick
+
         self.setMinimumWidth(int(self.total_content_width))
         
         self._glyph_pixmaps = {}
         self.update()
         
-        self.audio_state_changed.emit()
-        self.scale_view(0)
+        #self.audio_state_changed.emit()
 
-        self.global_waveform_max = np.max(np.abs(audio_data.astype(np.float32)))
+        self.global_waveform_max = np.max(np.abs(self.playback_manager.data.astype(np.float32)))
         if self.global_waveform_max == 0 or np.isnan(self.global_waveform_max):
             self.global_waveform_max = 1.0
 
@@ -1057,10 +1112,10 @@ class ScrollableContent(QWidget):
             self.ms_per_pixel = 1000.0 / 100.0
     
     def generate_tile(self, tile_index):
-        logger.warning(f"Tile {tile_index} created")
-
         if self.playback_manager.data is None or len(self.playback_manager.data) == 0:
             return None
+
+        logger.warning(f"Tile {tile_index} created")
 
         total_px_width = self.total_content_width
         samples_per_pixel_overall = len(self.playback_manager.data) / float(total_px_width) if total_px_width > 0 else 1.0
@@ -1203,6 +1258,9 @@ class ScrollableContent(QWidget):
         return pixmap
     
     def paintEvent(self, event):
+        if not self.composition:
+            return
+
         painter = QPainter(self)
 
         now = time.time()
@@ -1362,6 +1420,9 @@ class ScrollableContent(QWidget):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if not self.composition:
+            return
+
         return self.mouse_controller.process_mouse_move_event(event)
 
     def mouseReleaseEvent(self, event):
@@ -1546,7 +1607,7 @@ class ScrollableContent(QWidget):
         self.playhead_x_position = max(0.0, min(target_x_pixels, self.total_content_width))
 
         if self.playback_manager.is_playing:
-            self.playback_manager.toggle_playback(self.get_playhead_ms())
+            self.playback_manager.toggle_playback()
 
         self.update()
         self.ensure_playhead_visible()
@@ -1562,16 +1623,25 @@ class ScrollableContent(QWidget):
             
             h_bar.setValue(target_scroll_value)
     
-    def check_tutorial(self):
-        # new shit
-        self.tutorial_window = UI.Tutorial(
-            self.composition.bpm,
-            self.composition.audiofile_path
-        )
-#
-        QTimer.singleShot(0, self.tutorial_window.exec_)
+    def _tutorial_shown_callback(self):
+        settings = QSettings("chips047", "Cassette")
+        settings.setValue("tutorial_shown", True)
+        settings.sync()
+        load_settings()
 
-        pass
+    def check_tutorial(self):
+        if not CurrentSettings.get("tutorial_shown"):
+            if not hasattr(self.composition, "full_song_path"):
+                self._tutorial_shown_callback()
+                return
+
+            self.tutorial_window = UI.Tutorial(
+                self.composition.bpm,
+                self.composition.full_song_path
+            )
+            
+            self._tutorial_shown_callback()
+            QTimer.singleShot(0, self.tutorial_window.exec_)
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
@@ -1580,6 +1650,7 @@ class CompositorWidget(QWidget):
         super().__init__()
         self.setStyleSheet("background-color: #1e1e1e;")
 
+        # UI Initialization
         self.overall_layout = QVBoxLayout(self)
         self.overall_layout.setContentsMargins(10, 10, 10, 10)
         self.overall_layout.setSpacing(10)
@@ -1589,39 +1660,41 @@ class CompositorWidget(QWidget):
         self.top_control_bar_layout.setContentsMargins(0, 0, 0, 0)
         self.top_control_bar_layout.setSpacing(10)
         
-        self.eject_button = UI.Button("Eject")
-        self.eject_button.clicked.connect(self.on_eject_button_clicked)
-
-        self.top_control_bar_layout.addWidget(self.eject_button)
-
+        self.eject_button =        UI.Button("Eject")
+        self.export_button =       UI.NothingButton("Export")
+        self.top_status_label =    QLabel(STATUS_BAR_DEFAULT)
         self.mini_preview_widget = UI.MiniWaveformPreview()
-        self.mini_preview_widget.setVisible(False)
-        self.mini_preview_widget.preview_clicked.connect(self.on_mini_preview_clicked)
-        self.top_control_bar_layout.addWidget(self.mini_preview_widget, 2)
-
-        self.glyph_dur_control = UI.DraggableValueControl(Utils.Icons.Duration, "duration", 100, 5, 5000, 5, "ms")
-        self.brightness_control = UI.DraggableValueControl(Utils.Icons.Brightness, "brightness", 100, 5, 100, 5, "%")
-        self.playspeed_button = UI.CycleButton(Utils.Icons.Speed, "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
-        self.default_effect = UI.CycleButton(Utils.Icons.Effect, "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
+        self.glyph_dur_control =   UI.DraggableValueControl(Utils.Icons.Duration, "duration", 100, 5, 5000, 5, "ms")
+        self.brightness_control =  UI.DraggableValueControl(Utils.Icons.Brightness, "brightness", 100, 5, 100, 5, "%")
+        self.playspeed_button =    UI.CycleButton(Utils.Icons.Speed, "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
+        self.default_effect =      UI.CycleButton(Utils.Icons.Effect, "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
         
-        self.top_control_bar_layout.addWidget(self.glyph_dur_control)
-        self.top_control_bar_layout.addWidget(self.brightness_control)
-        self.top_control_bar_layout.addWidget(self.playspeed_button)
-        self.top_control_bar_layout.addWidget(self.default_effect)
-
-        self.export_button = UI.NothingButton("Export")
-        
-        self.top_control_bar_layout.addWidget(self.export_button)
-
-        self.overall_layout.addWidget(self.top_control_bar_widget)
-
-        self.top_status_label = QLabel(STATUS_BAR_DEFAULT)
+        # Other Settings
         self.top_status_label.setFont(Utils.NDot(14))
         self.top_status_label.setMinimumHeight(Styles.Metrics.element_height) 
         self.top_status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.top_status_label.setStyleSheet(Styles.Other.status_bar)
+
+        # Connections
+        self.export_button.clicked.connect(self.export_ringtone)
+        self.eject_button.clicked.connect(self.unload_composition)
+        self.playspeed_button.state_changed.connect(self.on_playspeed_changed)
+        self.default_effect.state_changed.connect(self.on_default_effect_change)
+        self.mini_preview_widget.preview_clicked.connect(self.on_mini_preview_clicked)
+
+        # Layout Setup
+        self.top_control_bar_layout.addWidget(self.eject_button)
+        self.top_control_bar_layout.addWidget(self.mini_preview_widget, 1)
+        self.top_control_bar_layout.addWidget(self.glyph_dur_control)
+        self.top_control_bar_layout.addWidget(self.brightness_control)
+        self.top_control_bar_layout.addWidget(self.playspeed_button)
+        self.top_control_bar_layout.addWidget(self.default_effect)
+        self.top_control_bar_layout.addWidget(self.export_button)
+
+        self.overall_layout.addWidget(self.top_control_bar_widget)
         self.overall_layout.addWidget(self.top_status_label)
 
+        # Scroll Area
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setStyleSheet("QScrollArea { border: none; }")
@@ -1629,33 +1702,61 @@ class CompositorWidget(QWidget):
         self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        self.export_button.clicked.connect(self.export_ringtone)
-        self.playspeed_button.state_changed.connect(self.on_playspeed_changed)
-        self.default_effect.state_changed.connect(self.on_default_effect_change)
-    
-    def on_eject_button_clicked(self):
-        self.back_to_main_menu_requested.emit()
+        # Core Components, pre - init
+        self.playback_manager = Player.PlaybackManager()
+        self.content_widget = ScrollableContent(self)
 
-        if self.content_widget.playback_manager.is_playing:
-            self.content_widget.playback_manager.tape(end_speed = 0.0, duration = 2.5)
+        self.scroll_area.setWidget(self.content_widget)
+        self.overall_layout.addWidget(self.scroll_area)
+
+        # Focus Fix
+        for child in self.findChildren(QWidget):
+            if child is not self.content_widget:
+                child.setFocusPolicy(Qt.NoFocus)
+
+        self.content_widget.setFocus()
+        self.glyph_dur_control.valueChanged.connect(self.set_default_glyph_duration)
+        self.brightness_control.valueChanged.connect(self.set_default_brightness)
     
-    def cleanup(self):
-        self.content_widget.composition.syncer.stop_scanning_loop()
+    def set_default_glyph_duration(self, duration_ms):
+        self.content_widget.composition.set_duration(duration_ms)
+    
+    def set_default_brightness(self, brightness):
+        self.content_widget.composition.set_brightness(brightness)
+    
+    def unload_composition(self):
+        self.back_to_main_menu_requested.emit()
+        if self.playback_manager.is_playing:
+            self.content_widget.playhead_timer.stop()
+            self.content_widget.composition.syncer.stop()
+
+        if self.playback_manager.is_playing:
+            self.playback_manager.tape(end_speed = 0.0, duration = 3.0)
 
         self.mini_preview_widget.audio_data = None
         self.mini_preview_widget.peaks = None
-        self.content_widget.deleteLater()
 
-        self.glyph_dur_control.current_value = 100
-        self.brightness_control.current_value = 100
-        self.default_effect.current_state_index = 0
-        self.playspeed_button.current_state_index = 0
+        self.default_effect.reset()
+        self.playspeed_button.reset()
+        self.glyph_dur_control.reset()
+        self.brightness_control.reset()
     
+    def load_composition(self, composition):
+        self.playback_manager.cleanup()
+        self.playback_manager.load_audio(composition.cropped_song_path)
+        self.content_widget.load_composition(composition)
+
+        self.mini_preview_widget.set_audio_data(self.playback_manager.data)
+        
+        self.on_elements_changed()
+
     def export_ringtone(self):
-        dialog = UI.ExportDialogWindow("Export?", self.content_widget.composition, self.content_widget.composition.bpm, self.content_widget.playback_manager)
-        if dialog.exec() == QDialog.Accepted:
-            self.content_widget.composition.export()
-            Utils.ui_sound("Export")
+        UI.ExportDialogWindow(
+            "Export?",
+            self.content_widget.composition,
+            self.content_widget.composition.bpm,
+            self.content_widget.playback_manager
+        ).exec_()
 
     def on_mini_preview_clicked(self, normalized_pos):
         self.content_widget.scroll_to_normalized_position(normalized_pos)
@@ -1670,38 +1771,8 @@ class CompositorWidget(QWidget):
         self.mini_preview_widget.setVisible(True)
         self.mini_preview_widget.set_audio_data(self.content_widget.playback_manager.data)
 
-        self.update_export_button_state()
-
-    def update_export_button_state(self):
+    def on_elements_changed(self):
         elements_exist = len(self.content_widget.composition.glyphs) > 0
         self.export_button.setEnabled(elements_exist)
 
         self.content_widget.update()
-
-    def initialize_compositor(self, audio_path, composition):
-        self.content_widget = ScrollableContent(self.scroll_area, self, composition)
-        self.overall_layout.addWidget(self.scroll_area, 1)
-
-        self.content_widget.audio_state_changed.connect(self.update_ui_on_audio_state_change)
-        self.content_widget.glyph_manager.elements_changed.connect(self.update_export_button_state)
-        self.glyph_dur_control.valueChanged.connect(self.content_widget.change_duration)
-        self.brightness_control.valueChanged.connect(self.content_widget.change_brightness)
-
-        self.scroll_area.setWidget(self.content_widget)
-
-        self.content_widget.playback_manager.load_audio(audio_path)
-
-        # Focus Fix
-        for child in self.findChildren(QWidget):
-            if child is not self.content_widget:
-                child.setFocusPolicy(Qt.NoFocus)
-
-        self.content_widget.setFocus()
-    
-    def closeEvent(self, event):
-        if hasattr(self, "content_widget"):
-            if self.content_widget.composition:
-                self.content_widget.composition.syncer.exit_app()
-                self.content_widget.composition.syncer.stop_scanning_loop()
-        
-        event.accept()
