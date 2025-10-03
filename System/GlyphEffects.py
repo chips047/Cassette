@@ -27,7 +27,10 @@ def parse_effect_args(config: dict, settings_meta: dict) -> dict:
 
     return args
 
-def effect_to_glyph(element, model, bpm):
+def effect_to_glyph(element, composition, model = None):
+    model = model or composition.model
+    bpm = composition.bpm
+
     name = element["effect"]["name"]
     config = element["effect"]["settings"]
 
@@ -138,7 +141,9 @@ def sidebeat(glyph: dict, model: str, bpm: int, part: str):
     
     return out
 
-def glitch(glyph: dict, model: str, bpm: int, fps=20.0, duty_cycle=0.7, min_br_ratio=0.3, bpm_snap=False, enable_fadeout = False):
+#def volume(glyph: dict, model: str, bpm: int, audiosegment):
+
+def glitch(glyph: dict, model: str, bpm: int, fps = 20.0, duty_cycle = 0.7, min_br_ratio = 0.3, bpm_snap=False, enable_fadeout = False):
     if bpm_snap:
         fps = (bpm / 60) * bpm_snap
     
@@ -336,7 +341,7 @@ def fill(glyph: dict, model: str, bpm: int, side=1):
         })
     return events
 
-def chase(glyph: dict, model: str, bpm: int, width=2, direction=1):
+def chase(glyph: dict, model: str, bpm: int, width = 2, direction = 1):
     n, segs, duration, start, end, br, turned_on_segs = get_data(glyph, model, True)
     if not segs:
         return []
@@ -379,7 +384,7 @@ def chase(glyph: dict, model: str, bpm: int, width=2, direction=1):
 
     return out
 
-def strobe(glyph: dict, model: str, bpm: int, frequency=1):
+def strobe(glyph: dict, model: str, bpm: int, frequency = 1):
     n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model)
     interval = 1000.0 / frequency
     t = start
@@ -402,7 +407,7 @@ def strobe(glyph: dict, model: str, bpm: int, frequency=1):
 
     return out
 
-def soft_or_pseudo_strobe(glyph: dict, model: str, bpm: int, frequency=1, first_brightness=100, second_brightness=70, bpm_snap=False):
+def soft_or_pseudo_strobe(glyph: dict, model: str, bpm: int, frequency = 1, first_brightness = 100, second_brightness = 70, bpm_snap = False):
     if bpm_snap:
         frequency = (bpm / 60) * bpm_snap
 
