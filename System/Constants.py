@@ -19,6 +19,7 @@ def prepare_default_settings(setting_components):
     settings = QSettings("chips047", "Cassette")
     existing_keys = set(settings.allKeys())
     new_keys = set()
+    exceptions = ["tutorial_shown"]
 
     for page_name, components in setting_components.items():
         for element_key, params in components.items():
@@ -45,6 +46,9 @@ def prepare_default_settings(setting_components):
 
     obsolete_keys = existing_keys - new_keys
     for key in obsolete_keys:
+        if key in exceptions:
+            continue
+        
         settings.remove(key)
 
     settings.sync()
@@ -264,7 +268,7 @@ SettingsDict = {
             "key": "center_playhead",
             "default": False
         },
-        "selector5": {
+        "selector6": {
             "title": "Default Scaling (ms / px)",
             "key": "default_scaling",
             "choices": ["100", "200", "300", "400", "500"],
@@ -306,6 +310,23 @@ SettingsDict = {
             "min": 1,
             "max": 10,
             "key": "arrow_increment",
+            "default": 1
+        },
+        "selector3": {
+            "title": "Animation Multiplier",
+            "key": "animation_multiplier",
+            "choices": ["0.75x", "1.0x", "1.15x", "1.25x", "1.5x", "3.0x", "5.0x", "10.0x", "20.0x"],
+            "map": {
+                "0.75x": "0.75",
+                "1.0x": "1.0",
+                "1.15x": "1.15",
+                "1.25x": "1.25",
+                "1.5x": "1.5",
+                "3.0x": "3.0",
+                "5.0x": "5.0",
+                "10.0x": "10.0",
+                "20.0x": "20.0"
+            },
             "default": 1
         }
     }
