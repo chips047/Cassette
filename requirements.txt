@@ -7,3 +7,5 @@ loguru
 pydub
 aubio
 requests
+soundfile
+sounddevice
