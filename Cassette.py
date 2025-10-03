@@ -100,7 +100,7 @@ class ApplicationWindow(QMainWindow):
 
     @pyqtSlot(object)
     def show_compositor(self, composition):
-        self.compositor_widget.initialize_compositor(composition.cropped_audiofile_path, composition)
+        self.compositor_widget.load_composition(composition)
         anim_out_menu = self.fade_out(self.main_menu_widget)
 
         def on_fade_out_finished():
@@ -126,8 +126,11 @@ class ApplicationWindow(QMainWindow):
                 initial_compositor_geometry.width(),
                 initial_compositor_geometry.height()
             ))
+
             self.anim_move.setEndValue(initial_compositor_geometry)
             self.anim_move.setEasingCurve(QEasingCurve.OutElastic)
+
+            self.anim_move.finished.connect(self.compositor_widget.content_widget.check_tutorial)
 
             anim_in_compositor = self.fade_in(self.compositor_widget)
             anim_in_compositor.start()
@@ -140,19 +143,12 @@ class ApplicationWindow(QMainWindow):
     
     @pyqtSlot()
     def hide_compositor_and_show_main_menu(self):
-        if hasattr(self.compositor_widget, "composition"):
-            try:
-                self.compositor_widget.composition.syncer.stop_scanning_loop()
-            
-            except Exception:
-                pass
-
         logger.info("Fading out compositor")
         self.anim_out_compositor = self.fade_out(self.compositor_widget)
 
         def on_fade_out_compositor_finished():
             self.compositor_widget.setVisible(False)
-            self.compositor_widget.cleanup()
+            self.compositor_widget.content_widget.unload_composition()
 
             initial_main_menu_geometry = self.stack.geometry()
             offset_y = 350
@@ -189,6 +185,7 @@ class ApplicationWindow(QMainWindow):
                     initial_main_menu_geometry.height()
                 )
             )
+
             self.anim_move_main_menu.setEndValue(initial_main_menu_geometry)
             self.anim_move_main_menu.setEasingCurve(QEasingCurve.OutElastic)
 
@@ -201,6 +198,10 @@ class ApplicationWindow(QMainWindow):
         self.anim_out_compositor.start()
     
     def closeEvent(self, event):
+        if self.compositor_widget.content_widget.composition:
+            self.compositor_widget.content_widget.composition.syncer.exit_app()
+            print("Waiting for glyph syncer to exit...")
+        
         super().closeEvent(event)
 
 if __name__ == '__main__':
