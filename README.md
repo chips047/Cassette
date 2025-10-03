@@ -1,36 +1,77 @@
 ![Hello.](.github/title.png)
-## Say Hello to **Cassette**  
-Create stunning **Glyphtones** — easier than ever before.
 
-## **Recommended System Requirements**  
-To ensure a smooth experience, we recommend running Cassette on the following system:
+# Cassette
 
-- **Memory**: 8 GB RAM or more  
-- **Processor**: 4 Core CPU
-- **Clock Speed**: 2.0 GHz or higher
-- **Free Space**: 1 GB or more
+**Create stunning Glyphtones — easier than ever.**
 
-## How to Install
+It’s an early release: it works well but can be temperamental. If you enjoy experimenting, welcome aboard.
 
-1. Go to the Releases page and download the package you need.  
-   - **Note:** The `nopython` package requires Python 3.10 to be installed on your system.
+## Table of contents
 
-2. Unpack the downloaded archive.
+* [System requirements](#system-requirements)
+* [Installation](#installation-and-running)
+* [Real - time preview on your phone](#real---time-preview-on-your-phone)
+* [FAQ & Troubleshooting](#faq--troubleshooting)
+* [Roadmap](#roadmap)
+* [Contact](#contact)
 
-3. Run the appropriate script for your system:  
-   - On **Windows**: `Cassette.bat`  
-   - On **Linux/macOS**: `Cassette.sh`
+## System requirements
 
-## **Important Notes**  
+Recommended for a smooth experience:
 
-- Don’t expect perfection just yet — crashes, slowdowns, or glitches may occur. If you encounter bugs, please report them so I can improve!  
-- Certain features are **not implemented yet**, including:
-  - Undo/Redo functionality  
-  - Glyph UI preview
-  
-  But don’t worry — they’re on the roadmap!
+* **Memory**: 8 GB RAM or more
+* **CPU**: 4-core processor
+* **Clock speed**: 2.0 GHz or higher
+* **Free disk space**: 1 GB+
 
-- **Real-time Preview on your Phone**  
-  Just install the **Cassette Receiver** app on your Nothing Phone and enable **Android Debug Mode**, and connect your phone to PC by USB. Cassette will automatically detect your phone.
-  Use USB-A to USB-C cable.
-  * Was only tested on 3a and 1.
+## Installation and running
+
+1. Download the appropriate release from the Releases page.
+- **Important:** The `nopython` package requires **Python 3.10** installed on your system. Cassette supports Python 3.10 only.
+
+2. Unpack the archive.
+3. Start Cassette:
+
+* **Windows**: `Cassette.bat`
+* **Windows-nopython**: `Cassette-nopython.bat`
+* **Linux / macOS**: `Cassette.sh`
+
+## Real - time preview on your phone
+
+To enable live ringtone preview on a connected phone:
+
+1. Enable **Developer Options → USB debugging** on your Phone:
+* Settings → About phone → Press on Phone image → Tap Build number 7 times
+* System → Developer options → Enable USB debugging.
+2. Connect your Phone to the PC: **USB - C** or **USB - A** cable.
+3. Accept the connection prompt on the phone. **Recommended to enable "Always allow" checkbox.
+4. Install the **Cassette Receiver** app on your Nothing Phone. Cassette will ask you if you want to install it automatically
+
+**Note:** Live preview has been tested on Nothing Phone 3a and 1. Other devices may not work, if so, please text me in discord.
+
+## FAQ & Troubleshooting
+
+### Error: `Failed to build Aubio==0.4.9`
+
+Possible causes and steps:
+
+1. Make sure you are using **Python 3.10** — many prebuilt wheels target that version.
+2. Consider installing aubio via your OS package manager or use Conda for prebuilt binaries.
+
+### Phone not detected by Cassette
+
+1. Try a different cable and port. Some cables are power - only.
+2. Confirm Cassette Receiver is installed on the phone.
+3. Ensure USB debugging is enabled and the phone has accepted the PC's connection.
+
+### Can we get more effects?
+
+New effects are in development. In the meantime, you can layer effects by placing one glyph, applying effect A, then placing another glyph on top with effect B.
+
+## Roadmap
+
+* Undo / Redo
+* Glyph UI preview window
+
+## Contact
+- Discord only: **chips047**
