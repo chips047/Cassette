@@ -366,9 +366,9 @@ class Port:
                 eff_for_conversion["track"] = target_track[0]
                 eff_for_conversion["segments"] = ported_segments
 
-                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_for_conversion, port_to, composition.bpm)
+                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_for_conversion, composition, port_to)
                 ported_glyphs.extend(list_of_glyphs)
-                logger.error(f"Extending 1: {list_of_glyphs}")
+                logger.warning(f"Extending 1: {list_of_glyphs}")
 
             for track in target_track:
                 eff_copy = Port._make_glyph(effect, track, segments=None, copy_effects=True)
@@ -379,9 +379,9 @@ class Port:
                     eff_copy["segments"] = [segment]
 
                 logger.warning(f"Generating effect: {eff_copy['track']}, segments: {eff_copy.get('segments')}")
-                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_copy, port_to, composition.bpm)
+                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_copy, composition, port_to)
                 ported_glyphs.extend(list_of_glyphs)
-                logger.error(f"Extending 2: {list_of_glyphs}")
+                logger.warning(f"Extending 2: {list_of_glyphs}")
 
         for single in singles:
             target_track = Port.get_target_track(composition.model, port_to, single)
@@ -398,7 +398,7 @@ class Port:
 
                     logger.warning(f"Adding a simple glyph: {new_glyph['track']}, segments: {new_glyph.get('segments')}")
                     ported_glyphs.append(new_glyph)
-                    logger.error(f"Extending 3: {new_glyph}")
+                    logger.warning(f"Extending 3: {new_glyph}")
 
             else:
                 chosen_target = target_track[0]
@@ -409,6 +409,6 @@ class Port:
                 new_single = Port._make_glyph(single, chosen_target, segments=ported_segments)
                 logger.warning(f"Adding a complex glyph: {new_single['track']}, segments: {new_single.get('segments')}")
                 ported_glyphs.append(new_single)
-                logger.error(f"Extending 4: {new_single}")
+                logger.warning(f"Extending 4: {new_single}")
         
         return ported_glyphs
