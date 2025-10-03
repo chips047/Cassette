@@ -11,6 +11,14 @@ from loguru import logger
 from PyQt5.QtCore import *
 from System.Constants import *
 
+def thread_excepthook(args):
+    logger.exception(
+        "Unhandled exception in thread %s", args.thread.name,
+        exc_info = (args.exc_type, args.exc_value, args.exc_traceback)
+    )
+
+threading.excepthook = thread_excepthook
+
 class RepeatingTimer:
     def __init__(self, callback):
         self.callback = callback
@@ -53,14 +61,23 @@ class Player:
         self.playback_start_wall_time = 0 # Why do I use this? Because some players update their UI 120 frames per second. And for smoothness we need smooth timing.
         
         self.thread = None
+        self.stream = None
         self.lock = threading.RLock()
 
+        self._mid_timer = RepeatingTimer(self._midpass_tick)
+        self._bc_timer = RepeatingTimer(self._bitcrush_tick)
+        self._speed_timer = RepeatingTimer(self._speed_tick)
+        self._volume_timer = RepeatingTimer(self._volume_tick)
+    
+    def _setup_parameters(self):
         self.fade_factor = 1.0
         self.position = 0.0
         self.speed = 1.0
         self.is_playing = False
         self.duration_ms = 0
         self.volume = 1.0
+
+        self.cleanup_on_finished = False
 
         self.midpass_enabled = False
         self.midpass_center = 1000.0
@@ -71,24 +88,30 @@ class Player:
         self._a = [1.0, 0.0]
         self._filter_states = None
 
-        self._mid_timer = RepeatingTimer(self._midpass_tick)
-
         self.bitcrush_enabled = False
         self._bitcrush_bits = 16
         self._bitcrush_downsample = 1
         self._bitcrush_mix = 0.0
 
-        self._bc_timer = RepeatingTimer(self._bitcrush_tick)
         self._bc_steps = 0
         self._bc_step = 0
         self._bc_start = None
         self._bc_target = None
         self._bitcrush_state = None
 
-        self._speed_timer = RepeatingTimer(self._speed_tick)
-        self._volume_timer = RepeatingTimer(self._volume_tick)
-    
+        self._channel_delays_ms = np.array([0.0, 0.0], dtype='float64')
+        self._delay_timer = RepeatingTimer(self._delay_tick)
+        self._delay_steps = 0
+        self._delay_step = 0
+        self._delay_start = np.array([0.0, 0.0], dtype='float64')
+        self._delay_target = np.array([0.0, 0.0], dtype='float64')
+
+        self._track_peak_level = 1.0 
+        self._current_audio_level = 0.0
+
     def load_audio(self, path):
+        self._setup_parameters()
+
         self.data, self.fs = sf.read(path, dtype='float32')
         self.duration_ms = len(self.data) / self.fs * 1000
 
@@ -103,12 +126,76 @@ class Player:
             callback = self.audio_callback
         )
 
+        max_abs = np.max(np.abs(self.data))
+        
         with self.lock:
+            self._track_peak_level = max(max_abs, 1e-6)
             channels = self.data.shape[1]
             self._filter_states = np.zeros((channels, 4), dtype='float64')
 
         self.stream.start()
+
+    def smooth_channel_delay(self, left_from_ms = None, left_to_ms = None, right_from_ms = None, right_to_ms = None, duration = 0.5, steps = 50):
+        if left_from_ms is None:
+            left_from_ms = self._channel_delays_ms[0]
+        
+        if left_to_ms is None:
+            left_to_ms = self._channel_delays_ms[0]
+        
+        if right_from_ms is None:
+            right_from_ms = self._channel_delays_ms[1]
+        
+        if right_to_ms is None:
+            right_to_ms = self._channel_delays_ms[1]
+        
+        steps = max(1, int(steps))
+        duration = max(0.0, float(duration))
+
+        if duration == 0.0 or steps <= 1:
+            with self.lock:
+                self._channel_delays_ms[0] = max(0.0, float(left_to_ms))
+                self._channel_delays_ms[1] = max(0.0, float(right_to_ms))
+            
+            return
+
+        with self.lock:
+            self._delay_start = np.array([max(0.0, float(left_from_ms)), max(0.0, float(right_from_ms))], dtype='float64')
+            self._delay_target = np.array([max(0.0, float(left_to_ms)), max(0.0, float(right_to_ms))], dtype='float64')
+
+            self._delay_steps = steps
+            self._delay_step = 0
+
+        interval_ms = max(1, int((duration / float(self._delay_steps)) * 1000.0))
+
+        self._delay_timer.stop()
+        self._delay_timer.setInterval(interval_ms)
+        self._delay_timer.start()
     
+    def _delay_tick(self):
+        i = self._delay_step
+        steps = self._delay_steps
+
+        if i >= steps:
+            with self.lock:
+                self._channel_delays_ms[:] = self._delay_target
+            
+            self._delay_timer.stop()
+            return
+
+        if steps > 1:
+            t = float(i) / float(steps - 1)
+        
+        else:
+            t = 1.0
+        
+        eased = t * t * (3.0 - 2.0 * t)
+        new = self._delay_start + (self._delay_target - self._delay_start) * eased
+
+        with self.lock:
+            self._channel_delays_ms[:] = new
+
+        self._delay_step += 1
+
     def _compute_biquad_bandpass(self, center_hz, q):
         fs = float(self.fs)
         if fs is None or fs <= 0:
@@ -155,7 +242,6 @@ class Player:
     
     def play(self, start_pos_ms):
         with self.lock:
-            print(f"start: {start_pos_ms}, pos: {self.position}")
             self.position = int(start_pos_ms * self.fs / 1000)
             self.is_playing = True
         
@@ -226,11 +312,53 @@ class Player:
 
             states = None if self._filter_states is None else self._filter_states.copy()
 
-        idx_int = np.floor(pos).astype(int)
-        idx_frac = pos - idx_int
-        idx_int = np.clip(idx_int, 0, len(self.data) - 2)
+            delays_ms = None if self._channel_delays_ms is None else self._channel_delays_ms.copy()
 
-        temp = (1 - idx_frac)[:, None] * self.data[idx_int] + idx_frac[:, None] * self.data[idx_int + 1]
+        idx_int = None
+        idx_frac = None
+
+        channels = self.data.shape[1]
+
+        if delays_ms is None:
+            delays_samples = np.zeros(channels, dtype='float64')
+        
+        else:
+            delays_samples = (delays_ms.astype('float64') * (float(self.fs) / 1000.0))
+
+        pos2 = pos[:, None] - delays_samples[None, :]
+
+        idx_int = np.floor(pos2).astype(int)
+        idx_frac = pos2 - idx_int
+
+        temp = np.zeros((frames, channels), dtype=self.data.dtype)
+        max_index = len(self.data) - 1
+
+        for ch in range(channels):
+            idxi = idx_int[:, ch]
+            frac = idx_frac[:, ch]
+
+            mask_before = idxi < 0
+            mask_after = idxi >= max_index
+            mask_valid = ~(mask_before | mask_after)
+
+            if np.any(mask_valid):
+                ii = idxi[mask_valid]
+                f = frac[mask_valid]
+
+                ii_clip = np.clip(ii, 0, max_index - 1)
+                s0 = self.data[ii_clip, ch]
+                s1 = self.data[ii_clip + 1, ch]
+
+                temp[mask_valid, ch] = (1.0 - f) * s0 + f * s1
+
+            if np.any(mask_after):
+                temp[mask_after, ch] = self.data[max_index, ch]
+
+        #idx_int = np.floor(pos).astype(int)
+        #idx_frac = pos - idx_int
+        #idx_int = np.clip(idx_int, 0, len(self.data) - 2)
+#
+        #temp = (1 - idx_frac)[:, None] * self.data[idx_int] + idx_frac[:, None] * self.data[idx_int + 1]
         
         if do_mid and states is not None:
             filtered = np.empty_like(temp)
@@ -286,11 +414,19 @@ class Player:
                     self._bitcrush_state[:, :] = bc_state
 
         outdata[:] = temp * fade * local_volume
+        peak_amplitude_block = np.max(np.abs(temp)) 
+        
+        with self.lock:
+            self._current_audio_level = peak_amplitude_block / self._track_peak_level
 
         with self.lock:
             self.position += frames * self.speed
             if self.position >= len(self.data):
                 self.is_playing = False
+
+    def get_current_audio_level(self):
+        with self.lock:
+            return self._current_audio_level
 
     def tape(
             self,
@@ -300,17 +436,25 @@ class Player:
             end_speed = None,
             start_ms = None,
             duration = 1.5,
-            steps = 50
+            steps = 50,
+            cleanup_on_finish = False
         ):
 
         if not self.is_playing:
             self.play(start_ms or 0)
+        
+        self.cleanup_on_finished = cleanup_on_finish
 
         self.set_volume(start_fade if start_fade is not None else self.volume)
         self.set_speed(start_speed if start_speed is not None else self.speed)
 
-        self.set_volume(end_fade if end_fade is not None else self.volume, duration = duration)
+        self.set_volume(end_fade if end_fade is not None else self.volume, duration)
         self.set_speed(end_speed if end_speed is not None else self.speed, steps, duration)
+    
+    def set_channel_delay_ms(self, left_ms: float, right_ms: float):
+        with self.lock:
+            self._channel_delays_ms[0] = float(left_ms)
+            self._channel_delays_ms[1] = float(right_ms)
     
     def enable_bitcrush(self, bits = 8, downsample = 4, mix = 1.0, duration = 0.0, steps = 50):
         with self.lock:
@@ -473,7 +617,6 @@ class Player:
             self.volume = new_volume
 
             self._volume_step += 1
-            print(self._volume_step)
 
     def _speed_tick(self):
         with self.lock:
@@ -486,6 +629,9 @@ class Player:
 
                 if self._stop_on_end:
                     self.stop()
+                
+                if self.cleanup_on_finished:
+                    self.cleanup()
 
                 return
 
@@ -542,7 +688,6 @@ class Player:
         denom = float(max(1, steps - 1))
         t = float(i) / denom
         eased = t * t * (3.0 - 2.0 * t)
-        print(f"t: {t}, eased: {eased}")
 
         with self.lock:
             c0 = self._mid_start["center"]; c1 = self._mid_target["center"]
@@ -560,15 +705,23 @@ class Player:
             self.midpass_mix = float(max(0.0, min(1.0, new_mix)))
             self.midpass_gain = float(new_gain)
 
-            print(f"data: {self.midpass_center}, {self.midpass_q}, {self.midpass_mix}, {self.midpass_gain}")
-
             self._b, self._a = self._compute_biquad_bandpass(self.midpass_center, self.midpass_q)
 
         self._mid_step += 1
     
     def cleanup(self):
-        self.stream.close()
-        self.stream.stop()
+        print("------------------------------------ CLEANED UP")
+
+        with self.lock:
+            self._bc_timer.stop()
+            self._mid_timer.stop()
+            self._speed_timer.stop()
+            self._volume_timer.stop()
+
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+                self.stream = None
 
 class PlaybackManager(QObject, Player):
     playback_state_changed = pyqtSignal(bool)

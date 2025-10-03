@@ -10,49 +10,6 @@ from pydub import AudioSegment
 
 from System.Constants import *
 
-def variable_tape_stop_array(src_arr: np.ndarray, sample_rate: int, end_speed: float = 0.05, fade_to: float = 0.0) -> np.ndarray:
-    orig_dtype = src_arr.dtype
-    if np.issubdtype(orig_dtype, np.integer):
-        norm = float(np.iinfo(orig_dtype).max) + 1.0
-        x = src_arr.astype(np.float32) / norm
-    else:
-        x = src_arr.astype(np.float32)
-
-    mono = False
-    if x.ndim == 1:
-        x = x[:, None]
-        mono = True
-
-    N_src = x.shape[0]
-    channels = x.shape[1]
-    src_duration_sec = N_src / float(sample_rate)
-
-    T_out = 2.0 * src_duration_sec / (1.0 + end_speed)
-    N_out = max(1, int(np.ceil(T_out * sample_rate)))
-
-    t_out = np.linspace(0.0, T_out, N_out, endpoint=False, dtype=np.float64)
-
-    a = (end_speed - 1.0) / T_out
-    src_pos_sec = t_out + 0.5 * a * (t_out ** 2)
-    src_pos_idx = src_pos_sec * sample_rate
-
-    src_pos_idx_clipped = np.clip(src_pos_idx, 0, N_src - 1 - 1e-6)
-    src_indices = np.arange(N_src, dtype=np.float32)
-
-    out = np.zeros((N_out, channels), dtype=np.float32)
-    for ch in range(channels):
-        out[:, ch] = np.interp(src_pos_idx_clipped, src_indices, x[:, ch])
-
-    gain = np.linspace(1.0, fade_to, N_out, dtype=np.float32)[:, None]
-    out *= gain
-
-    out_int16 = np.clip(out * 32767.0, -32768, 32767).astype(np.int16)
-
-    if out_int16.shape[1] == 1:
-        out_int16 = np.repeat(out_int16, 2, axis=1)
-
-    return out_int16
-
 def ensure_wav(path):
     if path.lower().endswith(".wav"):
         return path
