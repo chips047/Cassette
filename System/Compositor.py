@@ -646,35 +646,26 @@ class InteractionHandler:
         orig_main = self.dragging_element_info['selection_orig_state'][main_element_id]
 
         if mode == 'resize_left':
-            # Просто итерируем по всем выделенным элементам
             for el_id, orig_state in self.dragging_element_info['selection_orig_state'].items():
                 element = self.composition.get_glyph(el_id)
                 if not element:
                     continue
 
-                # 1. Рассчитываем "идеальное" смещение для этого элемента на основе движения мыши
                 potential_new_start = orig_state['start'] + delta_ms
                 potential_new_duration = orig_state['duration'] - delta_ms
 
-                # 2. Проверяем, не стала ли длительность слишком маленькой
                 if potential_new_duration < 1:
-                    # Если элемент "схлопывается", просто не даем ему меняться дальше
                     continue
 
-                # 3. Применяем ограничение start >= 0 ИНДИВИДУАЛЬНО
                 final_start = max(potential_new_start, 0)
 
-                # 4. Пересчитываем длительность, чтобы правый край остался на месте.
-                # Это ключевой момент, чтобы элемент правильно "растягивался", упираясь в 0.
                 end_position = orig_state['start'] + orig_state['duration']
                 final_duration = end_position - final_start
 
-                # 5. Присваиваем финальные значения
                 element['start'] = final_start
                 element['duration'] = final_duration
                 self.updated_elements[el_id] = element
 
-            # Обновляем всплывающее окно
             self._show_value_popup(main_element, f"{main_element['duration']:.0f} ms")
 
         elif mode == 'resize_right':
