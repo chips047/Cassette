@@ -3,7 +3,6 @@ import time
 import math
 import random
 import atexit
-import faulthandler
 
 import numpy as np
 
@@ -22,8 +21,6 @@ from . import Utils
 from . import Styles
 from . import Audio
 from . import Player
-
-faulthandler.enable()
 
 _SHARED_AUDIO_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 atexit.register(lambda: _SHARED_AUDIO_EXECUTOR.shutdown(wait=True))
