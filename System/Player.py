@@ -1,5 +1,6 @@
 import time
 import math
+import traceback
 import threading
 
 import numpy as np
@@ -110,30 +111,34 @@ class Player:
         self._current_audio_level = 0.0
 
     def load_audio(self, path):
-        self._setup_parameters()
+        try:
+            self._setup_parameters()
 
-        self.data, self.fs = sf.read(path, dtype='float32')
-        self.duration_ms = len(self.data) / self.fs * 1000
+            self.data, self.fs = sf.read(path, dtype='float32')
+            self.duration_ms = len(self.data) / self.fs * 1000
 
-        if self.data.ndim == 1:
-            self.data = np.stack([self.data, self.data], axis=-1)
+            if self.data.ndim == 1:
+                self.data = np.stack([self.data, self.data], axis=-1)
+
+            self.stream = sd.OutputStream(
+                channels = self.data.ndim,
+                samplerate = self.fs,
+                blocksize = 256,
+                latency = "low",
+                callback = self.audio_callback
+            )
+
+            max_abs = np.max(np.abs(self.data))
+
+            with self.lock:
+                self._track_peak_level = max(max_abs, 1e-6)
+                channels = self.data.shape[1]
+                self._filter_states = np.zeros((channels, 4), dtype='float64')
+
+            self.stream.start()
         
-        self.stream = sd.OutputStream(
-            channels = self.data.ndim,
-            samplerate = self.fs,
-            blocksize = 256,
-            latency = "low",
-            callback = self.audio_callback
-        )
-
-        max_abs = np.max(np.abs(self.data))
-        
-        with self.lock:
-            self._track_peak_level = max(max_abs, 1e-6)
-            channels = self.data.shape[1]
-            self._filter_states = np.zeros((channels, 4), dtype='float64')
-
-        self.stream.start()
+        except Exception as e:
+            logger.error(f"Something went wrong while loading the audio: {traceback.format_exc()}")
 
     def smooth_channel_delay(self, left_from_ms = None, left_to_ms = None, right_from_ms = None, right_to_ms = None, duration = 0.5, steps = 50):
         if left_from_ms is None:
@@ -249,14 +254,12 @@ class Player:
         self.playback_start_wall_time = time.time()
     
     def set_speed(self, new_speed, steps = 50, duration = 0.0, stop_on_end = False):
+        print(f"params: {self.speed} to {new_speed}, {duration} secs")
         self._update_playback_start()
 
         if duration == 0.0:
             with self.lock:
                 self.speed = new_speed
-                
-                if stop_on_end:
-                    self.stop()
             
             return
         
@@ -266,6 +269,8 @@ class Player:
         self._speed_step = 0
         self._speed_start = self.speed
         self._stop_on_end = stop_on_end
+
+        print(f"Sooo, {self._target_speed}")
 
         self._speed_timer.stop()
         self._speed_timer.setInterval(interval * 1000)
@@ -289,140 +294,138 @@ class Player:
         self._volume_timer.start()
 
     def audio_callback(self, outdata, frames, time_info, status):
-        if not self.is_playing:
-            outdata.fill(0)
-            return
-
-        with self.lock:
-            pos = self.position + np.arange(frames) * self.speed
-            fade = self.fade_factor
-            local_volume = self.volume
-            do_mid = self.midpass_enabled
-
-            b = tuple(self._b)
-            a1, a2 = tuple(self._a)
-            mix = self.midpass_mix
-            gain = self.midpass_gain
-
-            do_bit = self.bitcrush_enabled
-            bc_bits = int(max(1, min(24, self._bitcrush_bits)))
-            bc_down = max(1, int(self._bitcrush_downsample))
-            bc_mix = float(max(0.0, min(1.0, self._bitcrush_mix)))
-            bc_state = None if self._bitcrush_state is None else self._bitcrush_state.copy()
-
-            states = None if self._filter_states is None else self._filter_states.copy()
-
-            delays_ms = None if self._channel_delays_ms is None else self._channel_delays_ms.copy()
-
-        idx_int = None
-        idx_frac = None
-
-        channels = self.data.shape[1]
-
-        if delays_ms is None:
-            delays_samples = np.zeros(channels, dtype='float64')
-        
-        else:
-            delays_samples = (delays_ms.astype('float64') * (float(self.fs) / 1000.0))
-
-        pos2 = pos[:, None] - delays_samples[None, :]
-
-        idx_int = np.floor(pos2).astype(int)
-        idx_frac = pos2 - idx_int
-
-        temp = np.zeros((frames, channels), dtype=self.data.dtype)
-        max_index = len(self.data) - 1
-
-        for ch in range(channels):
-            idxi = idx_int[:, ch]
-            frac = idx_frac[:, ch]
-
-            mask_before = idxi < 0
-            mask_after = idxi >= max_index
-            mask_valid = ~(mask_before | mask_after)
-
-            if np.any(mask_valid):
-                ii = idxi[mask_valid]
-                f = frac[mask_valid]
-
-                ii_clip = np.clip(ii, 0, max_index - 1)
-                s0 = self.data[ii_clip, ch]
-                s1 = self.data[ii_clip + 1, ch]
-
-                temp[mask_valid, ch] = (1.0 - f) * s0 + f * s1
-
-            if np.any(mask_after):
-                temp[mask_after, ch] = self.data[max_index, ch]
-
-        #idx_int = np.floor(pos).astype(int)
-        #idx_frac = pos - idx_int
-        #idx_int = np.clip(idx_int, 0, len(self.data) - 2)
-#
-        #temp = (1 - idx_frac)[:, None] * self.data[idx_int] + idx_frac[:, None] * self.data[idx_int + 1]
-        
-        if do_mid and states is not None:
-            filtered = np.empty_like(temp)
-            channels = temp.shape[1]
-            b0, b1, b2 = b
-
-            for n in range(frames):
-                for ch in range(channels):
-                    x_n = float(temp[n, ch])
-                    x1, x2, y1, y2 = states[ch]
-                    y_n = b0 * x_n + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
-
-                    states[ch, 1] = x1
-                    states[ch, 0] = x_n
-                    states[ch, 3] = y1
-                    states[ch, 2] = y_n
-
-                    filtered[n, ch] = y_n
-            
-            temp = (1.0 - mix) * temp + mix * filtered * gain
+        try:
+            if not self.is_playing:
+                outdata.fill(0)
+                return
 
             with self.lock:
-                if self._filter_states is not None:
-                    self._filter_states[:, :] = states
-        
-        if do_bit and bc_state is not None and (bc_mix > 0.0):
-            channels = temp.shape[1]
-            frames_n = temp.shape[0]
+                pos = self.position + np.arange(frames) * self.speed
+                fade = self.fade_factor
+                local_volume = self.volume
+                do_mid = self.midpass_enabled
 
-            bits = max(1, min(24, bc_bits))
-            levels = float((1 << bits) - 1)
+                b = tuple(self._b)
+                a1, a2 = tuple(self._a)
+                mix = self.midpass_mix
+                gain = self.midpass_gain
 
-            for n in range(frames_n):
-                for ch in range(channels):
-                    cnt = int(bc_state[ch, 1])
+                do_bit = self.bitcrush_enabled
+                bc_bits = int(max(1, min(24, self._bitcrush_bits)))
+                bc_down = max(1, int(self._bitcrush_downsample))
+                bc_mix = float(max(0.0, min(1.0, self._bitcrush_mix)))
+                bc_state = None if self._bitcrush_state is None else self._bitcrush_state.copy()
 
-                    if cnt <= 0:
-                        v = float(temp[n, ch])
-                        bc_state[ch, 0] = v
-                        bc_state[ch, 1] = bc_down - 1
-                    
-                    else:
-                        v = float(bc_state[ch, 0])
-                        bc_state[ch, 1] = cnt - 1
+                states = None if self._filter_states is None else self._filter_states.copy()
 
-                    q = round(((v + 1.0) * 0.5) * levels) / levels
-                    vq = q * 2.0 - 1.0
+                delays_ms = None if self._channel_delays_ms is None else self._channel_delays_ms.copy()
 
-                    temp[n, ch] = (1.0 - bc_mix) * temp[n, ch] + bc_mix * vq
+            idx_int = None
+            idx_frac = None
+
+            channels = self.data.shape[1]
+
+            if delays_ms is None:
+                delays_samples = np.zeros(channels, dtype='float64')
+
+            else:
+                delays_samples = (delays_ms.astype('float64') * (float(self.fs) / 1000.0))
+
+            pos2 = pos[:, None] - delays_samples[None, :]
+
+            idx_int = np.floor(pos2).astype(int)
+            idx_frac = pos2 - idx_int
+
+            temp = np.zeros((frames, channels), dtype=self.data.dtype)
+            max_index = len(self.data) - 1
+
+            for ch in range(channels):
+                idxi = idx_int[:, ch]
+                frac = idx_frac[:, ch]
+
+                mask_before = idxi < 0
+                mask_after = idxi >= max_index
+                mask_valid = ~(mask_before | mask_after)
+
+                if np.any(mask_valid):
+                    ii = idxi[mask_valid]
+                    f = frac[mask_valid]
+
+                    ii_clip = np.clip(ii, 0, max_index - 1)
+                    s0 = self.data[ii_clip, ch]
+                    s1 = self.data[ii_clip + 1, ch]
+
+                    temp[mask_valid, ch] = (1.0 - f) * s0 + f * s1
+
+                if np.any(mask_after):
+                    temp[mask_after, ch] = self.data[max_index, ch]
+
+            if do_mid and states is not None:
+                filtered = np.empty_like(temp)
+                channels = temp.shape[1]
+                b0, b1, b2 = b
+
+                for n in range(frames):
+                    for ch in range(channels):
+                        x_n = float(temp[n, ch])
+                        x1, x2, y1, y2 = states[ch]
+                        y_n = b0 * x_n + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+
+                        states[ch, 1] = x1
+                        states[ch, 0] = x_n
+                        states[ch, 3] = y1
+                        states[ch, 2] = y_n
+
+                        filtered[n, ch] = y_n
+
+                temp = (1.0 - mix) * temp + mix * filtered * gain
+
+                with self.lock:
+                    if self._filter_states is not None:
+                        self._filter_states[:, :] = states
+
+            if do_bit and bc_state is not None and (bc_mix > 0.0):
+                channels = temp.shape[1]
+                frames_n = temp.shape[0]
+
+                bits = max(1, min(24, bc_bits))
+                levels = float((1 << bits) - 1)
+
+                for n in range(frames_n):
+                    for ch in range(channels):
+                        cnt = int(bc_state[ch, 1])
+
+                        if cnt <= 0:
+                            v = float(temp[n, ch])
+                            bc_state[ch, 0] = v
+                            bc_state[ch, 1] = bc_down - 1
+
+                        else:
+                            v = float(bc_state[ch, 0])
+                            bc_state[ch, 1] = cnt - 1
+
+                        q = round(((v + 1.0) * 0.5) * levels) / levels
+                        vq = q * 2.0 - 1.0
+
+                        temp[n, ch] = (1.0 - bc_mix) * temp[n, ch] + bc_mix * vq
+
+                with self.lock:
+                    if self._bitcrush_state is not None:
+                        self._bitcrush_state[:, :] = bc_state
+
+            outdata[:] = temp * fade * local_volume
+            peak_amplitude_block = np.max(np.abs(temp)) 
 
             with self.lock:
-                if self._bitcrush_state is not None:
-                    self._bitcrush_state[:, :] = bc_state
+                self._current_audio_level = peak_amplitude_block / self._track_peak_level
 
-        outdata[:] = temp * fade * local_volume
-        peak_amplitude_block = np.max(np.abs(temp)) 
+            with self.lock:
+                self.position += frames * self.speed
+                if self.position >= len(self.data):
+                    self.is_playing = False
         
-        with self.lock:
-            self._current_audio_level = peak_amplitude_block / self._track_peak_level
-
-        with self.lock:
-            self.position += frames * self.speed
-            if self.position >= len(self.data):
-                self.is_playing = False
+        except Exception as e:
+            logger.error(f"Failed to play the audio block: {traceback.format_exc()}")
 
     def get_current_audio_level(self):
         with self.lock:
@@ -449,6 +452,7 @@ class Player:
         self.set_speed(start_speed if start_speed is not None else self.speed)
 
         self.set_volume(end_fade if end_fade is not None else self.volume, duration)
+        print("HMMMM", end_speed if end_speed is not None else self.speed)
         self.set_speed(end_speed if end_speed is not None else self.speed, steps, duration)
     
     def set_channel_delay_ms(self, left_ms: float, right_ms: float):
@@ -620,8 +624,10 @@ class Player:
 
     def _speed_tick(self):
         with self.lock:
+            print(self._speed_step, self.speed)
             t = self._speed_step / self._speed_steps
             eased = 1 - (1 - t) ** 3
+            print(t)
 
             if self._speed_step > self._speed_steps:
                 self.speed = self._target_speed
@@ -636,6 +642,7 @@ class Player:
                 return
 
             new_speed = self._speed_start + (self._target_speed - self._speed_start) * eased
+            print(self._speed_start, self._target_speed, self._speed_start, new_speed)
             self._update_playback_start()
             self.speed = new_speed
 
