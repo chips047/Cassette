@@ -204,8 +204,6 @@ def ui_sound(name, tone=None):
         mixer_channels = pygame.mixer.get_init()[2]
         resampled_multi = np.repeat(resampled[:, None], mixer_channels, axis=1)
 
-        print(f"- - - UI Sound Array Depth: {resampled_multi.ndim}")
-
         new_sound = pygame.sndarray.make_sound(np.ascontiguousarray(resampled_multi))
         new_sound.play()
 
