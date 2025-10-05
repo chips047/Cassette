@@ -2033,7 +2033,7 @@ class FloatingWindow(QDialog):
 
         audio_level = self.player.get_current_audio_level()
 
-        if audio_level < 0.05:
+        if audio_level < 0.1:
             return
 
         player_speed = self.player.speed
@@ -2085,23 +2085,12 @@ class FloatingWindow(QDialog):
             random.randint(15, 30)
         ])
 
-        pos = self.pos()
-        x, y = pos.x(), pos.y()
-
         anim_scale = self.make_animation(
             [
                 (0.0, 1.0),
                 (0.5, 1.2),
                 (1.0, 1.0)
             ], b"disturbeScale", 400
-        )
-
-        anim_position = self.make_animation(
-            [
-                (0.0, pos),
-                (0.5, QPoint(x - 15, y - 15)),
-                (1.0, pos)
-            ], b"pos", 500, QEasingCurve.OutElastic
         )
 
         anim_rotation = self.make_animation(
@@ -2115,7 +2104,6 @@ class FloatingWindow(QDialog):
         self.group_animate(
             [
                 anim_scale,
-                anim_position,
                 anim_rotation
             ]
         )
@@ -2149,7 +2137,7 @@ class FloatingWindow(QDialog):
 
         anim_opacity = self.make_animation(
             [
-                (0.0, 1.0),
+                (0.0, self.windowOpacity()),
                 (1.0, 0.0)
             ], b"windowOpacity", 400
         )
