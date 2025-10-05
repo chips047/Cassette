@@ -706,14 +706,16 @@ class CycleButton(_BaseControlWidget):
         self.cycle_state()
         self.show_state()
 
-    def show_state(self):
+    def show_state(self, emit = True):
         display_text_part, value = self.states[self.current_state_index]
         self.value_label.setText(display_text_part)
-        self.state_changed.emit(display_text_part, value)
+
+        if emit:
+            self.state_changed.emit(display_text_part, value)
 
     def reset(self):
         self.current_state_index = 0
-        self.show_state()
+        self.show_state(False)
 
     def get_current_value(self):
         return self.states[self.current_state_index][1]
@@ -877,6 +879,8 @@ class AnimatedTooltipManager(QWidget):
 
         x = parent_rect.right() - tip_size.width() - self._margin
         y = parent_rect.bottom() - tip_size.height() - self._margin
+
+        print(x, y)
         
         return self.parent().mapToGlobal(QPoint(x, y))
 
@@ -1208,48 +1212,37 @@ class MiniWaveformPreview(QWidget):
 
 class AnimatedLineEdit(QLineEdit):
     safeTextChanged = pyqtSignal(str)
-    
-    def __init__(self, min_number, max_number, max_length, input_type, default_text = None, placeholder = None, *args, **kwargs):
+
+    def __init__(
+            self,
+            min_number,
+            max_number,
+            max_length,
+            input_type,
+            default_text: str | None = None,
+            placeholder: str | None = None,
+            *args,
+            **kwargs
+        ):
+        
         super().__init__(*args, **kwargs)
-        self.original_pos = QPoint()
 
         self.input_type = input_type
-        self.max_number = max_number
         self.min_number = min_number
+        self.max_number = max_number
         self.max_length = max_length
-        
         self.default_text = default_text
+
         self._is_default_text_set = False
         self.animating = False
-        
-        self.setPlaceholderText(placeholder)
-
-        self.textChanged.connect(self.schedule_input_field_animation)
-        self.original_input_field_pos = QPoint() 
-
-        self.input_field_animation = QPropertyAnimation(self, b"pos")
-        self.input_field_animation.setDuration(TEXTBOX_INPUT)
-        self.input_field_animation.setEasingCurve(QEasingCurve.OutElastic)
-
-        self.shake_timer = QTimer(self)
-        self.shake_timer.setInterval(TEXTBOX_SHAKE_PER)
-        self.shake_timer.timeout.connect(self._animate_to_random_shake_pos)
-        
         self.is_key_pressed = False
-        self.shake_animation = QPropertyAnimation(self, b"pos")
-        self.shake_animation.setDuration(TEXTBOX_SHAKE)
-        self.shake_animation.setEasingCurve(QEasingCurve.Linear)
-        
-        self.glitch_timer = QTimer(self)
-        self.glitch_timer.timeout.connect(self._glitch_step)
-        self.glitch_steps_left = 0
-        self.original_text = super().text()
-        
-        self.textChanged.connect(self._emit_safe_text_changed)
-        
         self.arrow_pressed = False
         self.arrow_direction = 0
-        
+
+        self.original_pos = QPoint()
+        self.original_input_field_pos = QPoint()
+
+        self.setPlaceholderText(placeholder or "")
         self.setFont(Utils.NType(14))
         self.setStyleSheet("""
             background-color: #222;
@@ -1258,315 +1251,207 @@ class AnimatedLineEdit(QLineEdit):
             border-radius: 14px;
             border: 2px solid #444;
         """)
-    
-    def _emit_safe_text_changed(self, text):
-        if self.animating:
-            return
 
-        if not text:
-            return
-        
-        self.safeTextChanged.emit(text)
-    
-    def showEvent(self, event: QEvent):
-        super().showEvent(event)
+        self.input_field_animation = QPropertyAnimation(self, b"pos")
+        self.input_field_animation.setDuration(TEXTBOX_INPUT)
+        self.input_field_animation.setEasingCurve(QEasingCurve.OutElastic)
 
-        if self.original_input_field_pos.isNull():
-            self.original_input_field_pos = self.pos()
+        self.shake_animation = QPropertyAnimation(self, b"pos")
+        self.shake_animation.setDuration(TEXTBOX_SHAKE)
+        self.shake_animation.setEasingCurve(QEasingCurve.Linear)
 
-        if not self._is_default_text_set and self.default_text is not None:
-            super().setText()(self.default_text)
-            self._is_default_text_set = True
-    
-    def is_not_valid(self):
-        if super().text():
-            secs = self.time_text_to_seconds()
+        self.shake_timer = QTimer(self)
+        self.shake_timer.setInterval(TEXTBOX_SHAKE_PER)
+        self.shake_timer.timeout.connect(self._animate_to_random_shake_pos)
 
-            if secs:
-                if secs < self.min_number:
-                    return True
+        self.glitch_timer = QTimer(self)
+        self.glitch_timer.timeout.connect(self._glitch_step)
+        self.glitch_steps_left = 0
+        self.original_text = super().text()
 
-    def animate_arrow_hold(self, offset: int):
-        if self.shake_animation.state() == QPropertyAnimation.Running:
-            self.shake_animation.stop()
+        self.textChanged.connect(self.schedule_input_field_animation)
+        self.textChanged.connect(self._emit_safe_text_changed)
 
-        self.shake_animation.setStartValue(self.pos())
-        self.shake_animation.setEndValue(self.original_input_field_pos + QPoint(offset, 0))
-        self.shake_animation.setDuration(120)
-        self.shake_animation.setEasingCurve(QEasingCurve.OutCubic)
-        self.shake_animation.start()
-
-    def animate_return_from_arrow(self):
-        if self.shake_animation.state() == QPropertyAnimation.Running:
-            self.shake_animation.stop()
-
-        self.shake_animation.setStartValue(self.pos())
-        self.shake_animation.setEndValue(self.original_input_field_pos)
-        self.shake_animation.setDuration(180)
-        self.shake_animation.setEasingCurve(QEasingCurve.OutElastic)
-        self.shake_animation.start()
-
-    def _parse_time_string(self, text):
+    @staticmethod
+    def _parse_time_to_seconds(text: str) -> int | None:
         try:
             if ':' not in text:
                 return int(text)
-
+            
             if text.startswith(':'):
                 parts = ['0', text[1:]]
             
             else:
                 parts = text.split(':')
-
+            
             if len(parts) != 2:
                 return None
-
-            minutes = int(parts[0]) if parts[0] else 0
-            seconds = int(parts[1]) if parts[1] else 0
-
-            if not (0 <= seconds < 60):
+            
+            m = int(parts[0]) if parts[0] else 0
+            s = int(parts[1]) if parts[1] else 0
+            
+            if not (0 <= s < 60):
                 return None
-
-            return minutes * 60 + seconds
-
-        except:
+            
+            return m * 60 + s
+        
+        except Exception:
             return None
+
+    @staticmethod
+    def _seconds_to_time_text(seconds: int) -> str:
+        s = int(seconds)
+        m = s // 60
+        sec = s % 60
+
+        return f"{m}:{sec:02}"
+
+    def _emit_safe_text_changed(self, text: str):
+        if not self.animating and text:
+            self.safeTextChanged.emit(text)
+
+    def showEvent(self, event: QEvent):
+        super().showEvent(event)
+        
+        if self.original_input_field_pos.isNull():
+            self.original_input_field_pos = self.pos()
+        
+        if not self._is_default_text_set and self.default_text is not None:
+            super().setText(self.default_text)
+            self._is_default_text_set = True
 
     def schedule_input_field_animation(self):
         if self.original_input_field_pos.isNull():
             return
-
+        
         Utils.ui_sound("Tick")
-
+        
         if self.is_key_pressed:
             return
-
+        
         if self.input_field_animation.state() == QAbstractAnimation.Running:
             self.input_field_animation.stop()
-
-        start_animation_pos = self.original_input_field_pos + QPoint(-5, -5)
-        self.move(start_animation_pos) 
         
+        self.move(self.original_input_field_pos + QPoint(-5, -5))
         self._run_input_field_animation()
-    
-    def showEvent(self, event: QEvent):
-        super().showEvent(event)
-        self.original_input_field_pos = self.pos()
-    
+
     def _run_input_field_animation(self):
         self.input_field_animation.setStartValue(self.pos())
         self.input_field_animation.setEndValue(self.original_input_field_pos)
         self.input_field_animation.start()
 
+    def _validate_new_text(self, new_text: str, new_char: str) -> bool:
+        if self.input_type == "number":
+            if not new_text.isdigit():
+                return False
+            
+            if len(new_text) > 1 and new_text.startswith("0"):
+                return False
+            
+            try:
+                n = int(new_text)
+            
+            except ValueError:
+                return False
+            
+            return self.min_number <= n <= self.max_number
+
+        if self.input_type == "text":
+            return len(new_text) <= self.max_length
+
+        if self.input_type == ":time":
+            if not all(ch.isdigit() or ch == ":" for ch in new_char):
+                return False
+            
+            if len(new_text) > self.max_length or new_text.count(":") > 1:
+                return False
+            
+            normalized = f"0{new_text}" if new_text.startswith(":") else new_text
+            parsed = self._parse_time_to_seconds(normalized)
+
+            if parsed is None:
+                return False
+            
+            if parsed > self.max_number:
+                return False
+            
+            if parsed < self.min_number:
+                print(self._seconds_to_time_text(self.min_number + 1))
+                super().setText(self._seconds_to_time_text(self.min_number + 1))
+                self.setCursorPosition(len(super().text()))
+                return "handled"
+            
+            return True
+
+        return True
+
     def keyPressEvent(self, event):
         key = event.key()
-        
-        text = super().text()
+        cur_text = super().text()
         new_char = event.text()
-        
-        if not CurrentSettings["reduce_animations"]:
-            if not self.arrow_pressed and super().text():
-                if key == Qt.Key_Left:
-                    Utils.ui_sound("TickLeft")
 
-                    self.arrow_pressed = True
-                    self.arrow_direction = -1
-                    self.animate_arrow_hold(-6)
-
-                    return super().keyPressEvent(event)
-
-                elif key == Qt.Key_Right:
-                    Utils.ui_sound("TickRight")
-
-                    self.arrow_pressed = True
-                    self.arrow_direction = 1
-                    self.animate_arrow_hold(6)
-
-                    return super().keyPressEvent(event)
-
-        allowed_keys = (
-            Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left,
-            Qt.Key_Right, Qt.Key_Home, Qt.Key_End,
-            Qt.Key_Shift, Qt.Key_Return, Qt.Key_Enter,
+        if not CurrentSettings["reduce_animations"] and not self.arrow_pressed and cur_text:
+            if key == Qt.Key_Left:
+                Utils.ui_sound("TickLeft")
+                self.arrow_pressed = True
+                self.arrow_direction = -1
+                self.animate_arrow_hold(-6)
+                return super().keyPressEvent(event)
             
-        )
+            if key == Qt.Key_Right:
+                Utils.ui_sound("TickRight")
+                self.arrow_pressed = True
+                self.arrow_direction = 1
+                self.animate_arrow_hold(6)
+                return super().keyPressEvent(event)
 
-        if key not in allowed_keys:
-            if self.input_type == "number":
-                if not new_char.isdigit():
-                    self.start_glitch()
-                    return
-                
-                if text == "0" and new_char.isdigit():
-                    self.start_glitch()
-                    return
-                
-                if not (text + new_char).isdigit():
-                    self.start_glitch()
-                    return
+        control_keys = {
+            Qt.Key_Backspace, Qt.Key_Delete, Qt.Key_Left, Qt.Key_Right,
+            Qt.Key_Home, Qt.Key_End, Qt.Key_Shift, Qt.Key_Return, Qt.Key_Enter
+        }
 
-                number = int(text + new_char)
-                if number > self.max_number or number < self.min_number:
-                    self.start_glitch()
-                    return
+        if key in control_keys:
+            super().keyPressEvent(event)
+        
+        else:
+            sel_start = self.selectionStart()
+            sel_text = self.selectedText() if sel_start != -1 else ""
+            sel_len = len(sel_text)
+            insert_at = sel_start if sel_start != -1 else self.cursorPosition()
+            
+            if not new_char:
+                return super().keyPressEvent(event)
+            
+            new_text = cur_text[:insert_at] + new_char + cur_text[insert_at + sel_len:]
 
-            elif self.input_type == "text":
-                if len(text) >= self.max_length:
-                    self.start_glitch()
-                    return
+            result = self._validate_new_text(new_text, new_char)
+            if result is False:
+                self.start_glitch()
+                return
+            
+            if result == "handled":
+                return
 
-            elif self.input_type == ":time":
-                if not new_char.isdigit() and new_char != ":":
-                    self.start_glitch()
-                    return
-
-                if len(text) >= self.max_length:
-                    self.start_glitch()
-                    return
-
-                new_text = text + new_char
-
-                if new_text.count(":") > 1:
-                    self.start_glitch()
-                    return
-
-                stripped = new_text.strip(":")
-                if stripped.isdigit() and len(stripped) < 2:
-                    super().keyPressEvent(event)
-                    return
-
-                normalized = f"0{new_text}" if new_text.startswith(":") else new_text
-                parsed = self._parse_time_string(normalized)
-
-                if parsed is None:
-                    self.start_glitch()
-                    return
-
-                if parsed > self.max_number:
-                    self.start_glitch()
-                    return
-
-                if parsed < self.min_number:
-                    super().setText(self.seconds_to_time_text(self.min_number + 1))
-                    self.setCursorPosition(len(super().text()))
-                    
-                    return
-
-        super().keyPressEvent(event)
+            super().keyPressEvent(event)
 
         if key not in (Qt.Key_Left, Qt.Key_Right):
             if self.is_key_pressed:
                 return
             
             self.is_key_pressed = True
-
             if not CurrentSettings["reduce_animations"]:
                 self.shake_timer.start()
                 self._animate_to_random_shake_pos()
-    
-    def seconds_to_time_text(self, seconds: int) -> str:
-        seconds = int(seconds)
-        minutes = seconds // 60
-        secs = seconds % 60
-        return f"{minutes}:{secs:02}"
-    
-    def text(self):
-        if self.animating:
-            return None
-        
-        if not super().text():
-            return None
-        
-        if self.input_type == ":time":
-            return self.time_text_to_seconds()
-        
-        if self.input_type == "number":
-            return int(super().text())
-        
-        return super().text()
-    
-    def time_text_to_seconds(self) -> int | None:
-        text = super().text()
-        
-        try:
-            if ':' not in text:
-                return int(text)
-
-            if text.startswith(':'):
-                parts = ['0', text[1:]]
-            
-            else:
-                parts = text.split(':')
-
-            if len(parts) != 2:
-                return None
-
-            minutes = int(parts[0]) if parts[0] else 0
-            seconds = int(parts[1]) if parts[1] else 0
-
-            if not (0 <= seconds < 60):
-                return None
-
-            return minutes * 60 + seconds
-        
-        except:
-            return None
-    
-    def setText(self, text: str | int):
-        if self.input_type == ":time":
-            return super().setText(self.seconds_to_time_text(text))
-        
-        if self.input_type == "number":
-            return super().setText(str(text))
-        
-        super().setText(text)
-
-    def start_glitch(self, sound = True):
-        if sound:
-            Utils.ui_sound("Reject")
-
-        if not CurrentSettings["reduce_animations"]:
-            self.animating = True
-
-            if self.glitch_timer.isActive():
-                return
-
-            self.original_pos = self.pos()
-            self.original_text = super().text()
-            self.glitch_steps_left = 7
-            self.glitch_timer.start(24)
-
-    def _glitch_step(self):
-        if self.glitch_steps_left <= 0:
-            self.move(self.original_pos)
-            super().setText(self.original_text)
-
-            self.glitch_timer.stop()
-            self.animating = False
-
-            return
-
-        length = max(1, len(self.original_text))
-        glitch_text = ''.join(random.choices(string.ascii_letters + string.punctuation, k=length))
-        super().setText(glitch_text)
-
-        dx = random.randint(-2, 2)
-        dy = random.randint(-2, 2)
-        self.move(self.original_pos + QPoint(dx, dy))
-
-        self.glitch_steps_left -= 1
 
     def keyReleaseEvent(self, event):
         super().keyReleaseEvent(event)
-
-        if event.key() in (Qt.Key_Left, Qt.Key_Right):
-            if self.arrow_pressed:
-                self.arrow_pressed = False
-                self.arrow_direction = 0
-                self.animate_return_from_arrow()
+        if event.key() in (Qt.Key_Left, Qt.Key_Right) and self.arrow_pressed:
+            self.arrow_pressed = False
+            self.arrow_direction = 0
+            self.animate_return_from_arrow()
 
         self.is_key_pressed = False
         self.shake_timer.stop()
-
         if self.shake_animation.state() == QPropertyAnimation.Running:
             self.shake_animation.stop()
 
@@ -1577,14 +1462,99 @@ class AnimatedLineEdit(QLineEdit):
             self.shake_animation.setEasingCurve(QEasingCurve.OutQuad)
             self.shake_animation.start()
 
+    def text(self):
+        if self.animating:
+            return None
+        
+        raw = super().text()
+
+        if not raw:
+            return None
+        
+        if self.input_type == ":time":
+            return self._parse_time_to_seconds(raw)
+        
+        if self.input_type == "number":
+            try:
+                return int(raw)
+            
+            except ValueError:
+                return None
+        
+        return raw
+
+    def setText(self, text: str | int):
+        if self.input_type == ":time":
+            super().setText(self._seconds_to_time_text(int(text)))
+            return
+        
+        if self.input_type == "number":
+            super().setText(str(text))
+            return
+        
+        super().setText(str(text))
+
+    def start_glitch(self, sound: bool = True):
+        if sound:
+            Utils.ui_sound("Reject")
+        
+        if CurrentSettings["reduce_animations"]:
+            return
+        
+        if self.glitch_timer.isActive():
+            return
+        
+        self.animating = True
+        self.original_pos = self.pos()
+        self.original_text = super().text()
+        self.glitch_steps_left = 7
+        self.glitch_timer.start(24)
+
+    def _glitch_step(self):
+        if self.glitch_steps_left <= 0:
+            self.move(self.original_pos)
+            super().setText(self.original_text)
+            self.glitch_timer.stop()
+            self.animating = False
+            return
+
+        length = max(1, len(self.original_text or ""))
+        glitch_text = ''.join(random.choices(string.ascii_letters + string.punctuation, k=length))
+        
+        super().setText(glitch_text)
+        
+        dx = random.randint(-2, 2)
+        dy = random.randint(-2, 2)
+        
+        self.move(self.original_pos + QPoint(dx, dy))
+        self.glitch_steps_left -= 1
+
+    def animate_arrow_hold(self, offset: int):
+        if self.shake_animation.state() == QPropertyAnimation.Running:
+            self.shake_animation.stop()
+        
+        self.shake_animation.setStartValue(self.pos())
+        self.shake_animation.setEndValue(self.original_input_field_pos + QPoint(offset, 0))
+        self.shake_animation.setDuration(120)
+        self.shake_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self.shake_animation.start()
+
+    def animate_return_from_arrow(self):
+        if self.shake_animation.state() == QPropertyAnimation.Running:
+            self.shake_animation.stop()
+        
+        self.shake_animation.setStartValue(self.pos())
+        self.shake_animation.setEndValue(self.original_input_field_pos)
+        self.shake_animation.setDuration(180)
+        self.shake_animation.setEasingCurve(QEasingCurve.OutElastic)
+        self.shake_animation.start()
+
     def _animate_to_random_shake_pos(self):
         shake_radius = 5
-        
         dx = random.uniform(-shake_radius, shake_radius)
         dy = random.uniform(-shake_radius, shake_radius)
-        
         target_pos = self.original_input_field_pos + QPoint(int(dx), int(dy))
-
+        
         if self.shake_animation.state() == QPropertyAnimation.Running:
             self.shake_animation.stop()
         
@@ -1593,6 +1563,16 @@ class AnimatedLineEdit(QLineEdit):
         self.shake_animation.setDuration(TEXTBOX_SHAKE)
         self.shake_animation.setEasingCurve(QEasingCurve.Linear)
         self.shake_animation.start()
+
+    def is_not_valid(self) -> bool:
+        raw = super().text()
+        
+        if not raw:
+            return False
+        
+        secs = self._parse_time_to_seconds(raw)
+        return secs is not None and secs < self.min_number
+
 
 class NavButton(QPushButton):
     def __init__(self, text, parent=None):
