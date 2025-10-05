@@ -351,8 +351,8 @@ class AudioSetupDialog(UI.FloatingWindow):
         self.start_time_label.setText(0)
         self.end_time_label.setText(int(self.end_time_sec))
         
-        self.fade_in_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", "0", "Fade in (Ms)")
-        self.fade_out_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", "0", "Fade out (Ms)")
+        self.fade_in_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", None, "Fade in (Ms)")
+        self.fade_out_textbox = UI.AnimatedLineEdit(0, 5000, None, "number", None, "Fade out (Ms)")
 
         self.fade_out_textbox.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
         self.fade_in_textbox.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
@@ -513,7 +513,7 @@ class AudioSetupDialog(UI.FloatingWindow):
         super().on_cancel()
 
     def edit_start_time(self):
-        start_s = self.start_time_label.time_text_to_seconds()
+        start_s = self.start_time_label.text()
         
         if start_s:
             self.trim_widget.set_playback_position(start_s)
@@ -521,7 +521,7 @@ class AudioSetupDialog(UI.FloatingWindow):
             self.trim_widget.start_time = start_s
             self.trim_widget.update()
 
-            self.end_time_label.min_number = self.start_time_label.time_text_to_seconds()
+            self.end_time_label.min_number = self.start_time_label.text()
 
     def edit_end_time(self):
         end_s = self.end_time_label.text()
