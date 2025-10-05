@@ -1,12 +1,11 @@
-import time
 import json
 import socket
 import copy
 import weakref
 
 from PyQt5.QtCore import *
+
 from System import UI
-from System import Utils
 from System.Constants import *
 
 ADB_PATH = "System/ADB/adb"
