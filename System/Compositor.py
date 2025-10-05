@@ -792,7 +792,7 @@ class ScrollableContent(QWidget):
         self.total_content_width = 2000
 
         # Tooltip
-        self.tooltip_manager = UI.AnimatedTooltipManager(self)
+        self.tooltip_manager = UI.AnimatedTooltipManager(self.main_window_ref)
     
         # Caching
         self._element_rects = []
@@ -1729,9 +1729,8 @@ class CompositorWidget(QWidget):
         if self.playback_manager.is_playing:
             self.content_widget.playhead_timer.stop()
             self.content_widget.composition.syncer.stop()
-
-        if self.playback_manager.is_playing:
-            self.playback_manager.tape(end_speed = 0.0, duration = 3.0)
+            print("TAPING")
+            self.playback_manager.tape(end_speed = 0.0, duration = 3)
 
         self.mini_preview_widget.audio_data = None
         self.mini_preview_widget.peaks = None
