@@ -148,21 +148,8 @@ class Other:
     """
 
 class Controls:
-    Selector = f"""
-        QWidget#selectorRoot {{
-            background-color: {Colors.EffectMenu.press};
-            border-radius: {Roundings.button}px;
-        }}
-
-        #selectorWidget {{
-            background-color: {Colors.EffectMenu.press};
-            border-radius: {Roundings.button}px;
-        }}
-
-        #backgroundContainer {{
-            background-color: {Colors.EffectMenu.press};
-            border-radius: {Roundings.button}px;
-        }}
+    SegmentedButton = f"""
+        QWidget {{ background-color: transparent; border-radius: 10px; }}
 
         QPushButton#segmentedButton {{
             color: {Colors.font_color};
@@ -180,7 +167,7 @@ class Controls:
             background-color: {Colors.nothing_accent};
             color: #ffffff;
         }}
-        """
+    """
     
     Selector2 = f"""
         QWidget {{
@@ -194,7 +181,7 @@ class Controls:
             background-color: transparent;
             border: none;
             padding: 0;
-            border-radius: {Roundings.button}px;
+            border-radius: {Roundings.button - 2}px;
         }}
 
         QPushButton#segmentedButton:hover {{
