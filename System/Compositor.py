@@ -1,5 +1,6 @@
 import time
 import random
+import traceback
 import collections
 
 import numpy as np
@@ -10,7 +11,6 @@ from PyQt5.QtWidgets import *
 
 from System import Player as Player
 from System import Styles
-from System import ProjectSaver
 from System import GlyphEffects
 
 from System.Constants import *
@@ -373,6 +373,10 @@ class InteractionHandler:
 
             if not self._edge_sound_active:
                 self._edge_sound_active = True
+
+                #self.playback_manager.tape(end_speed = 0.0, duration = 1.5)
+                #self.playback_manager.toggle_playback()
+
                 Utils.ui_sound('StartRewind')
                 self._rewind_sound_accumulator = 0.0
 
@@ -724,7 +728,6 @@ class InteractionHandler:
 
     def _update_tooltip_and_cursor(self, event: QMouseEvent):
         eid, hovered_element, edge = self.conductor.get_element_at(event.pos())
-        print(hovered_element)
 
         if hovered_element:
             if self._mouse_pressed or self.is_marquee_selecting or self.playback_manager.is_playing:
@@ -929,17 +932,21 @@ class ScrollableContent(QWidget):
             return self._glyph_pixmaps[cache_key]
 
         rect = self.get_element_rect(glyph_data)
-        pixmap = QPixmap(int(rect.width() + 2), int(rect.height() + 2))
+        w, h = int(rect.width() + 8), int(rect.height() + 4)
+
+        pixmap = QPixmap(w, h)
         pixmap.fill(Qt.GlobalColor.transparent)
         
         painter = QPainter(pixmap)
         CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
         
         path = QPainterPath()
-        path.addRoundedRect(1, 1, rect.width(), rect.height(), 10, 10) 
+
+        radius = 3 + max(0, min((w - 10) / 10 * 2.5, 2.5)) + max(0, min((w - 20) / 10 * 6, 6))
+        path.addRoundedRect(1, 1, rect.width(), rect.height(), radius, radius)
 
         fill_brush = QBrush(QColor(255, 255, 255))
-        border_pen = QPen(Qt.GlobalColor.red, 1.5) if is_selected else QPen(QColor("#505050"), 1)
+        border_pen = QPen(Qt.GlobalColor.red, 2.0) if is_selected else QPen(QColor("#505050"), 1)
         
         painter.setPen(border_pen)
         painter.setBrush(fill_brush)
@@ -1007,12 +1014,18 @@ class ScrollableContent(QWidget):
     
     def _on_playback_state_changed(self, is_playing):
         if is_playing:
-            self.composition.syncer.play(self.get_playhead_ms())
-            self.playhead_timer.start()
+            self._start_playback()
         
         else:
-            self.playhead_timer.stop()
-            self.composition.syncer.stop()
+            self._stop_playback()
+
+    def _stop_playback(self):
+        self.playhead_timer.stop()
+        self.composition.syncer.stop()
+    
+    def _start_playback(self):
+        self.playhead_timer.start()
+        self.composition.syncer.play(self.get_playhead_ms())
 
     def change_brightness(self, brightness):
         self.composition.set_brightness(brightness)
@@ -1026,7 +1039,7 @@ class ScrollableContent(QWidget):
         if pos >= self.playback_manager.duration_ms:
             self.playback_manager.stop()
 
-        self.set_playhead_from_ms(pos)
+        self.set_playhead_from_ms(pos) #- 200) # AND HERE
         self.ensure_playhead_visible()
 
     def prepare_audio(self):
@@ -1513,7 +1526,7 @@ class ScrollableContent(QWidget):
 
             effect_entries = []
             for effect_name, config in effects.items():
-                preview_widget = UI.EffectPreviewWidget(effect_name, config)
+                preview_widget = UI.EffectPreviewWidget(effect_name, config, clicked_element)
                 preview_widget.apply_requested.connect(
                     lambda effect_name, settings: on_apply_requested_factory(effect_name, settings)
                 )
@@ -1539,7 +1552,7 @@ class ScrollableContent(QWidget):
             menu.exec_and_cleanup(event.globalPos())
 
         except Exception as e:
-            QMessageBox.critical(None, "Context menu failed to show.", f"Report this error to chips047: {str(e)}")
+            QMessageBox.critical(None, "Context menu failed to show.", f"Report this error to chips047: {traceback.format_exc()}")
             return
     
     def show_error_dialog(self, title, message):
@@ -1720,8 +1733,7 @@ class CompositorWidget(QWidget):
         if self.playback_manager.is_playing:
             self.content_widget.playhead_timer.stop()
             self.content_widget.composition.syncer.stop()
-            print("TAPING")
-            self.playback_manager.tape(end_speed = 0.0, duration = 3)
+            self.playback_manager.tape(end_speed = 0.0, duration = 1.5)
 
         self.mini_preview_widget.audio_data = None
         self.mini_preview_widget.peaks = None
