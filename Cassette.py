@@ -13,6 +13,7 @@ try:
     from PyQt5.QtCore import *
     from PyQt5.QtWidgets import *
     
+    
     from System import Styles
 
 except ModuleNotFoundError as e:
@@ -58,13 +59,6 @@ class ApplicationWindow(QMainWindow):
 
         self.stack.setCurrentWidget(self.main_menu_widget)
         self.setStyleSheet(f"background-color: {Styles.Colors.background};")
-        self.center_window()
-
-    def center_window(self):
-        qr = self.frameGeometry()
-        cp = QDesktopWidget().availableGeometry().center()
-        qr.moveCenter(cp)
-        self.move(qr.topLeft())
 
     def fade_out(self, widget):
         logger.info("Fading out")
@@ -79,6 +73,7 @@ class ApplicationWindow(QMainWindow):
         self.anim_out.setStartValue(1.0)
         self.anim_out.setEndValue(0.0)
         self.anim_out.setEasingCurve(QEasingCurve.OutCubic)
+        
         return self.anim_out
 
     def fade_in(self, widget):
@@ -200,7 +195,6 @@ class ApplicationWindow(QMainWindow):
     def closeEvent(self, event):
         if self.compositor_widget.content_widget.composition:
             self.compositor_widget.content_widget.composition.syncer.exit_app()
-            print("Waiting for glyph syncer to exit...")
         
         super().closeEvent(event)
 
