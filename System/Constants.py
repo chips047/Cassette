@@ -21,22 +21,22 @@ def prepare_default_settings(setting_components):
     new_keys = set()
     exceptions = ["tutorial_shown"]
 
-    for page_name, components in setting_components.items():
-        for element_key, params in components.items():
-            key = params["key"]
+    for _, components in setting_components.items():
+        for element_params in components:
+            element_type = element_params["type"]
+            key = element_params["key"]
             new_keys.add(key)
 
             if not settings.contains(key):
-                if element_key.startswith("checkbox"):
-                    default_val = params.get("default", False)
-                
-                elif element_key.startswith("slider"):
-                    default_val = params.get("default", params.get("min", 0))
-                
-                elif element_key.startswith("selector"):
-                    default_index = params.get("default", 0)
-                    options = list(params.get("map", {}).values())
-                    default_val = options[default_index] if 0 <= default_index < len(options) else None
+                if element_type == "checkbox":
+                    default_val = element_params.get("default", False)
+
+                elif element_type == "slider":
+                    default_val = element_params.get("default", element_params.get("min", 0))
+
+                elif element_type.startswith("selector"):
+                    default_val = element_params["map"][element_params["default"]]
+                    print(default_val, "bruhhh")
                 
                 else:
                     default_val = None
@@ -227,51 +227,47 @@ DEFAULT_DURATION = 100
 DEFAULT_BRIGHTNESS = 100
 
 SettingsDict = {
-    "Visuals and Performance": {
-        "checkbox1": {
-            "title": "Reduce Animations",
-            "key": "reduce_animations",
-            "description": "Reduce all these cool animations :(",
-            "default": False
-        },
-        "checkbox2": {
+    "Visuals and Performance": [
+        {
+            "type": "checkbox",
             "title": "Antialiasing",
             "key": "antialiasing",
             "description": "Strongly affects performance on weak computers.",
             "default": True
         },
-        "selector3": {
+        {
+            "type": "selector",
             "title": "Waveform Tile Width",
             "key": "tile_width",
-            "choices": ["512", "1024", "2048"],
             "map": {
                 "512": 512,
                 "1024": 1024,
                 "2048": 2048
             },
-            "default": 1
+            "default": "1024"
         },
-        "selector4": {
+        {
+            "type": "selector",
             "title": "Waveform Smoothing",
             "key": "waveform_smoothing",
-            "choices": ["Accuracy", "Balance", "Smooth"],
             "map": {
                 "Accuracy": 0.5,
                 "Balance": 1.7,
                 "Smooth": 3
             },
-            "default": 1
+            "default": "Balance"
         },
-        "checkbox5": {
+        {
+            "type": "checkbox",
             "title": "Center Playhead",
             "description": "Move the playhead to the center.",
             "key": "center_playhead",
             "default": False
         },
-        "selector6": {
+        {
+            "type": "selector",
             "title": "Default Scaling (ms / px)",
             "key": "default_scaling",
-            "choices": ["100", "200", "300", "400", "500"],
             "map": {
                 "100": 100,
                 "200": 200,
@@ -279,43 +275,51 @@ SettingsDict = {
                 "400": 400,
                 "500": 500
             },
-            "default": 1
+            "default": "200"
         }
-    },
+    ],
 
-    "Connectivity & Devices": {
-        "checkbox1": {
+    "Connectivity & Devices": [
+        {
+            "type": "checkbox",
             "title": "Device Auto - Search",
             "key": "auto_search",
             "description": "Automatically searches for a connected Nothing Phone.",
             "default": True
-        },
-#        "checkbox2": {
-#            "title": "Instant Device Export",
-#            "key": "device_export",
-#            "description": "Exported ringtones will be copied to your Nothing Phone.",
-#            "default": True
-#        }
-    },
+        }
+    ],
 
-    "User Experience": {
-        "checkbox1": {
+    "User Experience": [
+        {
+            "type": "checkbox",
             "title": "Disable sounds",
             "key": "disable_sounds",
             "description": "All UI sounds will be disabled :(",
             "default": False
         },
-        "slider2": {
+        {
+            "type": "slider",
             "title": "Playhead Arrow Move Increment",
             "min": 1,
             "max": 10,
             "key": "arrow_increment",
             "default": 1
         },
-        "selector3": {
+        {
+            "type": "textbox",
+            "title": "Audio Compensation Delay (ms)",
+            "min": 0,
+            "max": 2000,
+            "key": "audio_delay",
+            "default": "0"
+        }
+    ],
+
+    "Animations": [
+        {
+            "type": "selector",
             "title": "Animation Multiplier",
             "key": "animation_multiplier",
-            "choices": ["0.75x", "1.0x", "1.15x", "1.25x", "1.5x", "3.0x", "5.0x", "10.0x", "20.0x"],
             "map": {
                 "0.75x": "0.75",
                 "1.0x": "1.0",
@@ -327,7 +331,36 @@ SettingsDict = {
                 "10.0x": "10.0",
                 "20.0x": "20.0"
             },
-            "default": 1
+            "default": "1.0x"
+        },
+        {
+            "type": "checkbox",
+            "title": "Reduce Animations",
+            "key": "reduce_animations",
+            "description": "Reduce all these cool animations :(",
+            "default": False
+        },
+        {
+            "type": "selector",
+            "title": "Animation Character",
+            "key": "animation_style",
+            "map": {
+                "Smooth": "smooth",
+                "Bouncy": "bouncy",
+                "Sharp": "sharp"
+            },
+            "default": "Bouncy"
+        },
+        {
+            "type": "selector",
+            "title": "Window Hover Smoothing",
+            "key": "window_hover_smoothing",
+            "map": {
+                "Slow": "slow",
+                "Normal": "normal",
+                "No Smoothing": "no_smoothing"
+            },
+            "default": "Normal"
         }
-    }
+    ]
 }
