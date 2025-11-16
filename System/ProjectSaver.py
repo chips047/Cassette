@@ -44,7 +44,7 @@ class SyncedDict(dict):
         if "effect" in value:
             if value["effect"]["name"] != "None":
                 self.composition.cached_effects[str(key)] = GlyphEffects.effect_to_glyph(
-                    value, self.composition
+                    value, self.composition.bpm, self.composition.model
                 )
             
             else:
@@ -72,7 +72,7 @@ class SyncedDict(dict):
 
             for id, glyph in glyphs.items():
                 if "effect" in glyph:
-                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, self.composition)
+                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, self.composition.bpm, self.composition.model)
 
             super().update(glyphs, *args[1:], **kwargs)
         
@@ -153,7 +153,7 @@ class BaseComposition:
             singles, effects = self.sorted_glyphs()
     
             for effect in effects:
-                singles.extend(GlyphEffects.effect_to_glyph(effect, self))
+                singles.extend(GlyphEffects.effect_to_glyph(effect, self.bpm, self.model))
             
             Exporter.glyphs_to_ogg(
                 self.cropped_song_path,
@@ -182,18 +182,16 @@ class Composition(BaseComposition):
             settings = json.load(open(Utils.get_songs_path(f"{id}/Save.json"), "r", encoding="utf-8"))
         
         super().__init__(id, settings)
-        print(f"id: {self.id}")
 
         self.version = open("version").read()
-        self.track_number = ModelTracks.get(self.model)
-
-        print(f"paths: {self.full_song_path}, {self.cropped_song_path}")
+        self.save_version = settings.get("version", self.version)
 
         self.song_path = audiofile_path
 
         self.brightness = DEFAULT_BRIGHTNESS
         self.duration_ms = DEFAULT_DURATION
         self.default_effect = "None"
+        self.track_number = ModelTracks[self.model]
 
         self.syncer = RTVisualizer.GlyphSyncer(self)
 
@@ -206,7 +204,7 @@ class Composition(BaseComposition):
 
         for gid, glyph in self.glyphs.items():
             if "effect" in glyph:
-                self.cached_effects[gid] = GlyphEffects.effect_to_glyph(glyph, self)
+                self.cached_effects[gid] = GlyphEffects.effect_to_glyph(glyph, self.bpm, self.model)
 
         self.syncer.full_load(self.glyphs)
         os.makedirs(Utils.get_songs_path(str(self.id)), exist_ok=True)
