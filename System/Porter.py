@@ -366,7 +366,7 @@ class Port:
                 eff_for_conversion["track"] = target_track[0]
                 eff_for_conversion["segments"] = ported_segments
 
-                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_for_conversion, composition, port_to)
+                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_for_conversion, composition.bpm, port_to)
                 ported_glyphs.extend(list_of_glyphs)
                 logger.warning(f"Extending 1: {list_of_glyphs}")
 
@@ -379,7 +379,7 @@ class Port:
                     eff_copy["segments"] = [segment]
 
                 logger.warning(f"Generating effect: {eff_copy['track']}, segments: {eff_copy.get('segments')}")
-                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_copy, composition, port_to)
+                list_of_glyphs = GlyphEffects.effect_to_glyph(eff_copy, composition.bpm, port_to)
                 ported_glyphs.extend(list_of_glyphs)
                 logger.warning(f"Extending 2: {list_of_glyphs}")
 
