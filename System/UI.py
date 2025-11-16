@@ -1,4 +1,5 @@
 import re
+import copy
 import time
 import math
 import random
@@ -38,6 +39,13 @@ def get_rotation(width, height, base_angle=50, min_angle=10, max_ref=1600):
             random.randint(int(max_angle / 2), max_angle)
         ]
     )
+
+def get_optimal_tilt(width, height):
+    coeff_w = 1100 / width
+    coeff_h = 1100 / height
+
+    tilt = int((coeff_h + coeff_w) * 8)
+    return tilt
 
 class GlitchyButton(QPushButton):
     glitch_started = pyqtSignal()
@@ -158,88 +166,8 @@ class Selector(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        selector_container = QWidget(self)
+        selector_container = QFrame(self)
         selector_container.setStyleSheet(Styles.Controls.Selector2)
-        selector_layout = QHBoxLayout(selector_container)
-        selector_layout.setContentsMargins(0, 0, 0, 0)
-        selector_layout.setSpacing(5)
-
-        self._group = QButtonGroup(self)
-        self._group.setExclusive(True)
-        self._group.buttonClicked.connect(self._on_button_clicked)
-
-        for idx, text in enumerate(items):
-            btn = QPushButton(text, objectName="segmentedButton", parent=selector_container)
-            btn.setFont(Utils.NType(14))
-            btn.setCheckable(True)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            btn.setCursor(Qt.PointingHandCursor)
-            selector_layout.addWidget(btn)
-            self._group.addButton(btn, id=idx)
-
-        if self._group.buttons():
-            self._group.buttons()[default_index].setChecked(True)
-
-        main_layout.addWidget(selector_container)
-
-    def _on_button_clicked(self, button):
-        text = button.text()
-        self.selection_changed.emit(id, text)
-
-    def currentIndex(self) -> int:
-        return self._group.checkedId()
-    
-    def setCurrentIndex(self, index) -> int:
-        for i, button in enumerate(self._group.buttons()):
-            if i == index:
-                button.setChecked(True)
-                continue
-            
-            button.setChecked(False)
-
-    def currentText(self) -> str:
-        btn = self._group.checkedButton()
-        return btn.text() if btn else ""
-
-class SelectorWithLabel(QWidget):
-    selection_changed = pyqtSignal(int, str, object)  # index, text, key
-
-    def __init__(
-        self,
-        description: str,
-        items,
-        *,
-        parent=None,
-        default: int = None
-    ):
-        super().__init__(parent)
-        self.setContentsMargins(0, 0, 0, 0)
-        self.setFixedHeight(90)
-
-        self._keys = {}
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-
-        self.container_background = QWidget(self)
-        self.container_background.setObjectName("backgroundContainer")
-        self.container_background.setStyleSheet(Styles.Controls.Selector)
-
-        inner_layout = QVBoxLayout(self.container_background)
-        inner_layout.setContentsMargins(15, 10, 15, 15)
-        inner_layout.setSpacing(10)
-
-        self.description_label = QLabel(description, self.container_background)
-        self.description_label.setFont(Utils.NType(14))
-        self.description_label.setStyleSheet(Styles.Other.label)
-        inner_layout.addWidget(self.description_label)
-
-        selector_container = QWidget(self.container_background)
-        selector_container.setStyleSheet(f"QWidget {{border-radius: 10px}}")
         selector_layout = QHBoxLayout(selector_container)
         selector_layout.setContentsMargins(0, 0, 0, 0)
         selector_layout.setSpacing(5)
@@ -248,44 +176,165 @@ class SelectorWithLabel(QWidget):
         self._group.setExclusive(True)
         self._group.buttonClicked[int].connect(self._on_button_clicked)
 
-        if isinstance(items, dict):
-            iterable = list(items.items())
-            for idx, (key, text) in enumerate(iterable):
-                btn = QPushButton(key, parent=selector_container, objectName="segmentedButton")
-                btn.setFont(Utils.NType(11))
-                btn.setCheckable(True)
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                btn.setCursor(Qt.PointingHandCursor)
-                selector_layout.addWidget(btn)
-                self._group.addButton(btn, id=idx)
-                self._keys[idx] = text
+        for idx, text in enumerate(items):
+            btn = QPushButton(text, objectName = "segmentedButton", parent=selector_container)
+            btn.setFont(Utils.NType(14))
+            btn.setCheckable(True)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            btn.setCursor(Qt.PointingHandCursor)
+            selector_layout.addWidget(btn)
+            self._group.addButton(btn, id = idx)
+
+        buttons = self._group.buttons()
+        if 0 <= default_index < len(buttons):
+            buttons[default_index].setChecked(True)
         
-        else:
-            for idx, text in enumerate(items):
-                btn = QPushButton(text, parent=selector_container, objectName="segmentedButton")
-                btn.setFont(Utils.NType(11))
-                btn.setCheckable(True)
-                btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                btn.setCursor(Qt.PointingHandCursor)
-                selector_layout.addWidget(btn)
-                self._group.addButton(btn, id=idx)
-                self._keys[idx] = text
+        elif buttons:
+            buttons[0].setChecked(True)
 
-        if default is not None and 0 <= default < len(self._group.buttons()):
-            self._group.buttons()[default].setChecked(True)
-        else:
-            self._group.buttons()[0].setChecked(True)
-
-        inner_layout.addWidget(selector_container)
-        main_layout.addWidget(self.container_background)
+        main_layout.addWidget(selector_container)
 
     def _on_button_clicked(self, id: int):
-        text = self._group.button(id).text()
-        key = self._keys[id]
+        button = self._group.button(id)
+        if not button:
+            return
+            
+        text = button.text()
         button_number = len(self._group.buttons())
-        tone = ((id + 1) / button_number) ** 0.5
+        
+        if button_number > 0:
+            tone = ((id + 1) / button_number) ** 0.5
+            Utils.ui_sound("Toggle", tone)
+            
+        self.selection_changed.emit(id, text)
 
+    def currentIndex(self) -> int:
+        return self._group.checkedId()
+    
+    def setCurrentIndex(self, index: int):
+        button = self._group.button(index)
+        
+        if button:
+            button.setChecked(True)
+
+    def currentText(self) -> str:
+        btn = self._group.checkedButton()
+        return btn.text() if btn else ""
+        
+    def setCurrentText(self, text: str):
+        for button in self._group.buttons():
+            if button.text() == text:
+                button.setChecked(True)
+                break
+
+    def setValue(self, value):
+        if isinstance(value, int):
+            self.setCurrentIndex(value)
+        
+        elif isinstance(value, str):
+            self.setCurrentText(value)
+
+    def getValueAsText(self) -> str:
+        return self.currentText()
+
+class Checkbox(QCheckBox):
+    def __init__(self, name, default = False):
+        super().__init__(name)
+        self.setFont(Utils.NType(13))
+        self.setStyleSheet(Styles.Controls.Checkbox)
+        self.setChecked(default)
+
+    def nextCheckState(self):
+        super().nextCheckState()
+        
+        tone = 1.0 if self.isChecked() else 0.9
         Utils.ui_sound("Toggle", tone)
+
+class BaseControlContainer(QWidget):
+    def __init__(self, inner_layout_type=QVBoxLayout, parent=None):
+        super().__init__(parent)
+        self.setContentsMargins(0, 0, 0, 0)
+
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        self.container_background = QFrame(self)
+        self.container_background.setStyleSheet(Styles.Controls.SliderBackground)
+
+        self.inner_layout = inner_layout_type(self.container_background)
+        self.inner_layout.setContentsMargins(15, 10, 15, 10)
+        self.inner_layout.setSpacing(10)
+
+        main_layout.addWidget(self.container_background)
+
+class SelectorWithLabel(BaseControlContainer):
+    selection_changed = pyqtSignal(int, str, object)
+
+    def __init__(self, description: str, items, default_text: str = None, default_value: str = None):
+        super().__init__()
+        self.setFixedHeight(90)
+        self.inner_layout.setContentsMargins(15, 10, 15, 15)
+
+        self._keys = {}
+
+        self.description_label = QLabel(description, self.container_background)
+        self.description_label.setFont(Utils.NType(14))
+        self.description_label.setStyleSheet(Styles.Other.label)
+        self.inner_layout.addWidget(self.description_label)
+
+        selector_container = QWidget(self.container_background)
+        selector_container.setStyleSheet(Styles.Controls.SegmentedButton)
+        
+        selector_layout = QHBoxLayout(selector_container)
+        selector_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._group.buttonClicked[int].connect(self._on_button_clicked)
+
+        if isinstance(items, dict):
+            item_source = list(items.items())
+        
+        else:
+            item_source = [(text, text) for text in items]
+
+        for idx, (btn_text, data) in enumerate(item_source):
+            btn = QPushButton(btn_text, parent=selector_container, objectName="segmentedButton")
+            btn.setFont(Utils.NType(11))
+            btn.setCheckable(True)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            btn.setCursor(Qt.PointingHandCursor)
+            
+            selector_layout.addWidget(btn)
+            self._group.addButton(btn, id=idx)
+            self._keys[idx] = data
+        
+        if default_text:
+            self.setCurrentText(default_text)
+        
+        elif default_value:
+            self.setCurrentData(default_value)
+
+        self.inner_layout.addWidget(selector_container)
+
+    def _on_button_clicked(self, id: int):
+        button = self._group.button(id)
+        if not button:
+            return
+            
+        text = button.text()
+        key = self._keys.get(id)
+        button_number = len(self._group.buttons())
+        
+        if button_number > 0:
+            tone = ((id + 1) / button_number) ** 0.5
+            Utils.ui_sound("Toggle", tone)
+            
         self.selection_changed.emit(id, text, key)
 
     def currentIndex(self) -> int:
@@ -299,69 +348,45 @@ class SelectorWithLabel(QWidget):
         idx = self._group.checkedId()
         return self._keys.get(idx)
 
-    def setCurrentText(self, text):
+    def setCurrentText(self, text: str):
         for button in self._group.buttons():
             if button.text() == text:
                 button.setChecked(True)
-            else:
-                button.setChecked(False)
-
-    def setCurrentIndex(self, index):
-        for i, button in enumerate(self._group.buttons()):
-            button.setChecked(i == index)
+                break
 
     def setCurrentData(self, key):
         for idx, k in self._keys.items():
-            print(f"Comparing {k} with {key}")
             if str(k) == str(key):
-                self._group.button(idx).setChecked(True)
+                button = self._group.button(idx)
+                
+                if button:
+                    button.setChecked(True)
+                
                 break
-
-class Checkbox(QCheckBox):
-    def __init__(self, name, parent):
-        super().__init__(name, parent)
-
-        self.setFont(Utils.NType(13))
-        self.setStyleSheet(Styles.Controls.Checkbox)
     
-    def nextCheckState(self):
-        super().nextCheckState()
+    def setValue(self, value):
+        if isinstance(value, int):
+            self.setCurrentIndex(value)
+        
+        elif isinstance(value, str):
+            self.setCurrentText(value)
+        
+        else:
+            self.setCurrentData(value)
 
-        tone = 1.0 if self.isChecked() else 0.9
-        Utils.ui_sound("Toggle", tone)
-
-class CheckboxWithLabel(QWidget):
-    def __init__(self, title: str, description: str, parent=None):
-        super().__init__(parent)
-        self.setContentsMargins(0, 0, 0, 0)
+class CheckboxWithLabel(BaseControlContainer):
+    def __init__(self, title: str, description: str, default: bool = False):
+        super().__init__(inner_layout_type=QHBoxLayout)
         self.setMaximumHeight(75)
 
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        self.title = title
-
-        self.container_background = QWidget(self)
-        self.container_background.setStyleSheet(Styles.Controls.SliderBackground)
-
-        inner_layout = QHBoxLayout(self.container_background)
-        inner_layout.setContentsMargins(15, 10, 15, 10)
-        inner_layout.setSpacing(10)
-
-        self.checkbox = Checkbox(self.title, self.container_background)
-        inner_layout.addWidget(self.checkbox, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.checkbox = Checkbox(title)
+        self.checkbox.setChecked(default)
+        self.inner_layout.addWidget(self.checkbox, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.description_label = QLabel(description, self.container_background)
         self.description_label.setFont(Utils.NType(13))
         self.description_label.setStyleSheet(f"color: {Styles.Colors.subtle_font_color}; padding: 0px;")
-        inner_layout.addWidget(self.description_label, 1, Qt.AlignmentFlag.AlignVCenter)
-
-        main_layout.addWidget(self.container_background)
+        self.inner_layout.addWidget(self.description_label, 1, Qt.AlignmentFlag.AlignVCenter)
 
     def isChecked(self):
         return self.checkbox.isChecked()
@@ -372,31 +397,48 @@ class CheckboxWithLabel(QWidget):
     def stateChanged(self, func):
         self.checkbox.stateChanged.connect(func)
 
-class SliderWithLabel(QWidget):
-    def __init__(self, description: str, min_val: int, max_val: int, default_val: int, parent=None):
-        super().__init__(parent)
-        self.setContentsMargins(0, 0, 0, 0)
+    def setValue(self, value: bool):
+        if isinstance(value, bool):
+            self.setChecked(value)
+
+class TextboxWithLabel(BaseControlContainer):
+    def __init__(self, description: str, min_value, max_value, default: str = None):
+        super().__init__()
+        self.setMaximumHeight(100)
+
+        self.description_label = QLabel(description)
+        self.description_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.description_label.setStyleSheet("color: #ddd; padding: 0px;")
+        self.description_label.setFont(Utils.NType(14))
+        self.inner_layout.addWidget(self.description_label)
+
+        self.textbox = AnimatedLineEdit(min_value, max_value, None, "number")
+        self.textbox.setFixedHeight(45)
+        self.textbox.setMaximumWidth(300)
+        self.textbox.setContentsMargins(0, 0, 0, 7)
+        self.inner_layout.addWidget(self.textbox, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        if default:
+            self.setValue(default)
+
+    def setValue(self, value):
+        self.textbox.setText(str(value))
+
+    def getValueAsText(self) -> str:
+        return self.textbox.text()
+
+class SliderWithLabel(BaseControlContainer):
+    def __init__(self, description: str, min_val: int, max_val: int, default_val: int):
+        super().__init__()
         self.setMaximumHeight(75)
-
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
         
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint) 
-
-        self.container_background = QWidget(self)
-        self.container_background.setStyleSheet(Styles.Controls.SliderBackground)
-
-        inner_layout = QVBoxLayout(self.container_background)
-        inner_layout.setContentsMargins(15, 10, 15, 5)
-        inner_layout.setSpacing(5)
+        self.inner_layout.setContentsMargins(15, 10, 15, 5)
+        self.inner_layout.setSpacing(5)
 
         self.description_label = QLabel(description)
         self.description_label.setFont(Utils.NType(14))
         self.description_label.setStyleSheet("color: #ddd; padding: 0px;")
-        inner_layout.addWidget(self.description_label)
+        self.inner_layout.addWidget(self.description_label)
 
         slider_value_layout = QHBoxLayout()
         slider_value_layout.setContentsMargins(0, 0, 0, 0)
@@ -406,40 +448,47 @@ class SliderWithLabel(QWidget):
         self.slider.setRange(min_val, max_val)
         self.slider.setValue(default_val)
         self.slider.setStyleSheet(Styles.Controls.Slider)
-
+        self.slider.valueChanged.connect(self._update_value_label)
         slider_value_layout.addWidget(self.slider, 1)
 
         self.value_label = QLabel(str(default_val))
         self.value_label.setFont(Utils.NType(12))
         self.value_label.setStyleSheet("color: #dddddd; padding: 0px;")
-        
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
         slider_value_layout.addWidget(self.value_label, 0) 
-        inner_layout.addLayout(slider_value_layout)
-        main_layout.addWidget(self.container_background)
-
-        self.slider.valueChanged.connect(self._update_value_label)
+        
+        self.inner_layout.addLayout(slider_value_layout)
 
     def _update_value_label(self, value):
         self.value_label.setText(str(value))
-        self.value_label.adjustSize()
 
-        if self.slider.maximum() < 20:
-            tone = (value - self.slider.minimum()) / (self.slider.maximum() - self.slider.minimum()) + 0.1
+        max_val = self.slider.maximum()
+        min_val = self.slider.minimum()
+        
+        if max_val < 20 and max_val > min_val:
+            tone = (value - min_val) / (max_val - min_val) + 0.1
             Utils.ui_sound("Toggle2", tone)
 
     def value(self):
         return self.slider.value()
 
     def setValue(self, val):
-        self.slider.setValue(val)
+        if isinstance(val, (int, float)):
+            self.slider.setValue(int(val))
+        
+        elif isinstance(val, str) and val.isdigit():
+            self.slider.setValue(int(val))
+
+    def getValueAsText(self) -> str:
+        return str(self.value())
 
 class _BaseControlWidget(QWidget):
-    def __init__(self, icon=None, static_label_text=None, parent=None):
+    def __init__(self, icon = None, static_label_text = None, parent = None):
         super().__init__(parent)
+        
         self.static_label_text = static_label_text
         self.icon = icon
+        
         self._setup_ui()
 
     def _setup_ui(self):
@@ -470,14 +519,15 @@ class _BaseControlWidget(QWidget):
             self.bottom_row_layout.addWidget(self.icon_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         
         self.value_label = QLabel()
-        font = Utils.NDot(13)
-        self.value_label.setFont(font)
+
+        self.value_label.setFont(Utils.NDot(13))
         self.value_label.setStyleSheet(Styles.Other.font + Styles.Other.transparent)
         self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
         
         self.bottom_row_layout.addWidget(self.value_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         self.bottom_row_layout.addSpacing(4)
         self.bottom_row_layout.addStretch()
+
         self.main_layout.addLayout(self.bottom_row_layout)
 
 class DraggableValueControl(_BaseControlWidget):
@@ -507,6 +557,7 @@ class DraggableValueControl(_BaseControlWidget):
             self.dragging = True
             self.drag_start_x = event.pos().x()
             self.drag_start_value = self.current_value
+            
             self.setCursor(Qt.CursorShape.SizeHorCursor)
             event.accept()
 
@@ -666,18 +717,21 @@ class SegmentedBar(QWidget):
     
     def enable_all(self):
         self.active = [True] * self.segment_number
-        Utils.ui_sound("Toggle", 1.0)
         self.segment_changed.emit()
+        
+        Utils.ui_sound("Toggle", 1.0)
     
     def disable_all(self):
         self.active = [False] * self.segment_number
-        Utils.ui_sound("Toggle", 0.7)
         self.segment_changed.emit()
+
+        Utils.ui_sound("Toggle", 0.7)
     
     def zebra(self):
         self.active = [i % 2 == 0 for i in range(self.segment_number)]
-        Utils.ui_sound("Toggle3")
         self.segment_changed.emit()
+
+        Utils.ui_sound("Toggle3")
 
 class CycleButton(_BaseControlWidget):
     state_changed = pyqtSignal(str, object)
@@ -723,62 +777,92 @@ class CycleButton(_BaseControlWidget):
 class EffectPreviewWidget(QWidget):
     apply_requested = pyqtSignal(str, dict)
 
-    def __init__(self, effect_name, config, parent=None):
+    def __init__(self, effect_name, config, glyph, parent=None):
         super().__init__(parent)
         self.effect_name = effect_name
         self.config = config
         self.controls = {}
+        self.glyph = glyph
 
-        self.setFixedWidth(480)
+        self.setFixedWidth(500)
         self.setStyleSheet(Styles.Controls.EffectSetupper)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(15)
 
-        self.gif_label = QLabel(self)
-        self.gif_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.movie = QMovie(config["gif"])
-        self.movie.setScaledSize(QSize(460, 345))
-        self.gif_label.setMovie(self.movie)
-        self.movie.start()
-        layout.addWidget(self.gif_label)
+        self.live_preview_bar = ScheduledSegmentedBar(30, True)
+        layout.addWidget(self.live_preview_bar)
 
         self.configuration = GlyphEffects.EffectsConfig[self.effect_name]
-        for i, element in enumerate(self.configuration["settings"].keys()):
-            if element.startswith("checkbox"):
-                widget = Checkbox(self.configuration["settings"][f"checkbox{i + 1}"]["title"], self)
-                widget.setChecked(self.configuration["settings"][f"checkbox{i + 1}"]["default"])
-                
-                self.controls[element] = widget
-                layout.addWidget(widget)
+        for element in self.configuration["settings"]:
+            if element["type"] == "checkbox":
+                widget = Checkbox(
+                    element["title"],
+                    element["default"]
+                )
 
-            if element.startswith("slider"):
+            if element["type"] == "slider":
                 widget = SliderWithLabel(
-                    description=self.configuration["settings"][f"slider{i + 1}"]["title"],
-                    min_val=self.configuration["settings"][f"slider{i + 1}"]["min"],
-                    max_val=self.configuration["settings"][f"slider{i + 1}"]["max"],
-                    default_val=self.configuration["settings"][f"slider{i + 1}"]["max"]
+                    element["title"],
+                    element["min"],
+                    element["max"],
+                    element["default"]
                 )
 
-                self.controls[element] = widget
-                layout.addWidget(widget)
-
-            if element.startswith("selector"):
+            if element["type"] == "selector":
                 widget = SelectorWithLabel(
-                    self.configuration["settings"][f"selector{i + 1}"]["title"],
-                    self.configuration["settings"][f"selector{i + 1}"]["choices"]
+                    element["title"],
+                    element["map"],
+                    element["default"]
                 )
 
-                self.controls[element] = widget
-                layout.addWidget(widget)
+            layout.addWidget(widget)
+            self.controls[element["key"]] = widget
 
-        layout.addStretch()
+        #layout.addStretch()
 
         self.apply_button = NothingButton("Apply")
         self.apply_button.clicked.connect(self.on_apply)
 
         layout.addWidget(self.apply_button)
+
+        for widget in self.controls.values():
+            if isinstance(widget, Checkbox):
+                widget.stateChanged.connect(self.on_control_changed)
+            
+            elif isinstance(widget, SliderWithLabel):
+                widget.slider.valueChanged.connect(self.on_control_changed)
+            
+            elif isinstance(widget, SelectorWithLabel):
+                widget.selection_changed.connect(self.on_control_changed)
+        
+        self.on_control_changed()
+    
+    def _generate_effect_track(self):
+        settings = self.get_settings()
+        glyph = {
+            "start": 0,
+            "track": "1",
+            "duration": max(self.glyph["duration"], 3000),
+            "brightness": self.glyph["brightness"]
+        }
+
+        self.live_preview_bar.set_schedule(
+            GlyphEffects.effect_to_glyph(
+                GlyphEffects.effectCallback(
+                    self.effect_name,
+                    settings,
+                    glyph
+                ),
+                60,
+                "PREVIEW"
+            )
+        )
+
+    def on_control_changed(self, *args):
+        self._generate_effect_track()
+        self.live_preview_bar.play()
 
     def get_settings(self):
         settings = {}
@@ -790,7 +874,7 @@ class EffectPreviewWidget(QWidget):
                 settings[key] = widget.value()
             
             elif isinstance(widget, SelectorWithLabel):
-                settings[key] = widget.currentText()
+                settings[key] = widget.currentData()
         
         settings["segmented"] = GlyphEffects.EffectsConfig[self.effect_name]["segmented"]
         return settings
@@ -850,8 +934,6 @@ class AnimatedTooltipManager(QWidget):
                 not self.tooltip_delay_timer.isActive()
             ):
 
-            print("Well")
-
             self.hide_tooltip()
             self.tooltip_delay_timer.stop()
             self._tooltip_pending_element = element
@@ -879,8 +961,6 @@ class AnimatedTooltipManager(QWidget):
 
         x = parent_rect.right() - tip_size.width() - self._margin
         y = parent_rect.bottom() - tip_size.height() - self._margin
-
-        print(x, y)
         
         return self.parent().mapToGlobal(QPoint(x, y))
 
@@ -1040,6 +1120,7 @@ class ValuePopup(QWidget):
 
         if max_x < min_x:
             x = min_x
+        
         else:
             x = max(min_x, min(desired_x, max_x))
 
@@ -1175,8 +1256,10 @@ class MiniWaveformPreview(QWidget):
             x_pos = i * bar_width
             scaled_max = center_y - (max_val * center_y) 
             scaled_max = max(0, min(scaled_max, rect_height))
+            
             if i == 0:
                 path_upper.moveTo(x_pos, scaled_max)
+            
             else:
                 path_upper.lineTo(x_pos, scaled_max)
 
@@ -1376,7 +1459,6 @@ class AnimatedLineEdit(QLineEdit):
                 return False
             
             if parsed < self.min_number:
-                print(self._seconds_to_time_text(self.min_number + 1))
                 super().setText(self._seconds_to_time_text(self.min_number + 1))
                 self.setCursorPosition(len(super().text()))
                 return "handled"
@@ -1614,13 +1696,26 @@ class NavButton(QPushButton):
             self.setStyleSheet(self.inactive_style)
 
 class FloatingWindow(QDialog):
-    MARGIN = 200
-    
-    def __init__(self, title: str, bpm: int = None, player = None, max_tilt_angle = 12, animate_func = "normal"):
+    def __init__(
+            self,
+            title: str,
+            bpm: int = None,
+            player = None,
+            max_tilt_angle = 12,
+
+            animation_style = "bouncy",
+            enable_tilt: bool = True,
+            margin = 200
+        ):
+
         super().__init__()
         self.bpm = bpm
         self.player = player
+        self.margin = margin
+        self.enable_tilt = enable_tilt
         self.max_tilt_angle = max_tilt_angle
+
+        self.animation_style = CurrentSettings["animation_style"] or animation_style
 
         self.is_ready = False
         self.is_closing = False
@@ -1632,18 +1727,11 @@ class FloatingWindow(QDialog):
 
         self.setup_layout(title)
         self.setup_timers()
-        self.setup_mouse_racking()
         self.setup_animation_properties()
 
         self.update_bpm(self.bpm)
         
-        if animate_func == "official":
-            animate_func = self.start_official_animation
-        
-        else:
-            animate_func = self.start_normal_animation
-
-        QTimer.singleShot(0, animate_func)
+        QTimer.singleShot(0, self.start_normal_animation)
 
     def update_bpm(self, bpm = None):
         if not bpm:
@@ -1660,36 +1748,25 @@ class FloatingWindow(QDialog):
 
         self.bpm_timer.setInterval(60000 // self.bpm)
 
-    def poll_mouse_position(self):
-        global_pos = QCursor.pos()
-        content_rect_global = QRect(self.mapToGlobal(self.content_layout.geometry().topLeft()), self.content_layout.geometry().size())
-
-        if content_rect_global.contains(global_pos):
-            local_pos = self.mapFromGlobal(global_pos)
-            self.calculate_target_tilt(local_pos)
-    
     def setup_timers(self):
-        self.mouse_poll_timer = QTimer(self)
-        self.mouse_poll_timer.setInterval(FPS_30)
-        self.mouse_poll_timer.timeout.connect(self.poll_mouse_position)
-
-        self.animation_timer = QTimer(self)
-        self.animation_timer.setInterval(FPS_60)
-        self.animation_timer.timeout.connect(self.update_smooth)
+        if CurrentSettings["reduce_animations"]:
+            return
 
         self.bpm_timer = QTimer(self)
         self.bpm_timer.timeout.connect(self.bpm_tick_animation)
 
-        if not CurrentSettings["reduce_animations"]:
-            self.animation_timer.start()
-            self.mouse_poll_timer.start()
-
-            if self.bpm:
-                self.bpm_timer.start()
+        if self.enable_tilt:
+            self.tilt_animation_timer = QTimer(self)
+            self.tilt_animation_timer.setInterval(FPS_60)
+            self.tilt_animation_timer.timeout.connect(self.tilt_rotation_update)
+            self.tilt_animation_timer.start()
+        
+        if self.bpm:
+            self.bpm_timer.start()
 
     def setup_layout(self, title):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(self.MARGIN, self.MARGIN, self.MARGIN, self.MARGIN)
+        main_layout.setContentsMargins(self.margin, self.margin, self.margin, self.margin)
         main_layout.setSpacing(0)
 
         self.content_layout = QVBoxLayout()
@@ -1705,20 +1782,18 @@ class FloatingWindow(QDialog):
         self.content_layout.addWidget(self.title_label)
         self.adjustSize()
 
-    def is_big(self):
-        if self.width() - self.MARGIN * 2 > 500 or self.height() - self.MARGIN * 2 > 500:
-            return True
-        
-        return False
-
-    def setup_mouse_racking(self):
+    def setup_animation_properties(self):
         self.current_tilt_x = 0.0
         self.current_tilt_y = 0.0
         self.target_tilt_x = 0.0
         self.target_tilt_y = 0.0
+        self.open_tilt_x = 0.0
+        self.open_tilt_y = 0.0
+        self.close_tilt_x = 0.0
+        self.bpm_tilt_x = 0.0
+
         self.tilt_smoothing = 0.2
 
-    def setup_animation_properties(self):
         self.open_opacity = 1.0
 
         self.open_rotation = 0.0
@@ -1728,6 +1803,7 @@ class FloatingWindow(QDialog):
 
         self.entry_rotation_angle = 0
         self.current_rotation = 0.0
+        self.entry_rotation_exit_angle = 0
         
         self.open_scale = 1.0
         self.exit_scale = 1.0
@@ -1735,27 +1811,42 @@ class FloatingWindow(QDialog):
         self.disturbe_scale = 1.0
         self.wobble_scale = 1.0
 
-        self.entry_rotation_exit_angle = 0
-
         self.bpm_wobble_start_size = 1.03
+        self.background_size = QRect()
+    
+    def is_big(self):
+        if self.width() - self.margin * 2 > 500 or self.height() - self.margin * 2 > 500:
+            return True
+        
+        return False
     
     def set_bpm_start_size(self, start_coeff):
         self.bpm_wobble_start_size = start_coeff
 
-    def calculate_target_tilt(self, mouse_pos):
+    def tilt_rotation_update(self):
+        if not self.isActiveWindow():
+            return
+
+        global_pos = QCursor.pos()
+        local_pos = self.mapFromGlobal(global_pos)
         center_x = self.width() / 2
         center_y = self.height() / 2
-        
-        x_norm = -(mouse_pos.x() - center_x) / center_x
-        y_norm = (mouse_pos.y() - center_y) / center_y
 
-        self.target_tilt_x = -y_norm * self.max_tilt_angle
-        self.target_tilt_y = x_norm * self.max_tilt_angle
+        content_rect_global = QRect(self.mapToGlobal(self.content_layout.geometry().topLeft()), self.content_layout.geometry().size())
 
-    def update_smooth(self):
-        self.current_tilt_x += (self.target_tilt_x - self.current_tilt_x) * self.tilt_smoothing
-        self.current_tilt_y += (self.target_tilt_y - self.current_tilt_y) * self.tilt_smoothing
+        if content_rect_global.contains(global_pos):
+            x_norm = -(local_pos.x() - center_x) / center_x
+            y_norm = (local_pos.y() - center_y) / center_y
+
+            self.target_tilt_x = -y_norm * self.max_tilt_angle
+            self.target_tilt_y = x_norm * self.max_tilt_angle
+
+        combined_target_x = self.target_tilt_x + self.open_tilt_x + self.bpm_tilt_x + self.close_tilt_x
+        combined_target_y = self.target_tilt_y + self.open_tilt_y
         
+        self.current_tilt_x += (combined_target_x - self.current_tilt_x) * self.tilt_smoothing
+        self.current_tilt_y += (combined_target_y - self.current_tilt_y) * self.tilt_smoothing
+
         if (
             abs(self.current_tilt_x - self.target_tilt_x) > 0.01 or 
             abs(self.current_tilt_y - self.target_tilt_y) > 0.01
@@ -1792,33 +1883,32 @@ class FloatingWindow(QDialog):
 
         return final_rect
 
-    def start_normal_animation(self):
-        self.adjustSize()
-        final_rect = self.center_window()
-        self.is_ready = True
-        self.open_sound()
-
-        if CurrentSettings["reduce_animations"]:
-            return
-
+    def animation_open_bouncy(self, final_rect, size):
         curve = QEasingCurve(QEasingCurve.OutElastic)
         curve.setPeriod(0.27)
         curve.setAmplitude(1.7)
-        size = self.get_window_size()
 
-        start_pos_y = self.period_randomizer((-250, -130), (130, 250))
+        scale_curve = QEasingCurve(QEasingCurve.OutCubic)
+        scale_curve.setAmplitude(2.0)
+        scale_curve.setOvershoot(0.0)
+        scale_curve.setPeriod(0.0)
+
+        start_pos_y = self.period_randomizer((-170, -130), (130, 170))
         start_angle = get_rotation(*size)
-        start_scale = get_scale(*size, base_scale = 1.6)
+        start_scale = get_scale(*size, base_scale = 2.0)
+
+        optimal_tilt = get_optimal_tilt(*size)
+        optimal_tilt = -optimal_tilt if random.random() < 0.5 else optimal_tilt
 
         if self.is_big():
             start_angle = self.period_randomizer((-20, -10), (10, 20))
             anim_geo_duration = 830
-            anim_rotation_duration = 1070
+            anim_rotation_duration = 1170
         
         else:
             start_angle = self.period_randomizer((-30, -10), (15, 30))
             anim_geo_duration = 750
-            anim_rotation_duration = 950
+            anim_rotation_duration = 1050
         
         anim_position = self.make_animation(
             [
@@ -1831,7 +1921,14 @@ class FloatingWindow(QDialog):
             [
                 (0.0, start_scale),
                 (1.0, 1.0)
-            ], b"openScale", 1200
+            ], b"openScale", 1200, QEasingCurve.OutCubic
+        )
+
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, int(optimal_tilt)),
+                (1.0, 0)
+            ], b"openTiltX", 1000, QEasingCurve.OutElastic
         )
 
         anim_rotation = self.make_animation(
@@ -1856,9 +1953,91 @@ class FloatingWindow(QDialog):
                 anim_position,
                 anim_scale,
                 anim_rotation,
+                anim_opacity,
+                anim_tilt_x
+            ], valueChanged = onValueChanged
+        )
+    
+    def animation_open_smooth(self, final_rect, size):
+        start_scale = get_scale(*size, 2.0, 1.1, 1200)
+
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, 30),
+                (1.0, 0)
+            ], b"openTiltX", 800, QEasingCurve.OutExpo
+        )
+
+        anim_scale = self.make_animation(
+            [
+                (0.0, start_scale),
+                (1.0, 1.0)
+            ], b"openScale", 650, QEasingCurve.OutExpo
+        )
+
+        anim_opacity = self.make_animation(
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ], b"windowOpacity", 500
+        )
+
+        def onValueChanged(value):
+            self.open_opacity = value
+        
+        self.group_animate(
+            [
+                anim_tilt_x,
+                anim_opacity,
+                anim_scale
+            ], valueChanged = onValueChanged
+        )
+
+    def animation_open_sharp(self, final_rect, size):
+        self.adjustSize()
+        current_geometry = self.content_layout.geometry()
+
+        anim_opacity = self.make_animation(
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ], b"windowOpacity", 200
+        )
+
+        anim_background_size = self.make_animation(
+            [
+                (0.0, QRect(current_geometry.x(), current_geometry.y() + current_geometry.height() // 2, current_geometry.width(), 0)),
+                (1.0, current_geometry)
+            ], b"backgroundSize", 400
+        )
+
+        def onValueChanged(value):
+            self.open_opacity = value
+        
+        self.group_animate(
+            [
+                anim_background_size,
                 anim_opacity
             ], valueChanged = onValueChanged
         )
+
+    def start_normal_animation(self):
+        self.adjustSize()
+        final_rect = self.center_window()
+        self.is_ready = True
+        self.open_sound()
+
+        self.is_ready = True
+        size = self.get_window_size()
+
+        if CurrentSettings["reduce_animations"]:
+            return
+
+        {
+            "bouncy": self.animation_open_bouncy,
+            "smooth": self.animation_open_smooth,
+            "sharp": self.animation_open_sharp
+        }.get(self.animation_style)(final_rect, size)
 
     def player_pulse(self, duration = 0.4, pulse_peak_speed = 1.2):
         start_speed = self.player.speed
@@ -1872,7 +2051,26 @@ class FloatingWindow(QDialog):
             if self.player.is_playing:
                 return self.player_pulse()
 
-        Utils.ui_sound(f"Open{random.randint(1, 2)}", 1.0)
+        Utils.ui_sound(
+            {
+                "bouncy": "Open1",
+                "smooth": "SmoothPack/Open",
+                "sharp": "SmoothPack/Open"
+            }.get(self.animation_style)
+        )
+    
+    def close_sound(self):
+        if self.player:
+            if self.player.is_playing:
+                return self.player_pulse()
+
+        Utils.ui_sound(
+            {
+                "bouncy": "PopupClose",
+                "smooth": "SmoothPack/Close",
+                "sharp": "SmoothPack/Close"
+            }.get(self.animation_style)
+        )
 
     def group_animate(self, animations, finished = None, valueChanged = None, multiplier = 1.0):
         self.anim_group = QParallelAnimationGroup(self)
@@ -1959,6 +2157,38 @@ class FloatingWindow(QDialog):
         self.exit_rotation = value
     
     @pyqtProperty(float) # type: ignore
+    def openTiltX(self):
+        return self.open_tilt_x
+
+    @openTiltX.setter
+    def openTiltX(self, value):
+        self.open_tilt_x = value
+    
+    @pyqtProperty(float) # type: ignore
+    def bpmTiltX(self):
+        return self.bpm_tilt_x
+
+    @bpmTiltX.setter
+    def bpmTiltX(self, value):
+        self.bpm_tilt_x = value
+
+    @pyqtProperty(float) # type: ignore
+    def openTiltY(self):
+        return self.open_tilt_y
+
+    @openTiltY.setter
+    def openTiltY(self, value):
+        self.open_tilt_y = value
+    
+    @pyqtProperty(float) # type: ignore
+    def closeTiltX(self):
+        return self.close_tilt_x
+
+    @closeTiltX.setter
+    def closeTiltX(self, value):
+        self.close_tilt_x = value
+
+    @pyqtProperty(float) # type: ignore
     def openRotation(self):
         return self.open_rotation
 
@@ -2027,13 +2257,21 @@ class FloatingWindow(QDialog):
         self.disturbe_scale = value
         self.update()
     
+    @pyqtProperty(QRect) # type: ignore
+    def backgroundSize(self):
+        return self.background_size
+    
+    @backgroundSize.setter
+    def backgroundSize(self, value):
+        self.background_size = value
+    
     def bpm_tick_animation(self):
         if not self.player.is_playing:
             return
 
         audio_level = self.player.get_current_audio_level()
 
-        if audio_level < 0.1:
+        if audio_level < 0.08:
             return
 
         player_speed = self.player.speed
@@ -2047,7 +2285,18 @@ class FloatingWindow(QDialog):
             if self.bpm_timer.interval() != interval:
                 self.bpm_timer.setInterval(interval)
         
-        self.anim_scale = self.make_animation(
+        tilt_target = float(self.max_tilt_angle * self.squish(audio_level) * 50)
+        tilt_target = -tilt_target if random.random() < 0.5 else tilt_target
+
+        anim_tilt = self.make_animation(
+            [
+                (0.0, 0.0),
+                (0.5, tilt_target),
+                (1.0, 0.0)
+            ], b"bpmTiltX", beat_interval_ms
+        )
+
+        anim_scale = self.make_animation(
             [
                 (0.0, float(1.0)),
                 (0.5, float(self.bpm_wobble_start_size + self.squish(audio_level))),
@@ -2057,7 +2306,12 @@ class FloatingWindow(QDialog):
             beat_interval_ms
         )
 
-        self.anim_scale.start()
+        self.group_animate(
+            [
+                anim_tilt,
+                anim_scale
+            ]
+        )
     
     def squish(self, x, power = 1.2):
         return 0.05 * (x ** power)
@@ -2113,13 +2367,41 @@ class FloatingWindow(QDialog):
     def get_window_size(self):
         geometry = self.content_layout.geometry()
         return geometry.width(), geometry.height()
+    
+    def animation_close_smooth(self, size):
+        end_scale = get_scale(*size, 1.7)
 
-    def start_exit_animation(self):
-        if CurrentSettings["reduce_animations"]:
-            return self._really_close()
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, 0),
+                (1.0, -30)
+            ], b"closeTiltX", 800, QEasingCurve.OutExpo
+        )
 
+        anim_scale = self.make_animation(
+            [
+                (0.0, 1.0),
+                (1.0, end_scale)
+            ], b"exitScale", 800, QEasingCurve.OutExpo
+        )
+
+        anim_opacity = self.make_animation(
+            [
+                (0.0, self.windowOpacity()),
+                (1.0, 0.0)
+            ], b"windowOpacity", 400
+        )
+
+        self.group_animate(
+            [
+                anim_tilt_x,
+                anim_scale,
+                anim_opacity
+            ], self._really_close, self._label_animator
+        )
+    
+    def animation_close_bouncy(self, size):
         self.target_tilt_y = random.randint(5, 15)
-        size = self.get_window_size()
 
         anim_rotation = self.make_animation(
             [
@@ -2132,7 +2414,7 @@ class FloatingWindow(QDialog):
             [
                 (0.0, 1.0),
                 (1.0, get_scale(*size, base_scale = 1.45))
-            ], b"exitScale", 400
+            ], b"exitScale", 400, QEasingCurve.InOutCubic
         )
 
         anim_opacity = self.make_animation(
@@ -2150,6 +2432,17 @@ class FloatingWindow(QDialog):
             ], self._really_close, self._label_animator
         )
 
+    def start_exit_animation(self):
+        if CurrentSettings["reduce_animations"]:
+            return self._really_close()
+
+        size = self.get_window_size()
+
+        {
+            "bouncy": self.animation_close_bouncy,
+            "smooth": self.animation_close_smooth
+        }.get(self.animation_style)(size)
+
     def _label_animator(self, value):
         self.title_label.setText(str(value)[:5])
 
@@ -2157,20 +2450,23 @@ class FloatingWindow(QDialog):
         painter = QPainter(self)
         CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
-        content_rect = self.content_layout.geometry()
+        content_rect = self.background_size or self.content_layout.geometry()
         painter.save()
 
         if not CurrentSettings["reduce_animations"]:
             transform = QTransform()
             center_point = content_rect.center()
 
+            scale = self.exit_scale * self.bpm_scale * self.disturbe_scale * self.wobble_scale * self.open_scale
+            rotation = self.open_rotation + self.exit_rotation + self.random_anim_rotation + self.disturbe_rotation
+
             transform.translate(center_point.x(), center_point.y())
 
-            transform.rotate(self.current_tilt_y, Qt.YAxis)
-            transform.rotate(self.current_tilt_x, Qt.XAxis)
-            transform.rotate(self.open_rotation + self.exit_rotation + self.random_anim_rotation + self.disturbe_rotation)
-
-            scale = self.exit_scale * self.bpm_scale * self.disturbe_scale * self.wobble_scale * self.open_scale
+            if self.enable_tilt:
+                transform.rotate(self.current_tilt_y, Qt.YAxis)
+                transform.rotate(self.current_tilt_x, Qt.XAxis)
+            
+            transform.rotate(rotation)
             transform.scale(scale, scale)
             transform.translate(-center_point.x(), -center_point.y())
 
@@ -2191,9 +2487,11 @@ class FloatingWindow(QDialog):
         super().paintEvent(event)
 
     def _really_close(self):
-        self.bpm_timer.stop()
-        self.mouse_poll_timer.stop()
-        self.animation_timer.stop()
+        if self.bpm:
+            self.bpm_timer.stop()
+        
+        if self.enable_tilt:
+            self.tilt_animation_timer.stop()
         
         if not self.was_cancelled:
             self.accept()
@@ -2206,7 +2504,7 @@ class FloatingWindow(QDialog):
             return
 
         self.is_closing = True
-        Utils.ui_sound("PopupClose")
+        self.close_sound()
         self.was_cancelled = False
         self.start_exit_animation()
 
@@ -2215,7 +2513,7 @@ class FloatingWindow(QDialog):
             return
 
         self.is_closing = True
-        Utils.ui_sound("PopupClose")
+        self.close_sound()
         self.was_cancelled = True
         self.start_exit_animation()
     
@@ -2449,7 +2747,7 @@ class About(FloatingWindow):
 
 class Settings(FloatingWindow):
     def __init__(self):
-        super().__init__("Settings", max_tilt_angle = 5)
+        super().__init__("Settings", max_tilt_angle = 10)
         self.settings = QSettings("chips047", "Cassette")
 
         self.title_label.setFont(Utils.NType(30))
@@ -2461,6 +2759,7 @@ class Settings(FloatingWindow):
                 border-radius: 23px;
             }}
         """)
+
         self.nav_layout = QHBoxLayout(self.nav_widget)
         self.nav_layout.setContentsMargins(5, 5, 5, 5)
         self.nav_layout.setSpacing(8)
@@ -2510,63 +2809,55 @@ class Settings(FloatingWindow):
             if first_page_widget is None:
                 first_page_widget = page_widget
 
-            for element_key, params in components.items():
+            for element_params in components:
                 widget = None
-                
-                if element_key.startswith("checkbox"):
-                    widget = CheckboxWithLabel(params["title"], params["description"], self)
-                
-                elif element_key.startswith("slider"):
-                    widget = SliderWithLabel(
-                        description=params["title"],
-                        min_val=params["min"],
-                        max_val=params["max"],
-                        default_val=params["min"]
+                element_type = element_params["type"]
+                saved_value = self.settings.value(element_params["key"])
+
+                if element_type == "checkbox":
+                    widget = CheckboxWithLabel(
+                        element_params["title"],
+                        element_params["description"],
+                        saved_value.lower() == "true" if saved_value is not None
+                        else element_params["default"]
                     )
-                
-                elif element_key.startswith("selector"):
+
+                elif element_type == "textbox":
+                    widget = TextboxWithLabel(
+                        element_params["title"],
+                        element_params["min"],
+                        element_params["max"],
+                        saved_value or element_params["default"]
+                    )
+
+                elif element_type == "slider":
+                    widget = SliderWithLabel(
+                        element_params["title"],
+                        element_params["min"],
+                        element_params["max"],
+                        int(saved_value) or element_params["default"]
+                    )
+
+                elif element_type == "selector":
                     widget = SelectorWithLabel(
-                        params["title"],
-                        params["map"]
+                        element_params["title"],
+                        element_params["map"],
+                        default_text = element_params["default"] if saved_value is None else None,
+                        default_value = saved_value
                     )
                 
                 if widget:
-                    self.controls[params["key"]] = widget
-                    self.load_setting(params["key"], widget, params)
+                    self.controls[element_params["key"]] = widget
                     page_layout.addWidget(widget)
 
             self.stacked_widget.addWidget(page_widget)
 
         self.change_page(first_page_widget)
 
-    def load_setting(self, key, widget, params):
-        if self.settings.contains(key):
-            saved_value = self.settings.value(key)
-            
-            if isinstance(widget, CheckboxWithLabel):
-                widget.setChecked(saved_value.lower() == "true")
-            
-            elif isinstance(widget, SliderWithLabel):
-                widget.setValue(int(saved_value))
-            
-            elif isinstance(widget, SelectorWithLabel):
-                print(f"Loading setting for {key}: {saved_value} (type: {type(saved_value)})")
-                widget.setCurrentData(saved_value)
-        
-        else:
-            if isinstance(widget, CheckboxWithLabel):
-                widget.setChecked(params.get("default", False))
-            
-            elif isinstance(widget, SliderWithLabel):
-                widget.setValue(params.get("default", 0))
-            
-            elif isinstance(widget, SelectorWithLabel):
-                default_index = params.get("default", 0)
-                widget.setCurrentIndex(default_index)
-
     def save_settings(self):
         for key, widget in self.controls.items():
             value = None
+
             if isinstance(widget, CheckboxWithLabel):
                 value = widget.isChecked()
             
@@ -2575,7 +2866,9 @@ class Settings(FloatingWindow):
             
             elif isinstance(widget, SelectorWithLabel):
                 value = widget.currentData()
-                print(f"Saving setting for {key}: {value} (type: {type(value)})")
+            
+            elif isinstance(widget, TextboxWithLabel):
+                value = widget.getValueAsText()
 
             if value is not None:
                 self.settings.setValue(key, value)
@@ -2610,7 +2903,7 @@ class GlitchLabel(QWidget):
         self.active_timer.setInterval(30)
         self.active_timer.timeout.connect(self.update)
 
-    @pyqtProperty(float)
+    @pyqtProperty(float) # type: ignore
     def opacity(self):
         return self._opacity
 
@@ -2887,3 +3180,223 @@ class Tutorial(FloatingWindow):
 
         elif self.stage == 5:
             self.playback_manager.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
+
+class TestWindow(FloatingWindow):
+    def __init__(self, bpm = None, player = None):
+        super().__init__("Test Window", bpm, player, 60)
+        self.bar = ScheduledSegmentedBar(20)
+        self.bar.set_schedule(
+            [
+                {"start": 0, "duration": 2000, "brightness": 30, "segments": [10]},
+            ]
+        )
+        self.bar.play()
+        self.content_layout.addWidget(self.bar)
+
+class ScheduledSegmentedBar(QWidget):
+    segment_changed = pyqtSignal()
+    def __init__(
+            self,
+            segment_number: int = 30,
+            loop: bool = False,
+            base_thickness: int = 20,
+            curve: int = 0
+        ):
+        
+        super().__init__()
+
+        self.setFixedHeight(base_thickness)
+
+        if curve:
+            self.setFixedHeight(base_thickness + curve)
+
+        self._main_timer = QTimer(self)
+        self._main_timer.timeout.connect(self._tick)
+        self._time0 = QElapsedTimer()
+
+        self._end_timer = QTimer(self)
+        self._end_timer.setSingleShot(True)
+        self._end_timer.timeout.connect(self._on_schedule_end)
+
+        self._schedule = []
+        self.segment_number = segment_number
+        self._running = False
+        self._loop = loop
+        self.curve = curve
+
+        self.levels = [0.0] * self.segment_number
+        self._blur_strength = 0.75
+
+        self.segment_changed.connect(self.update)
+    
+    def _tick(self):
+        if not self._running:
+            return
+        
+        now = self._time0.elapsed() + self._start_offset
+        new_levels = [0.0] * self.segment_number
+
+        for item in self._schedule:
+            start, dur, b1 = item["start"], item["duration"], item["brightness"]
+            b2 = item.get("end_brightness", None)
+            segs = item.get("segments", [i for i in range(self.segment_number)])
+            
+            if not (start <= now <= start + dur):
+                continue
+            
+            value = b1 if b2 is None else b1 + (b2 - b1) * ((now - start) / dur)
+            
+            for idx in segs:
+                if 0 <= idx < self.segment_number:
+                    new_levels[idx] = max(new_levels[idx], value)
+
+                    if idx > 0:
+                        fade_value = value * (0.8 * self._blur_strength)
+                        new_levels[idx - 1] = max(new_levels[idx - 1], fade_value)
+
+                    if idx < self.segment_number - 1:
+                        fade_value = value * (0.8 * self._blur_strength)
+                        new_levels[idx + 1] = max(new_levels[idx + 1], fade_value)
+
+                    if idx > 1:
+                        fade_value = value * (0.4 * self._blur_strength)
+                        new_levels[idx - 2] = max(new_levels[idx - 2], fade_value)
+
+                    if idx < self.segment_number - 2:
+                        fade_value = value * (0.4 * self._blur_strength)
+                        new_levels[idx + 2] = max(new_levels[idx + 2], fade_value)
+        
+        if new_levels != self.levels:
+            self.levels = new_levels
+            self.segment_changed.emit()
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        width = self.width()
+        max_h = self.height()
+
+        if self.segment_number <= 0 or width <= 0 or max_h <= 0:
+            return
+
+        painter.setPen(Qt.NoPen)
+        
+        curve_amount = self.curve
+        
+        if curve_amount >= max_h - 2:
+            curve_amount = max_h - 2
+        
+        if curve_amount < 0:
+            curve_amount = 0
+            
+        bar_thickness = max_h - curve_amount
+        if bar_thickness <= 0:
+            return
+
+        gradient = QLinearGradient(0, 0, width, 0)
+
+        for i in range(self.segment_number):
+            position = i / self.segment_number
+            color = self._blend_color(QColor("#404040"), QColor("#ffffff"), self.levels[i])
+            gradient.setColorAt(position, color)
+
+            if i < self.segment_number - 1:
+                mid_position = (i + 0.5) / self.segment_number
+                mid_level = (self.levels[i] + self.levels[i + 1]) / 2.0
+                mid_color = self._blend_color(QColor("#404040"), QColor("#ffffff"), mid_level)
+                gradient.setColorAt(mid_position, mid_color)
+
+        last_color = self._blend_color(QColor("#404040"), QColor("#ffffff"), self.levels[-1])
+        gradient.setColorAt(1.0, last_color)
+
+        painter.setBrush(gradient)
+        path = QPainterPath()
+
+        radius = min(10, bar_thickness / 2) 
+
+        if not self.curve:
+            rect = QRectF(0, 0, width, max_h)
+            path.addRoundedRect(rect, radius, radius)
+        
+        else:
+            path.moveTo(radius, curve_amount)
+
+            path.quadTo(width / 2, 0, width - radius, curve_amount)
+            path.quadTo(width, curve_amount, width, curve_amount + radius)
+            path.lineTo(width, max_h - radius)
+
+            path.quadTo(width, max_h, width - radius, max_h)
+            path.quadTo(width / 2, max_h - curve_amount, radius, max_h)
+            path.quadTo(0, max_h, 0, max_h - radius)
+            path.lineTo(0, curve_amount + radius)
+
+            path.quadTo(0, curve_amount, radius, curve_amount)
+            path.closeSubpath()
+            
+        painter.drawPath(path)
+    
+    def _blend_color(self, off: QColor, on: QColor, level: float) -> QColor:
+        t = max(0.0, min(1.0, level / 100.0))
+        r = int(off.red() + (on.red() - off.red()) * t)
+        g = int(off.green() + (on.green() - off.green()) * t)
+        b = int(off.blue() + (on.blue() - off.blue()) * t)
+
+        return QColor(r, g, b)
+
+    def play(self, start_offset_ms: int = 0):
+        self.stop(clear_levels = False)
+
+        self._running = True
+        self._start_offset = start_offset_ms
+        self._time0.start()
+        self._main_timer.start(10)
+
+        self._schedule_end_timer()
+
+    def stop(self, clear_levels: bool = True):
+        self._main_timer.stop()
+        self._end_timer.stop()
+        self._running = False
+
+        if clear_levels:
+            self.levels = [0.0] * self.segment_number
+            self.segment_changed.emit()
+
+    def set_schedule(self, schedule):
+        self._schedule = schedule or []
+        if self._running:
+            self._schedule_end_timer()
+
+    def _compute_schedule_end_ms(self) -> int:
+        if not self._schedule:
+            return 0
+
+        end_ms = 0
+
+        for item in self._schedule:
+            s = int(item.get("start", 0))
+            d = int(item.get("duration", 0))
+            end_ms = max(end_ms, s + d)
+        
+        return end_ms
+
+    def _schedule_end_timer(self):
+        end_ms = self._compute_schedule_end_ms()
+        if end_ms <= 0:
+            return
+
+        elapsed = self._time0.elapsed() + getattr(self, "_start_offset", 0)
+        remaining = end_ms - elapsed
+
+        if remaining <= 0:
+            self._on_schedule_end()
+        
+        else:
+            self._end_timer.start(int(remaining))
+
+    def _on_schedule_end(self):
+        if self._loop:
+            self.play(0)
+            return
+
+        self.stop(clear_levels=True)
