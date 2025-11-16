@@ -254,7 +254,6 @@ class Player:
         self.playback_start_wall_time = time.time()
     
     def set_speed(self, new_speed, steps = 50, duration = 0.0, stop_on_end = False):
-        print(f"params: {self.speed} to {new_speed}, {duration} secs")
         self._update_playback_start()
 
         if duration == 0.0:
@@ -269,8 +268,6 @@ class Player:
         self._speed_step = 0
         self._speed_start = self.speed
         self._stop_on_end = stop_on_end
-
-        print(f"Sooo, {self._target_speed}")
 
         self._speed_timer.stop()
         self._speed_timer.setInterval(interval * 1000)
@@ -452,7 +449,6 @@ class Player:
         self.set_speed(start_speed if start_speed is not None else self.speed)
 
         self.set_volume(end_fade if end_fade is not None else self.volume, duration)
-        print("HMMMM", end_speed if end_speed is not None else self.speed)
         self.set_speed(end_speed if end_speed is not None else self.speed, steps, duration)
     
     def set_channel_delay_ms(self, left_ms: float, right_ms: float):
@@ -624,10 +620,8 @@ class Player:
 
     def _speed_tick(self):
         with self.lock:
-            print(self._speed_step, self.speed)
             t = self._speed_step / self._speed_steps
             eased = 1 - (1 - t) ** 3
-            print(t)
 
             if self._speed_step > self._speed_steps:
                 self.speed = self._target_speed
@@ -642,7 +636,6 @@ class Player:
                 return
 
             new_speed = self._speed_start + (self._target_speed - self._speed_start) * eased
-            print(self._speed_start, self._target_speed, self._speed_start, new_speed)
             self._update_playback_start()
             self.speed = new_speed
 
@@ -717,8 +710,6 @@ class Player:
         self._mid_step += 1
     
     def cleanup(self):
-        print("------------------------------------ CLEANED UP")
-
         with self.lock:
             self._bc_timer.stop()
             self._mid_timer.stop()
