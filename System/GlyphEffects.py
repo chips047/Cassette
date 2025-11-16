@@ -13,24 +13,19 @@ _example_glyph = {
 def parse_effect_args(config: dict, settings_meta: dict) -> dict:
     args = {}
 
-    for key, meta in settings_meta.items():
+    for meta in settings_meta:
         arg_name = meta.get("key")
         if not arg_name:
             continue
 
-        value = config.get(key, 1)
-        
-        if "map" in meta:
-            value = meta["map"].get(value, value)
+        value = config.get(meta["key"], 1)
+        print(f"{config}: {arg_name}: VALUE: {value}")
 
         args[arg_name] = value
 
     return args
 
-def effect_to_glyph(element, composition, model = None):
-    model = model or composition.model
-    bpm = composition.bpm
-
+def effect_to_glyph(element, bpm = None, model = None):
     name = element["effect"]["name"]
     config = element["effect"]["settings"]
 
@@ -67,7 +62,11 @@ def get_data(glyph: dict, model: str, segmented = False):
     segs = None
     turned_on_segs = glyph.get("segments")
 
-    segs = ModelSegments[model].get(n)
+    if model == "PREVIEW":
+        segs = 30
+    
+    else:
+        segs = ModelSegments[model].get(n)
 
     return n, segs, duration, start, end, brightness, turned_on_segs
 
@@ -142,6 +141,15 @@ def sidebeat(glyph: dict, model: str, bpm: int, part: str):
     return out
 
 #def volume(glyph: dict, model: str, bpm: int, audiosegment):
+
+def fade_to(glyph: dict, model: str, bpm: int, fade_to_brightness = 100):
+    n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model, True)
+    
+    item = {"start": start, "duration": duration, "brightness": brightness, "end_brightness": fade_to_brightness}
+    if turned_on_segs:
+        item["segments"] = turned_on_segs
+    
+    return [item]
 
 def glitch(glyph: dict, model: str, bpm: int, fps = 20.0, duty_cycle = 0.7, min_br_ratio = 0.3, bpm_snap=False, enable_fadeout = False):
     if bpm_snap:
@@ -608,51 +616,63 @@ EffectsConfig = {
     "None": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/None.gif",
-        "settings": {}
+        "settings": []
     },
     "Fade out": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/FadeOut.gif",
         "function": fade_out,
-        "settings": {}
+        "settings": []
     },
     "Fade in": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/FadeIn.gif",
         "function": fade_in,
-        "settings": {}
+        "settings": []
     },
     "Fade in + out": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/FadeInOut.gif",
         "function": fade_in_out,
-        "settings": {}
+        "settings": []
+    },
+    "Fade to": {
+        "segmented": False,
+        "supports_segmentation": True,
+        "function": fade_to,
+        "settings": [
+            {
+                "type": "slider",
+                "title": "Fade to",
+                "min": 1,
+                "max": 100,
+                "key": "fade_to_brightness",
+                "default": 50
+            }
+        ]
     },
     "Fill": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Fill.gif",
         "function": fill,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Side",
                 "key": "side",
                 "choices": ["To the left", "To the right"],
-                "map": {"To the left": -1, "To the right": 1}
+                "map": {"To the left": -1, "To the right": 1},
+                "default": "To the left"
             }
-        }
+        ]
     },
     "Zebra": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Zebra.gif",
         "function": zebra,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Snap to BPM",
                 "key": "bpm_snap",
                 "choices": ["Disabled", "BPM /2", "BPM", "BPM x2", "BPM x4"],
@@ -662,59 +682,68 @@ EffectsConfig = {
                     "BPM": 1,
                     "BPM x2": 2,
                     "BPM x4": 4
-                }
+                },
+                "default": "Disabled"
             },
-            "selector2": {
+            {
+                "type": "selector",
                 "title": "Side",
                 "key": "side",
                 "choices": ["To the left", "To the right"],
-                "map": {"To the left": -1, "To the right": 1}
+                "map": {"To the left": -1, "To the right": 1},
+                "default": "To the left"
             },
-            "slider3": {
+            {
+                "type": "slider",
                 "title": "Moves per second",
                 "min": 1,
                 "max": 20,
                 "offset": 1,
-                "key": "fps"
+                "key": "fps",
+                "default": 5
             },
-            "slider4": {
+            {
+                "type": "slider",
                 "title": "Lit segments in a row",
                 "min": 1,
                 "max": 5,
                 "offset": 1,
-                "key": "on_count"
+                "key": "on_count",
+                "default": 3
             },
-            "slider5": {
+            {
+                "type": "slider",
                 "title": "Dark segments in a row",
                 "min": 1,
                 "max": 5,
                 "offset": 1,
-                "key": "off_count"
+                "key": "off_count",
+                "default": 1
             }
-        }
+        ]
     },
     "Strobe": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/Strobe.gif",
         "function": strobe,
-        "settings": {
-            "slider1": {
+        "settings": [
+            {
+                "type": "slider",
                 "title": "Strobes per second",
                 "key": "frequency",
                 "min": 1,
                 "max": 15,
-                "offset": 1
+                "default": 5
             }
-        }
+        ]
     },
     "Soft Strobe": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/SoftStrobe.gif",
         "function": soft_or_pseudo_strobe,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Snap to BPM",
                 "key": "bpm_snap",
                 "choices": ["Disabled", "BPM /2", "BPM", "BPM x2", "BPM x4"],
@@ -724,38 +753,42 @@ EffectsConfig = {
                     "BPM": 1,
                     "BPM x2": 2,
                     "BPM x4": 4
-                }
+                },
+                "default": "Disabled"
             },
-            "slider2": {
+            {
+                "type": "slider",
                 "title": "Strobes per second",
                 "key": "frequency",
                 "min": 1,
                 "max": 20,
-                "offset": 1
+                "default": 5
             },
-            "slider3": {
+            {
+                "type": "slider",
                 "title": "First brightness",
                 "key": "first_brightness",
                 "min": 5,
                 "max": 100,
-                "offset": 1
+                "default": 100
             },
-            "slider4": {
+            {
+                "type": "slider",
                 "title": "Second brightness",
                 "key": "second_brightness",
                 "min": 5,
                 "max": 100,
-                "offset": 1
+                "default": 80
             }
-        }
+        ]
     },
     "Shocker": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Shocker.gif",
         "function": shocker,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Snap to BPM",
                 "key": "bpm_snap",
                 "choices": ["Disabled", "BPM /2", "BPM", "BPM x2", "BPM x4"],
@@ -765,88 +798,97 @@ EffectsConfig = {
                     "BPM": 1,
                     "BPM x2": 2,
                     "BPM x4": 4
-                }
+                },
+                "default": "Disabled"
             },
-            "slider2": {
+            {
+                "type": "slider",
                 "title": "Shocks per second",
                 "key": "frequency",
                 "min": 1,
                 "max": 15,
-                "offset": 1
+                "default": 3
             },
-            "checkbox3": {
+            {
+                "type": "checkbox",
                 "title": "Enable fade out",
                 "key": "fade_out",
                 "default": True
             }
-        }
+        ]
     },
     "Sweep": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Sweep.gif",
         "function": sweep,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Side",
                 "key": "side",
                 "choices": ["To the left", "To the right"],
-                "map": {"To the left": -1, "To the right": 1}
+                "map": {"To the left": -1, "To the right": 1},
+                "default": "To the left"
             }
-        }
+        ]
     },
     "Glitch": {
         "segmented": True,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/Glitch.gif",
         "function": glitch,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Snap to BPM",
                 "key": "bpm_snap",
-                "choices": ["Disabled", "BPM /2", "BPM", "BPM x2", "BPM x4"],
                 "map": {
                     "Disabled": False,
                     "BPM /2": 0.5,
                     "BPM": 1,
                     "BPM x2": 2,
                     "BPM x4": 4
-                }
+                },
+                "default": "Disabled"
             },
-            "slider2": {
+            {
+                "type": "slider",
                 "title": "Glitches per second",
                 "key": "fps",
                 "min": 1,
                 "max": 30,
-                "offset": 1
+                "default": 10
             },
-            "slider3": {
+            {
+                "type": "slider",
                 "title": "Minimal brightness",
                 "key": "min_br_ratio",
                 "min": 1,
                 "max": 100,
-                "offset": 1
+                "default": 30
             },
-            "selector4": {
+            {
+                "type": "selector",
                 "title": "Glitch fill level",
                 "key": "duty_cycle",
                 "choices": ["Less", "More"],
-                "map": {"Less": 0.3, "More": 0.7}
+                "map": {"Less": 0.3, "More": 0.7},
+                "default": "More"
             },
-            "checkbox5": {
+            {
+                "type": "checkbox",
                 "title": "Enable Fade out",
                 "key": "enable_fadeout",
                 "default": True
             }
-        }
+        ]
     },
     "BPM": {
         "segmented": False,
         "supports_segmentation": True,
-        "gif": "System/Media/Effects/BPM.gif",
         "function": bpm_effect,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Select BPM",
                 "key": "multiplier",
                 "choices": ["BPM /2", "BPM", "BPM x2", "BPM x4"],
@@ -858,20 +900,21 @@ EffectsConfig = {
                 },
                 "default": "BPM"
             },
-            "checkbox2": {
+            {
+                "type": "checkbox",
                 "title": "Enable fading on sub - beats",
                 "key": "enable_fading",
                 "default": True
             }
-        }
+        ]
     },
     "Sidebeat": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Sidebeat.gif",
         "function": sidebeat,
-        "settings": {
-            "selector1": {
+        "settings": [
+            {
+                "type": "selector",
                 "title": "Side",
                 "key": "part",
                 "choices": ["Left", "Both", "Right"],
@@ -882,60 +925,64 @@ EffectsConfig = {
                 },
                 "default": "Both"
             }
-        }
+        ]
     },
     "Boomerang": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Boomerang.gif",
         "function": boomerang,
-        "settings": {
-            "slider1": {
+        "settings": [
+            {
+                "type": "slider",
                 "title": "Jumps",
                 "key": "jumps",
                 "min": 4,
                 "max": 12,
-                "offset": 2
+                "default": 4
             }
-        }
+        ]
     },
 
     "Chase": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Chase.gif",
         "function": chase,
-        "settings": {
-            "slider1": {
+        "settings": [
+            {
+                "type": "slider",
                 "title": "Width",
                 "key": "width",
                 "min": 1,
                 "max": 10,
-                "offset": 1
+                "offset": 1,
+                "default": 3
             },
-            "selector2": {
+            {
+                "type": "selector",
                 "title": "Direction",
                 "key": "direction",
                 "choices": ["To the left", "To the right"],
-                "map": {"To the left": -1, "To the right": 1}
+                "map": {"To the left": -1, "To the right": 1},
+                "default": "To the left"
             }
-        }
+        ]
     },
 
     "Ripple": {
         "segmented": True,
         "supports_segmentation": False,
-        "gif": "System/Media/Effects/Ripple.gif",
         "function": ripple,
-        "settings": {
-            "slider1": {
+        "settings": [
+            {
+                "type": "slider",
                 "title": "Tail",
                 "key": "tail",
                 "min": 1,
                 "max": 10,
-                "offset": 1
+                "offset": 1,
+                "default": 5
             }
-        }
+        ]
     }
 }
 
