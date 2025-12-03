@@ -1,17 +1,33 @@
 try:
     import os
     import sys
+    import traceback
     
     #sys.stdout = open(os.devnull, 'w')
     #sys.stderr = open(os.devnull, 'w')
     
     #os.environ["QT_FONT_DPI"] = "120"
     #os.environ["QT_SCALE_FACTOR"] = "2"
-    sys.path.insert(0, os.path.dirname(__file__))
+
+    def excepthook(type, value, tb):
+        print("PYTHON DIED:", value, "".join(traceback.format_tb(tb)))
+
+    sys.excepthook = excepthook
+    
+    import faulthandler
+    faulthandler.enable()
 
     from PyQt5.QtGui import *
     from PyQt5.QtCore import *
     from PyQt5.QtWidgets import *
+
+    from PyQt5.QtCore import qInstallMessageHandler
+
+    def handler(msg_type, msg_log_context, message):
+        print("QT SAYS:", message)
+
+    qInstallMessageHandler(handler)
+
     
     
     from System import Styles
@@ -35,6 +51,52 @@ from System.Compositor import CompositorWidget
 
 app.setWindowIcon(Utils.Icons.WindowIcon)
 
+class StartupFadeOverlay(QWidget):
+    finished = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setParent(parent)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        
+        self._bg_opacity = 1.0
+        self.color = QColor(0, 0, 0)
+        
+        self.setGeometry(parent.rect())
+        self.raise_()
+
+        self.bg_anim = QPropertyAnimation(self, b"bgOpacity", self)
+        self.bg_anim.setDuration(700)
+        self.bg_anim.setStartValue(1.0)
+        self.bg_anim.setEndValue(0.0)
+        self.bg_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self.bg_anim.finished.connect(self._on_finished)
+
+    @pyqtProperty(float) # type: ignore
+    def bgOpacity(self):
+        return self._bg_opacity
+
+    @bgOpacity.setter
+    def bgOpacity(self, v: float):
+        self._bg_opacity = float(v)
+        self.update()
+
+    def start(self, hold_ms = 600):
+        self.setGeometry(self.parent().rect())
+        self.show()
+        
+        QTimer.singleShot(hold_ms, self.bg_anim.start)
+
+    def _on_finished(self):
+        self.close()
+        self.finished.emit()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        alpha = int(self._bg_opacity * 255)
+        self.color.setAlpha(alpha) 
+        painter.fillRect(self.rect(), self.color)
+
 class ApplicationWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -51,6 +113,14 @@ class ApplicationWindow(QMainWindow):
         self.main_menu_widget = MainMenu(self)
         self.compositor_widget = CompositorWidget()
 
+        main_menu_effect = QGraphicsOpacityEffect(self.main_menu_widget)
+        main_menu_effect.setOpacity(1.0)
+        self.main_menu_widget.setGraphicsEffect(main_menu_effect)
+
+        compositor_effect = QGraphicsOpacityEffect(self.compositor_widget)
+        compositor_effect.setOpacity(0.0)
+        self.compositor_widget.setGraphicsEffect(compositor_effect)
+
         self.stack.addWidget(self.main_menu_widget)
         self.stack.addWidget(self.compositor_widget)
 
@@ -60,13 +130,13 @@ class ApplicationWindow(QMainWindow):
         self.stack.setCurrentWidget(self.main_menu_widget)
         self.setStyleSheet(f"background-color: {Styles.Colors.background};")
 
+        self.intro_overlay = StartupFadeOverlay(self)
+
     def fade_out(self, widget):
         logger.info("Fading out")
         
         effect = widget.graphicsEffect()
-        if not isinstance(effect, QGraphicsOpacityEffect):
-            effect = QGraphicsOpacityEffect(widget)
-            widget.setGraphicsEffect(effect)
+        effect.setOpacity(1.0)
 
         self.anim_out = QPropertyAnimation(effect, b"opacity")
         self.anim_out.setDuration(300)
@@ -80,10 +150,6 @@ class ApplicationWindow(QMainWindow):
         logger.info("Fading in")
         
         effect = widget.graphicsEffect()
-        if not isinstance(effect, QGraphicsOpacityEffect):
-            effect = QGraphicsOpacityEffect(widget)
-            widget.setGraphicsEffect(effect)
-
         effect.setOpacity(0.0) 
         
         self.anim_in = QPropertyAnimation(effect, b"opacity")
@@ -100,8 +166,6 @@ class ApplicationWindow(QMainWindow):
 
         def on_fade_out_finished():
             self.main_menu_widget.setVisible(False)
-            self.main_menu_widget.setGraphicsEffect(None)
-
             self.stack.setCurrentWidget(self.compositor_widget)
 
             initial_compositor_geometry = self.stack.geometry()
@@ -154,14 +218,13 @@ class ApplicationWindow(QMainWindow):
                 initial_main_menu_geometry.height()
             )
 
+            logger.warning("Switching to main menu widget")
             self.stack.setCurrentWidget(self.main_menu_widget)
             self.main_menu_widget.setVisible(True)
 
+            logger.warning("Showing main menu")
+
             menu_effect = self.main_menu_widget.graphicsEffect()
-            if not isinstance(menu_effect, QGraphicsOpacityEffect):
-                menu_effect = QGraphicsOpacityEffect(self.main_menu_widget)
-                self.main_menu_widget.setGraphicsEffect(menu_effect)
-            
             menu_effect.setOpacity(0.0)
 
             self.anim_in_main_menu = QPropertyAnimation(menu_effect, b"opacity")
@@ -184,6 +247,8 @@ class ApplicationWindow(QMainWindow):
             self.anim_move_main_menu.setEndValue(initial_main_menu_geometry)
             self.anim_move_main_menu.setEasingCurve(QEasingCurve.OutElastic)
 
+            logger.warning("Animating main menu into view")
+
             Utils.ui_sound("Eject")
 
             self.anim_in_main_menu.start()
@@ -201,14 +266,15 @@ class ApplicationWindow(QMainWindow):
 if __name__ == '__main__':
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")
-        logger.info("Loaded font")
+        logger.info("Loaded font NDot57.otf")
     
     if os.path.exists("System/Fonts/NType82.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
-        logger.info("Loaded font")
+        logger.info("Loaded font NType82.otf")
 
     main_window = ApplicationWindow()
-    main_window.show()
+    main_window.show() 
+    main_window.intro_overlay.start(670)
 
-    Utils.ui_sound("Start")
+    Utils.ui_sound("Startup")
     sys.exit(app.exec_())
