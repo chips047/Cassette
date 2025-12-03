@@ -16,6 +16,8 @@ from System import ProjectSaver
 from System.Constants import *
 from System.AudioSetupper import AudioSetupDialog
 
+from loguru import logger
+
 def get_projects_info(songs_folder):
     projects = {}
     
@@ -63,7 +65,7 @@ class TrackItemWidget(QWidget):
     
     def __init__(self, project_id, title, artist, duration, progress_text, parent=None, main_menu=None):
         super().__init__(parent)
-        self.setMinimumWidth(250)
+        self.setMinimumWidth(300)
         self.setFixedHeight(150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
@@ -157,6 +159,109 @@ class TrackItemWidget(QWidget):
             composition
         ).exec_()
 
+class FadeScrollArea(QScrollArea):
+    def __init__(self, fade_color=QColor("#000000"), fade_height=40, parent=None):
+        super().__init__(parent)
+        self.fade_color = fade_color if isinstance(fade_color, QColor) else QColor(fade_color)
+        self.fade_height = fade_height
+        
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self.top_fade = FadeOverlay(self.fade_color, True, self)
+        self.bottom_fade = FadeOverlay(self.fade_color, False, self)
+        
+        self.top_fade.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.bottom_fade.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.verticalScrollBar().valueChanged.connect(self.update_fade_visibility)
+        self._animations = {}
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        w = self.viewport().width()
+        
+        self.top_fade.setGeometry(0, 0, w, self.fade_height)
+        self.bottom_fade.setGeometry(0, self.height() - self.fade_height, w, self.fade_height)
+        
+        self.update_fade_visibility()
+
+    def update_fade_visibility(self):
+        val = self.verticalScrollBar().value()
+        max_val = self.verticalScrollBar().maximum()
+        
+        self._animate_fade(self.top_fade, val > 0)
+        self._animate_fade(self.bottom_fade, val < max_val)
+
+    def _animate_fade(self, widget, show):
+        target_opacity = 1.0 if show else 0.0
+        current_opacity = widget._opacity
+
+        if current_opacity == target_opacity:
+            return
+
+        if widget in self._animations:
+            self._animations[widget].stop()
+
+        animation = QPropertyAnimation(widget, b"opacity")
+        animation.setDuration(250)
+        animation.setStartValue(current_opacity)
+        animation.setEndValue(target_opacity)
+        
+        if not show:
+            animation.finished.connect(lambda: widget.hide())
+        
+        else:
+            widget.show()
+            
+        animation.start()
+        
+        self._animations[widget] = animation
+
+class FadeOverlay(QWidget):
+    def __init__(self, color, is_top, parent=None):
+        super().__init__(parent)
+        self.color = color
+        self.is_top = is_top
+        self._opacity = 1.0
+        
+        self.setAttribute(Qt.WA_TranslucentBackground) 
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(Qt.NoPen)
+        painter.setOpacity(self._opacity) 
+        
+        grad = QLinearGradient(0, 0, 0, self.height())
+        
+        c_opaque = QColor(self.color)
+        c_opaque.setAlpha(255)
+        
+        c_transparent = QColor(self.color)
+        c_transparent.setAlpha(0)
+        
+        if self.is_top:
+            grad.setColorAt(0, c_opaque)
+            grad.setColorAt(1, c_transparent)
+        
+        else:
+            grad.setColorAt(0, c_transparent)
+            grad.setColorAt(1, c_opaque)
+            
+        painter.setBrush(QBrush(grad))
+        painter.drawRect(self.rect())
+    
+    @pyqtProperty(float)
+    def opacity(self):
+        return self._opacity
+
+    @opacity.setter
+    def opacity(self, opacity):
+        self._opacity = opacity
+        self.update()
+
 class MainMenu(QWidget):
     composition_created = pyqtSignal(object)
 
@@ -194,7 +299,7 @@ class MainMenu(QWidget):
         composition = ProjectSaver.Composition(
             id = project_id
         )
-            
+
         self.composition_created.emit(composition)
 
     def on_new_composition(self):
@@ -215,10 +320,8 @@ class MainMenu(QWidget):
 
         dialog = AudioSetupDialog(file_path)
         if dialog.exec_() == QDialog.Accepted:
-            Utils.ui_sound("MenuClose")
             settings = dialog.saved_settings
             
-            print(f"file path provided to composition: {file_path}")
             composition = ProjectSaver.Composition(
                 file_path,
                 settings
@@ -273,34 +376,17 @@ class MainMenu(QWidget):
         tracks_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.tracks_layout.addWidget(tracks_widget, alignment=Qt.AlignTop)
 
-        scroll_area = QScrollArea()
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("""
+        bg_color = QColor(Styles.Colors.background) 
+        self.scroll_area = FadeScrollArea(bg_color)
+        
+        self.scroll_area.setStyleSheet("""
             QScrollArea {
                 border: none;
                 background: transparent;
                 border-radius: 30px;
             }
-            QScrollArea > QWidget > QWidget {
-                border-radius: 30px;
-                background: transparent;
-            }
             QScrollBar:vertical {
-                border: none;
-                background: #2b2b2b;
-                width: 8px;
-                margin: 0px 0px 0px 0px;
-                border-radius: 30px;
-            }
-            QScrollBar::handle:vertical {
-                background: #555;
-                min-height: 20px;
-                border-radius: 30px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
+                width: 0px; 
             }
         """)
 
@@ -311,19 +397,16 @@ class MainMenu(QWidget):
             }
         """)
         
-        scroll_area.setWidget(tracks_container)
-        container_layout.addWidget(scroll_area)
-
+        self.scroll_area.setWidget(tracks_container)
+        container_layout.addWidget(self.scroll_area)
+    
     def on_settings(self):
         settings_dialog = UI.Settings()
         settings_dialog.init_settings(SettingsDict)
         settings_dialog.exec_()
     
     def on_import(self):
-        UI.DialogInputWindow(
-            "Lmao!", 
-            "This feature is in development process."
-        ).exec_()
+        UI.DialogInputWindow("Shit.").exec_()
     
     def on_about(self):
         UI.About().exec_()
@@ -406,7 +489,3 @@ class MainMenu(QWidget):
             layout.addWidget(track_item, row, col)
         
         return widget
-    
-    def showEvent(self, event):
-        self.refresh_tracks()
-        super().showEvent(event)
