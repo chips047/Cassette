@@ -566,6 +566,7 @@ class DraggableValueControl(_BaseControlWidget):
             delta_x = event.pos().x() - self.drag_start_x
             pixels_per_step_value_change = 10
             change_in_value_steps = delta_x // pixels_per_step_value_change
+            
             new_value = self.drag_start_value + change_in_value_steps * self.step
             new_value = int(round(new_value / self.step)) * self.step
             new_value = max(self.min_val, min(self.max_val, new_value))
@@ -839,6 +840,14 @@ class EffectPreviewWidget(QWidget):
         
         self.on_control_changed()
     
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.live_preview_bar.play()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self.live_preview_bar.stop()
+    
     def _generate_effect_track(self):
         settings = self.get_settings()
         glyph = {
@@ -862,7 +871,7 @@ class EffectPreviewWidget(QWidget):
 
     def on_control_changed(self, *args):
         self._generate_effect_track()
-        self.live_preview_bar.play()
+        #self.live_preview_bar.play()
 
     def get_settings(self):
         settings = {}
@@ -889,148 +898,16 @@ class EffectPreviewWidget(QWidget):
     def mousePressEvent(self, event):
         event.accept()
 
-class AnimatedTooltipManager(QWidget):
-    def __init__(self, parent, delay_ms: int = 1000):
-        
-        super().__init__(parent, Qt.ToolTip)
-        self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-
-        self._margin = 30
-        self._radius = 18
-        
-        self.label = QLabel(self)
-        self.label.setStyleSheet("background: transparent; color: white;")
-        self.label.setFont(Utils.NType(11))
-        self.label.setAlignment(Qt.AlignVCenter)
-        self.label.setContentsMargins(15, 0, 0, 0)
-        self.label.setWordWrap(True)
-        self.label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-        self._opacity_effect = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self._opacity_effect)
-        
-        self.anim_opacity = QPropertyAnimation(self._opacity_effect, b"opacity")
-        self.anim_opacity.finished.connect(self._on_hide_finished)
-
-        self._hiding = False
-        self._bg_color = QColor(Styles.Colors.Floating.background)
-        self._border_color = QColor(Styles.Colors.glass_border)
-
-        self.delay_ms = delay_ms
-        self.tooltip_delay_timer = QTimer(self)
-        self.tooltip_delay_timer.setSingleShot(True)
-        self.tooltip_delay_timer.timeout.connect(self._show_pending_tooltip)
-
-        self._tooltip_pending_element = None
-        self._tooltip_pending_text = None
-        self._tooltip_current_element = None
+class AnimatedTooltipManager:
+    def __init__(self):
+        pass
 
     def request_tooltip(self, element, text: str):
-        if (
-                self._tooltip_pending_element != element or 
-                self._tooltip_pending_text != text or
-                not self.tooltip_delay_timer.isActive()
-            ):
-
-            self.hide_tooltip()
-            self.tooltip_delay_timer.stop()
-            self._tooltip_pending_element = element
-            self._tooltip_pending_text = text
-            self.tooltip_delay_timer.start(self.delay_ms)
-
-    def clear_tooltip(self):
-        self._tooltip_pending_element = None
-        self.tooltip_delay_timer.stop()
-        if self.is_tooltip_visible():
-            self.hide_tooltip()
-
-    def is_tooltip_visible(self) -> bool:
-        return self.isVisible() and self._opacity_effect.opacity() > 0
-
-    def _show_pending_tooltip(self):
-        if not self._tooltip_pending_element:
-            return
-        
-        self._tooltip_current_element = self._tooltip_pending_element
-        self.show_tooltip(self._tooltip_pending_text)
-
-    def _calculate_position(self, tip_size: QSize) -> QPoint:
-        parent_rect = self.parent().rect()
-
-        x = parent_rect.right() - tip_size.width() - self._margin
-        y = parent_rect.bottom() - tip_size.height() - self._margin
-        
-        return self.parent().mapToGlobal(QPoint(x, y))
+            self.show_tooltip("Lmao")
 
     def show_tooltip(self, text: str):
-        self._hiding = False
-        self.anim_opacity.stop()
-
-        self.label.setText(text)
-        
-        final_size = self.label.sizeHint().grownBy(QMargins(15, 15, 0, 15))
-        pos = self._calculate_position(final_size)
-        
-        self.setGeometry(QRect(pos, final_size))
-
-        if not CurrentSettings["reduce_animations"]:
-            self._opacity_effect.setOpacity(0.0)
-            self.show()
-
-            self.anim_opacity.setDuration(300)
-            self.anim_opacity.setStartValue(0.0)
-            self.anim_opacity.setEndValue(1.0)
-            self.anim_opacity.setEasingCurve(QEasingCurve.OutCubic)
-            self.anim_opacity.start()
-        
-        else:
-            self._opacity_effect.setOpacity(1.0)
-            self.show()
-
-    def hide_tooltip(self):
-        if not self.is_tooltip_visible() or self._hiding:
-            return
-            
-        self._hiding = True
-        self.anim_opacity.stop()
-        
-        if not CurrentSettings["reduce_animations"]:
-            self.anim_opacity.setDuration(300)
-            self.anim_opacity.setStartValue(self._opacity_effect.opacity())
-            self.anim_opacity.setEndValue(0.0)
-            self.anim_opacity.setEasingCurve(QEasingCurve.InCubic)
-            self.anim_opacity.start()
-        
-        else:
-            self._on_hide_finished()
-
-    def _on_hide_finished(self):
-        if self._hiding:
-            self._hiding = False
-            self.hide()
-            self._tooltip_current_element = None
-
-    def resizeEvent(self, event):
-        self.label.setGeometry(self.rect())
-        super().resizeEvent(event)
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
-
-        rect = self.rect().adjusted(1, 1, -1, -1)
-
-        painter.setBrush(self._bg_color)
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(rect, self._radius, self._radius)
-
-        pen = QPen(self._border_color, 2)
-
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
-        painter.drawRoundedRect(rect, self._radius, self._radius)
+        self.window = Tooltip()
+        self.window.show()
 
 class ValuePopup(QWidget):
     def __init__(self, text: str, pos: QPoint, parent=None):
@@ -1194,104 +1071,242 @@ class MiniWaveformPreview(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.audio_data = None
-        self.peaks = []
-        self.setFixedHeight(Styles.Metrics.element_height)
-        
+        self.pixmap = None
+
+        self.mouse_pressed = False
+        self.playhead_position = 0.0
+
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setStyleSheet(Styles.Controls.MiniWaveformPreview)
+
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
     def set_audio_data(self, audio_data):
         self.audio_data = audio_data
-        self.generate_peaks()
+        self._prepare_audio_data()
         self.update()
+    
+    def set_playhead_position(self, value):
+        self.playhead_position = value
+        self.update()
+    
+    def _prepare_audio_data(self):
+        audio = self.audio_data
 
-    def generate_peaks(self):
-        if self.audio_data is None or len(self.audio_data) == 0 or self.width() <=0:
-            self.peaks = []
+        if audio.size == 0:
+            self._min_samples = np.array([])
+            self._max_samples = np.array([])
+            self._waveform_max = 1.0
+
             return
+
+        total_samples = audio.shape[0]
+
+        fade_in_samples = int(total_samples * 0.03)
+        fade_out_samples = int(total_samples * 0.03)
+
+        fade_in_samples = min(fade_in_samples, total_samples)
+        fade_out_samples = min(fade_out_samples, total_samples - fade_in_samples)
+
+        processed_audio = audio.copy()
+
+        if fade_in_samples > 0:
+            fade_in_mask = np.linspace(0.0, 1.0, fade_in_samples)
+            start_slice = slice(0, fade_in_samples)
+
+            if audio.ndim == 1:
+                processed_audio[start_slice] *= fade_in_mask
+            
+            elif audio.ndim == 2:
+                processed_audio[start_slice, :] *= fade_in_mask[:, np.newaxis]
+
+        if fade_out_samples > 0:
+            fade_out_mask = np.linspace(1.0, 0.0, fade_out_samples)
+            end_start_index = total_samples - fade_out_samples
+            end_slice = slice(end_start_index, total_samples)
+
+            if audio.ndim == 1:
+                processed_audio[end_slice] *= fade_out_mask
+            
+            elif audio.ndim == 2:
+                processed_audio[end_slice, :] *= fade_out_mask[:, np.newaxis]
+
+        audio = processed_audio
+
+        if audio.ndim == 1:
+            self._min_samples = audio
+            self._max_samples = audio
         
-        self.audio_data = self.audio_data - np.mean(self.audio_data)
-        self.audio_data = self.audio_data / np.max(np.abs(self.audio_data))
+        elif audio.ndim == 2:
+            self._min_samples = np.min(audio, axis=1)
+            self._max_samples = np.max(audio, axis=1)
+        
+        else:
+            self._min_samples = np.array([])
+            self._max_samples = np.array([])
+            self._waveform_max = 1.0
 
-        num_peaks = self.width()
-
-        if len(self.audio_data) == 0:
-            self.peaks = []
             return
 
-        samples_per_peak = max(1, len(self.audio_data) // num_peaks)
-        temp_peaks = []
+        dtype = self.audio_data.dtype
+        scale = 32767.0 if np.issubdtype(dtype, np.integer) else 1.0
+
+        max_abs_val = max(np.max(np.abs(self._min_samples)), np.max(np.abs(self._max_samples)))
+
+        self._waveform_max = max_abs_val / scale
+        if self._waveform_max == 0.0:
+            self._waveform_max = 1.0
+
+    def generate_pixmap(self):
+        width = self.width() - 4
+        height = self.height() - 10
+
+        min_samples = self._min_samples
+        max_samples = self._max_samples
+        waveform_max = self._waveform_max
+
+        if min_samples.size == 0:
+            return None
+
+        num_samples = len(min_samples)
+        if num_samples == 0:
+            return None
+
+        samples_per_pixel_tile = num_samples / width
+        step = max(1, int(np.ceil(samples_per_pixel_tile)))
+
+        padded_length = ((num_samples + step - 1) // step) * step
+        pad_amount = padded_length - num_samples
+
+        padded_min = np.pad(min_samples, (0, pad_amount), mode = 'constant')
+        padded_max = np.pad(max_samples, (0, pad_amount), mode = 'constant')
+
+        reshaped_min = padded_min.reshape(-1, step)
+        reshaped_max = padded_max.reshape(-1, step)
+
+        min_vals = np.min(reshaped_min, axis=1)
+        max_vals = np.max(reshaped_max, axis=1)
+
+        max_vals_f = max_vals.astype(np.float32) / waveform_max
+        min_vals_f = min_vals.astype(np.float32) / waveform_max
+
+        y_center = height / 2.0
+
+        amplitudes_top = y_center - max_vals_f * y_center
+        amplitudes_bottom = y_center - min_vals_f * y_center
+
+        sigma = CurrentSettings["waveform_smoothing"]
         
-        for i in range(0, len(self.audio_data), samples_per_peak):
-            chunk = self.audio_data[i:i + samples_per_peak]
-            if len(chunk) > 0:
-                temp_peaks.append((np.min(chunk), np.max(chunk)))
+        if sigma and sigma > 0.0 and len(amplitudes_top) > 1:
+            pad = int(np.ceil(sigma * 3.0))
+            pad = min(pad, len(amplitudes_top) - 1)
+        
+            top_padded = np.pad(amplitudes_top, (pad, pad), mode = 'reflect')
+            bottom_padded = np.pad(amplitudes_bottom, (pad, pad), mode = 'reflect')
+        
+            smooth_top_padded = Utils.gaussian_filter1d_np(top_padded, sigma=sigma)
+            smooth_bottom_padded = Utils.gaussian_filter1d_np(bottom_padded, sigma=sigma)
+        
+            smooth_top = smooth_top_padded[pad:pad + len(amplitudes_top)]
+            smooth_bottom = smooth_bottom_padded[pad:pad + len(amplitudes_bottom)]
+        
+        else:
+            smooth_top = amplitudes_top
+            smooth_bottom = amplitudes_bottom
+        
+        if len(smooth_top) == len(smooth_bottom):
+            mask = smooth_top > smooth_bottom
             
-            elif i == 0: 
-                temp_peaks.append((0,0))
+            if np.any(mask):
+                avg = (smooth_top[mask] + smooth_bottom[mask]) / 2.0
+                smooth_top[mask] = avg
+                smooth_bottom[mask] = avg
+
+        if len(smooth_top) == 0 or len(smooth_bottom) == 0:
+            return None
+
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+
+        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
+
+        bar_width = float(width) / len(smooth_top)
+
+        path = QPainterPath()
+        for i in range(len(smooth_top)):
+            x = i * bar_width
+            y = max(0.0, min(float(height), float(smooth_top[i])))
             
-        self.peaks = temp_peaks
+            if i == 0:
+                path.moveTo(x, y)
+            
+            else:
+                path.lineTo(x, y)
+
+        for i in reversed(range(len(smooth_bottom))):
+            x = i * bar_width
+            y = max(0.0, min(float(height), float(smooth_bottom[i])))
+            path.lineTo(x, y)
+
+        path.closeSubpath()
+
+        border_color = QColor(170, 170, 170, 255) 
+        fill_color = QColor(255, 255, 255, 100)
+
+        painter.setPen(QPen(border_color, 2.0)) 
+        painter.setBrush(QBrush(fill_color))
+        painter.drawPath(path)
+
+        painter.end()
+
+        return pixmap
 
     def paintEvent(self, event):
         super().paintEvent(event)
-        painter = QPainter(self)
-        CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
-        if not self.peaks:
-            painter.setPen(Qt.GlobalColor.darkGray)
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "Mini Preview")
-            return
+        if self.pixmap:
+            painter = QPainter(self)
+            painter.drawPixmap(2, 5, self.pixmap)
 
-        rect_height = self.height()
-        center_y = rect_height / 2.0
+            pen = QPen(QColor(255, 0, 0), 2.0)
 
-        path_upper = QPainterPath()
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
 
-        current_width = self.width()
-        if current_width <= 0 or not self.peaks:
-            return
-
-        bar_width = current_width / len(self.peaks) if len(self.peaks) > 0 else 1.0
-
-        for i, (_, max_val) in enumerate(self.peaks):
-            x_pos = i * bar_width
-            scaled_max = center_y - (max_val * center_y) 
-            scaled_max = max(0, min(scaled_max, rect_height))
-            
-            if i == 0:
-                path_upper.moveTo(x_pos, scaled_max)
-            
-            else:
-                path_upper.lineTo(x_pos, scaled_max)
-
-        for i in range(len(self.peaks) - 1, -1, -1):
-            min_val, _ = self.peaks[i]
-            x_pos = i * bar_width
-            scaled_min = center_y - (min_val * center_y) 
-            scaled_min = max(0, min(scaled_min, rect_height))
-            
-            if i == len(self.peaks) -1: 
-                path_upper.lineTo(x_pos, scaled_min)
-            
-            else:
-                path_upper.lineTo(x_pos, scaled_min)
-
-        if self.peaks:
-            path_upper.closeSubpath()
-            painter.fillPath(path_upper, QBrush(QColor(*Styles.hex_to_rgb(Styles.Colors.nothing_accent) + (100,)))) 
-            painter.setPen(QPen(QColor(*Styles.hex_to_rgb(Styles.Colors.nothing_accent)), 0.5)) 
-            painter.drawPath(path_upper)
+            x = float(self.width() * self.playhead_position)
+            painter.drawLine(QLineF(x, 0.0, x, float(self.height())))
 
     def mousePressEvent(self, event: QMouseEvent):
-        if self.peaks and event.button() == Qt.MouseButton.LeftButton:
+        if self.pixmap and event.button() == Qt.MouseButton.LeftButton:
+            self.mouse_pressed = True
             normalized_pos = max(0.0, min(1.0, event.x() / self.width()))
+            self.set_playhead_position(normalized_pos)
             self.preview_clicked.emit(normalized_pos)
         
         super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event):
+        normalized_pos = max(0.0, min(1.0, event.x() / self.width()))
+        self.set_playhead_position(normalized_pos)
+        self.preview_clicked.emit(normalized_pos)
+        
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.mouse_pressed = False
+        super().mouseReleaseEvent(event)
 
     def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
-        self.generate_peaks()
-        self.update()
+
+        if self.isVisible():
+            self.pixmap = self.generate_pixmap()
+            self.update()
+    
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.pixmap = self.generate_pixmap()
 
 class AnimatedLineEdit(QLineEdit):
     safeTextChanged = pyqtSignal(str)
@@ -1474,14 +1489,20 @@ class AnimatedLineEdit(QLineEdit):
 
         if not CurrentSettings["reduce_animations"] and not self.arrow_pressed and cur_text:
             if key == Qt.Key_Left:
-                Utils.ui_sound("TickLeft")
+                tone = 0.85 + (self.cursorPosition() / len(super().text())) * 0.4
+                print(tone)
+
+                Utils.ui_sound("ArrowTick", tone)
                 self.arrow_pressed = True
                 self.arrow_direction = -1
                 self.animate_arrow_hold(-6)
                 return super().keyPressEvent(event)
             
             if key == Qt.Key_Right:
-                Utils.ui_sound("TickRight")
+                tone = 0.85 + (self.cursorPosition() / len(super().text())) * 0.4
+                print(tone)
+
+                Utils.ui_sound("ArrowTick", tone)
                 self.arrow_pressed = True
                 self.arrow_direction = 1
                 self.animate_arrow_hold(6)
@@ -1705,7 +1726,8 @@ class FloatingWindow(QDialog):
 
             animation_style = "bouncy",
             enable_tilt: bool = True,
-            margin = 200
+            margin = 200,
+            dialog = True
         ):
 
         super().__init__()
@@ -1721,7 +1743,12 @@ class FloatingWindow(QDialog):
         self.is_closing = False
         self.was_cancelled = False
 
-        self.setWindowFlags(self.windowFlags() | Qt.Dialog | Qt.FramelessWindowHint)
+        if dialog:
+            self.setWindowFlags(self.windowFlags() | Qt.Dialog | Qt.FramelessWindowHint)
+        
+        else:
+            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
 
@@ -1731,7 +1758,7 @@ class FloatingWindow(QDialog):
 
         self.update_bpm(self.bpm)
         
-        QTimer.singleShot(0, self.start_normal_animation)
+        QTimer.singleShot(0, self.start_open_animation)
 
     def update_bpm(self, bpm = None):
         if not bpm:
@@ -1775,11 +1802,13 @@ class FloatingWindow(QDialog):
 
         main_layout.addLayout(self.content_layout)
 
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet("color: #fff;")
-        self.title_label.setFont(Utils.NType(15))
+        if title:
+            self.title_label = QLabel(title)
+            self.title_label.setStyleSheet("color: #fff;")
+            self.title_label.setFont(Utils.NType(15))
 
-        self.content_layout.addWidget(self.title_label)
+            self.content_layout.addWidget(self.title_label)
+        
         self.adjustSize()
 
     def setup_animation_properties(self):
@@ -1790,6 +1819,7 @@ class FloatingWindow(QDialog):
         self.open_tilt_x = 0.0
         self.open_tilt_y = 0.0
         self.close_tilt_x = 0.0
+        self.disturbe_tilt_x = 0.0
         self.bpm_tilt_x = 0.0
 
         self.tilt_smoothing = 0.2
@@ -1841,7 +1871,7 @@ class FloatingWindow(QDialog):
             self.target_tilt_x = -y_norm * self.max_tilt_angle
             self.target_tilt_y = x_norm * self.max_tilt_angle
 
-        combined_target_x = self.target_tilt_x + self.open_tilt_x + self.bpm_tilt_x + self.close_tilt_x
+        combined_target_x = self.target_tilt_x + self.open_tilt_x + self.bpm_tilt_x + self.close_tilt_x + self.disturbe_tilt_x
         combined_target_y = self.target_tilt_y + self.open_tilt_y
         
         self.current_tilt_x += (combined_target_x - self.current_tilt_x) * self.tilt_smoothing
@@ -1879,10 +1909,81 @@ class FloatingWindow(QDialog):
             self.width(), self.height()
         )
 
-        self.setGeometry(final_rect.translated(0, +20))
+        self.setGeometry(final_rect)
 
         return final_rect
 
+
+    # Animations - Smooth Style
+    def animation_open_smooth(self, final_rect, size):
+        start_scale = get_scale(*size, 2.0, 1.1, 1200)
+
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, 30),
+                (1.0, 0)
+            ], b"openTiltX", 800, QEasingCurve.OutExpo
+        )
+
+        anim_scale = self.make_animation(
+            [
+                (0.0, start_scale),
+                (1.0, 1.0)
+            ], b"openScale", 650, QEasingCurve.OutExpo
+        )
+
+        anim_opacity = self.make_animation(
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ], b"windowOpacity", 500
+        )
+
+        def onValueChanged(value):
+            self.open_opacity = value
+        
+        self.group_animate(
+            [
+                anim_tilt_x,
+                anim_opacity,
+                anim_scale
+            ], valueChanged = onValueChanged
+        )
+    
+    def animation_close_smooth(self, size):
+        end_scale = get_scale(*size, 1.7)
+
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, 0),
+                (1.0, -30)
+            ], b"closeTiltX", 800, QEasingCurve.OutExpo
+        )
+
+        anim_scale = self.make_animation(
+            [
+                (0.0, 1.0),
+                (1.0, end_scale)
+            ], b"exitScale", 800, QEasingCurve.OutExpo
+        )
+
+        anim_opacity = self.make_animation(
+            [
+                (0.0, self.windowOpacity()),
+                (1.0, 0.0)
+            ], b"windowOpacity", 400
+        )
+
+        self.group_animate(
+            [
+                anim_tilt_x,
+                anim_scale,
+                anim_opacity
+            ], self._really_close
+        )
+
+
+    # Animations - Bouncy Style
     def animation_open_bouncy(self, final_rect, size):
         curve = QEasingCurve(QEasingCurve.OutElastic)
         curve.setPeriod(0.27)
@@ -1958,21 +2059,53 @@ class FloatingWindow(QDialog):
             ], valueChanged = onValueChanged
         )
     
-    def animation_open_smooth(self, final_rect, size):
-        start_scale = get_scale(*size, 2.0, 1.1, 1200)
+    def animation_close_bouncy(self, size):
+        self.target_tilt_y = random.randint(5, 15)
 
-        anim_tilt_x = self.make_animation(
+        anim_rotation = self.make_animation(
             [
-                (0.0, 30),
-                (1.0, 0)
-            ], b"openTiltX", 800, QEasingCurve.OutExpo
+                (0.0, 0),
+                (1.0, get_rotation(*size, 11, 3))
+            ], b"exitRotation", 700
         )
 
         anim_scale = self.make_animation(
             [
-                (0.0, start_scale),
+                (0.0, 1.0),
+                (1.0, get_scale(*size, base_scale = 1.45))
+            ], b"exitScale", 400, QEasingCurve.InOutCubic
+        )
+
+        anim_opacity = self.make_animation(
+            [
+                (0.0, self.windowOpacity()),
+                (1.0, 0.0)
+            ], b"windowOpacity", 400
+        )
+
+        self.group_animate(
+            [
+                anim_rotation,
+                anim_scale,
+                anim_opacity
+            ], self._really_close
+        )
+    
+
+    # Animations - Roll Style
+    def animation_open_roll(self, final_rect, size):
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, 200),
+                (1.0, 0)
+            ], b"openTiltX", 1000, QEasingCurve.OutExpo
+        )
+
+        anim_scale = self.make_animation(
+            [
+                (0.0, 0.1),
                 (1.0, 1.0)
-            ], b"openScale", 650, QEasingCurve.OutExpo
+            ], b"openScale", 800, QEasingCurve.OutExpo
         )
 
         anim_opacity = self.make_animation(
@@ -1992,36 +2125,38 @@ class FloatingWindow(QDialog):
                 anim_scale
             ], valueChanged = onValueChanged
         )
+    
+    def animation_close_roll(self, size):
+        anim_tilt_x = self.make_animation(
+            [
+                (0.0, 0),
+                (1.0, 100)
+            ], b"closeTiltX", 800, QEasingCurve.OutExpo
+        )
 
-    def animation_open_sharp(self, final_rect, size):
-        self.adjustSize()
-        current_geometry = self.content_layout.geometry()
+        anim_scale = self.make_animation(
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], b"exitScale", 350, QEasingCurve.InCirc
+        )
 
         anim_opacity = self.make_animation(
             [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"windowOpacity", 200
+                (0.0, self.windowOpacity()),
+                (1.0, 0.0)
+            ], b"windowOpacity", 700
         )
 
-        anim_background_size = self.make_animation(
-            [
-                (0.0, QRect(current_geometry.x(), current_geometry.y() + current_geometry.height() // 2, current_geometry.width(), 0)),
-                (1.0, current_geometry)
-            ], b"backgroundSize", 400
-        )
-
-        def onValueChanged(value):
-            self.open_opacity = value
-        
         self.group_animate(
             [
-                anim_background_size,
-                anim_opacity
-            ], valueChanged = onValueChanged
+                anim_tilt_x,
+                anim_opacity,
+                anim_scale
+            ], self._really_close
         )
 
-    def start_normal_animation(self):
+    def start_open_animation(self):
         self.adjustSize()
         final_rect = self.center_window()
         self.is_ready = True
@@ -2036,7 +2171,7 @@ class FloatingWindow(QDialog):
         {
             "bouncy": self.animation_open_bouncy,
             "smooth": self.animation_open_smooth,
-            "sharp": self.animation_open_sharp
+            "roll": self.animation_open_roll
         }.get(self.animation_style)(final_rect, size)
 
     def player_pulse(self, duration = 0.4, pulse_peak_speed = 1.2):
@@ -2053,22 +2188,22 @@ class FloatingWindow(QDialog):
 
         Utils.ui_sound(
             {
-                "bouncy": "Open1",
+                "bouncy": "BouncyPack/Open",
                 "smooth": "SmoothPack/Open",
-                "sharp": "SmoothPack/Open"
+                "roll": "SmoothPack/Open"
             }.get(self.animation_style)
         )
     
     def close_sound(self):
         if self.player:
             if self.player.is_playing:
-                return self.player_pulse()
+                return self.player_pulse(0.4, 0.5)
 
         Utils.ui_sound(
             {
-                "bouncy": "PopupClose",
+                "bouncy": "BouncyPack/Close",
                 "smooth": "SmoothPack/Close",
-                "sharp": "SmoothPack/Close"
+                "roll": "SmoothPack/Close"
             }.get(self.animation_style)
         )
 
@@ -2102,52 +2237,6 @@ class FloatingWindow(QDialog):
             ], b"randomAnimRotation", 350
         )
 
-        self.anim_rotation.start()
-    
-    def start_official_animation(self):
-        self.adjustSize()
-        self.center_window()
-        self.is_ready = True
-
-        if CurrentSettings["reduce_animations"]:
-            return Utils.ui_sound(f"Open1", 1.0)
-
-        curve = QEasingCurve(QEasingCurve.OutElastic)
-        curve.setPeriod(0.27)
-        curve.setAmplitude(1.7)
-        size = self.get_window_size()
-        
-        start_angle = get_rotation(*size)
-
-        anim_opacity = self.make_animation(
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"windowOpacity", 500
-        )
-
-        anim_scale = self.make_animation(
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"openScale", 1400
-        )
-
-        anim_rotation = self.make_animation(
-            [
-                (0.0, start_angle),
-                (1.0, 0)
-            ], b"openRotation", 1000, curve
-        )
-
-        self.group_animate(
-            [
-                anim_opacity,
-                anim_scale,
-                anim_rotation
-            ]
-        )
-
     @pyqtProperty(float) # type: ignore
     def exitRotation(self):
         return self.exit_rotation
@@ -2171,6 +2260,14 @@ class FloatingWindow(QDialog):
     @bpmTiltX.setter
     def bpmTiltX(self, value):
         self.bpm_tilt_x = value
+    
+    @pyqtProperty(float) # type: ignore
+    def disturbeTiltX(self):
+        return self.disturbe_tilt_x
+
+    @disturbeTiltX.setter
+    def disturbeTiltX(self, value):
+        self.disturbe_tilt_x = value
 
     @pyqtProperty(float) # type: ignore
     def openTiltY(self):
@@ -2284,19 +2381,8 @@ class FloatingWindow(QDialog):
             interval = int(60000 // self.bpm)
             if self.bpm_timer.interval() != interval:
                 self.bpm_timer.setInterval(interval)
-        
-        tilt_target = float(self.max_tilt_angle * self.squish(audio_level) * 50)
-        tilt_target = -tilt_target if random.random() < 0.5 else tilt_target
 
-        anim_tilt = self.make_animation(
-            [
-                (0.0, 0.0),
-                (0.5, tilt_target),
-                (1.0, 0.0)
-            ], b"bpmTiltX", beat_interval_ms
-        )
-
-        anim_scale = self.make_animation(
+        self.anim_scale = self.make_animation(
             [
                 (0.0, float(1.0)),
                 (0.5, float(self.bpm_wobble_start_size + self.squish(audio_level))),
@@ -2306,12 +2392,7 @@ class FloatingWindow(QDialog):
             beat_interval_ms
         )
 
-        self.group_animate(
-            [
-                anim_tilt,
-                anim_scale
-            ]
-        )
+        self.anim_scale.start(QAbstractAnimation.DeleteWhenStopped)
     
     def squish(self, x, power = 1.2):
         return 0.05 * (x ** power)
@@ -2329,8 +2410,8 @@ class FloatingWindow(QDialog):
         )
 
         self.anim_scale.start()
-
-    def disturbeAnim(self):
+    
+    def animation_disturbe_bouncy(self):
         if CurrentSettings["reduce_animations"]:
             return
 
@@ -2341,18 +2422,18 @@ class FloatingWindow(QDialog):
 
         anim_scale = self.make_animation(
             [
-                (0.0, 1.0),
-                (0.5, 1.2),
+                (0.0, self.disturbe_scale),
+                (0.5, min(self.disturbe_scale + 0.2, 1.5)),
                 (1.0, 1.0)
-            ], b"disturbeScale", 400
+            ], b"disturbeScale", 500
         )
 
         anim_rotation = self.make_animation(
             [
-                (0.0, self.entry_rotation_angle),
-                (0.5, start_angle),
+                (0.0, self.disturbe_rotation),
+                (0.5, self.disturbe_rotation + start_angle if self.disturbe_rotation >= 0 else self.disturbe_rotation - start_angle),
                 (1.0, 0)
-            ], b"disturbeRotation", 700, QEasingCurve.OutElastic
+            ], b"disturbeRotation", 1000, QEasingCurve.OutElastic
         )
 
         self.group_animate(
@@ -2364,73 +2445,74 @@ class FloatingWindow(QDialog):
 
         self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
 
-    def get_window_size(self):
-        geometry = self.content_layout.geometry()
-        return geometry.width(), geometry.height()
-    
-    def animation_close_smooth(self, size):
-        end_scale = get_scale(*size, 1.7)
+    def animation_disturbe_roll(self):
+        if CurrentSettings["reduce_animations"]:
+            return
+
+        print(self.disturbe_tilt_x)
 
         anim_tilt_x = self.make_animation(
             [
-                (0.0, 0),
-                (1.0, -30)
-            ], b"closeTiltX", 800, QEasingCurve.OutExpo
+                (0.0, self.disturbe_tilt_x),
+                (0.5, min(self.disturbe_tilt_x + 45, 90) if self.disturbe_tilt_x >= 0 else max(self.disturbe_tilt_x - 45, -90)),
+                (1.0, 0)
+            ], b"disturbeTiltX", 1100, QEasingCurve.OutElastic
         )
 
         anim_scale = self.make_animation(
             [
-                (0.0, 1.0),
-                (1.0, end_scale)
-            ], b"exitScale", 800, QEasingCurve.OutExpo
-        )
-
-        anim_opacity = self.make_animation(
-            [
-                (0.0, self.windowOpacity()),
-                (1.0, 0.0)
-            ], b"windowOpacity", 400
+                (0.0, self.disturbe_scale),
+                (0.5, min(self.disturbe_scale + 0.1, 2.0)),
+                (1.0, 1.0)
+            ], b"disturbeScale", 1200, QEasingCurve.OutElastic
         )
 
         self.group_animate(
             [
                 anim_tilt_x,
-                anim_scale,
-                anim_opacity
-            ], self._really_close, self._label_animator
+                anim_scale
+            ]
         )
-    
-    def animation_close_bouncy(self, size):
-        self.target_tilt_y = random.randint(5, 15)
 
-        anim_rotation = self.make_animation(
-            [
-                (0.0, 0),
-                (1.0, get_rotation(*size, 11, 3))
-            ], b"exitRotation", 700
-        )
+        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
+    
+    def animation_disturbe_smooth(self):
+        if CurrentSettings["reduce_animations"]:
+            return
 
         anim_scale = self.make_animation(
             [
-                (0.0, 1.0),
-                (1.0, get_scale(*size, base_scale = 1.45))
-            ], b"exitScale", 400, QEasingCurve.InOutCubic
+                (0.0, self.disturbe_scale),
+                (0.5, min(self.disturbe_scale + 0.2, 2.0)),
+                (1.0, 1.0)
+            ], b"disturbeScale", 600, QEasingCurve.OutExpo
         )
 
-        anim_opacity = self.make_animation(
+        anim_tilt_x = self.make_animation(
             [
-                (0.0, self.windowOpacity()),
-                (1.0, 0.0)
-            ], b"windowOpacity", 400
+                (0.0, 0),
+                (0.5, 45),
+                (1.0, 0)
+            ], b"disturbeTiltX", 800, QEasingCurve.OutExpo
         )
 
         self.group_animate(
             [
-                anim_rotation,
                 anim_scale,
-                anim_opacity
-            ], self._really_close, self._label_animator
+                anim_tilt_x
+            ]
         )
+    
+    def start_disturbe_animation(self):
+        {
+            "bouncy": self.animation_disturbe_bouncy,
+            "smooth": self.animation_disturbe_smooth,
+            "roll": self.animation_disturbe_roll
+        }.get(self.animation_style)()
+
+    def get_window_size(self):
+        geometry = self.content_layout.geometry()
+        return geometry.width(), geometry.height()
 
     def start_exit_animation(self):
         if CurrentSettings["reduce_animations"]:
@@ -2440,11 +2522,9 @@ class FloatingWindow(QDialog):
 
         {
             "bouncy": self.animation_close_bouncy,
-            "smooth": self.animation_close_smooth
+            "smooth": self.animation_close_smooth,
+            "roll": self.animation_close_roll
         }.get(self.animation_style)(size)
-
-    def _label_animator(self, value):
-        self.title_label.setText(str(value)[:5])
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -2565,7 +2645,7 @@ class DialogInputWindow(FloatingWindow):
         self.ok_button.clicked.connect(self.on_ok)
         self.input_field.returnPressed.connect(self.on_ok)
         self.cancel_button.clicked.connect(self.on_cancel)
-        self.ok_button.glitch_started.connect(self.disturbeAnim)
+        self.ok_button.glitch_started.connect(self.start_disturbe_animation)
 
     def on_ok(self):
         text = self.input_field.text()
@@ -2699,7 +2779,7 @@ class ErrorWindow(FloatingWindow):
 
 class About(FloatingWindow):
     def __init__(self, bpm = None, player = None):
-        super().__init__(f"Cassette {open('version').read()} by chips047", bpm, player)
+        super().__init__(f"Cassette {open('version').read()} by chips047", bpm, player, 16)
 
         self.about_label = QLabel()
         text = f"The best open-source compositor. Currently in active development!\n\n`Inspirations and credits`\n- Most UI sounds from `R.E.P.O.` game by `semiwork`.\n- UI Open sound from `The Upturned` game by `Zeekers`."
@@ -3181,18 +3261,6 @@ class Tutorial(FloatingWindow):
         elif self.stage == 5:
             self.playback_manager.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
 
-class TestWindow(FloatingWindow):
-    def __init__(self, bpm = None, player = None):
-        super().__init__("Test Window", bpm, player, 60)
-        self.bar = ScheduledSegmentedBar(20)
-        self.bar.set_schedule(
-            [
-                {"start": 0, "duration": 2000, "brightness": 30, "segments": [10]},
-            ]
-        )
-        self.bar.play()
-        self.content_layout.addWidget(self.bar)
-
 class ScheduledSegmentedBar(QWidget):
     segment_changed = pyqtSignal()
     def __init__(
@@ -3400,3 +3468,361 @@ class ScheduledSegmentedBar(QWidget):
             return
 
         self.stop(clear_levels=True)
+
+class Tooltip(FloatingWindow):
+    def __init__(self):
+        super().__init__("Something is really beautiful here.", dialog = False)
+        self.title_label.setFont(Utils.NType(14))
+
+class RotatableBarContainer(QWidget):
+    """Контейнер для одного бара с возможностью поворота"""
+    
+    def __init__(self, bar: ScheduledSegmentedBar, rotation: float = 0):
+        super().__init__()
+        self.bar = bar
+        self.rotation = rotation
+        
+        # Делаем контейнер прозрачным
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # Устанавливаем размер контейнера
+        self.setFixedSize(bar.width(), bar.height())
+    
+    def set_rotation(self, angle: float):
+        """Устанавливает угол поворота"""
+        self.rotation = angle
+        self.update()
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Применяем поворот относительно центра
+        transform = QTransform()
+        center_x = self.width() / 2
+        center_y = self.height() / 2
+        
+        transform.translate(center_x, center_y)
+        transform.rotate(self.rotation)
+        transform.translate(-center_x, -center_y)
+        
+        painter.setTransform(transform)
+        
+        # Рендерим бар
+        self.bar.render(painter, QPoint(0, 0))
+
+
+class TestWindow(FloatingWindow):
+    """
+    Окно с множеством ScheduledSegmentedBar, размещенных через layout.
+    
+    Пример конфигурации баров:
+    bars_config = [
+        {
+            "x": 50,                    # X координата в layout
+            "y": 100,                   # Y координата в layout
+            "rotation": 45,             # Угол поворота в градусах
+            "segment_number": 30,       # Количество сегментов
+            "loop": True,               # Зацикливание
+            "base_thickness": 20,       # Толщина бара
+            "curve": 15,                # Изгиб (0 = прямой)
+            "width": 300,               # Ширина бара
+            "schedule": [...]           # Расписание анимации
+        },
+        # ... другие бары
+    ]
+    """
+    
+    def __init__(
+        self,
+        title: str,
+        bars_config: list = [
+    {
+        "x": 50,
+        "y": 50,
+        "rotation": 0,
+        "segment_number": 30,
+        "loop": True,
+        "base_thickness": 20,
+        "curve": 0,
+        "width": 400,
+        "schedule": [
+            {"start": 0, "duration": 1000, "brightness": 100, "segments": [0, 1, 2, 3, 4]}
+        ]
+    },
+    {
+        "x": 100,
+        "y": 150,
+        "rotation": 0,
+        "segment_number": 20,
+        "loop": False,
+        "base_thickness": 20,
+        "curve": 20,
+        "width": 300,
+        "schedule": [
+            {"start": 500, "duration": 1500, "brightness": 80, "segments": list(range(20))}
+        ]
+    },
+    {
+        "x": 50,
+        "y": 250,
+        "rotation": -30,
+        "segment_number": 40,
+        "loop": True,
+        "base_thickness": 25,
+        "curve": 10,
+        "width": 500,
+        "schedule": [
+            {"start": 0, "duration": 2000, "brightness": 100, "end_brightness": 0}
+        ]
+    }
+],
+        window_width: int = 600,
+        window_height: int = 400,
+        bpm: int = None,
+        player = None,
+        max_tilt_angle = 12,
+        animation_style = "bouncy",
+        enable_tilt: bool = True,
+        margin = 200,
+        dialog = True
+    ):
+        super().__init__(
+            title=title,
+            bpm=bpm,
+            player=player,
+            max_tilt_angle=max_tilt_angle,
+            animation_style=animation_style,
+            enable_tilt=enable_tilt,
+            margin=margin,
+            dialog=dialog
+        )
+        
+        self.bars_config = bars_config or []
+        self.bars = []
+        self.window_width = window_width
+        self.window_height = window_height
+        
+        self._setup_bars_container()
+        self._setup_bars()
+    
+    def _setup_bars_container(self):
+        """Создает контейнер для баров с абсолютным позиционированием"""
+        # Создаем виджет-контейнер для баров
+        self.bars_container = QWidget()
+        self.bars_container.setFixedSize(self.window_width, self.window_height)
+        
+        # Добавляем контейнер в основной layout
+        self.content_layout.addWidget(self.bars_container)
+    
+    def _setup_bars(self):
+        """Создает и размещает все бары согласно конфигурации"""
+        for config in self.bars_config:
+            self._add_bar_from_config(config)
+    
+    def _create_bar(self, config: dict) -> ScheduledSegmentedBar:
+        """Создает один ScheduledSegmentedBar из конфигурации"""
+        bar = ScheduledSegmentedBar(
+            segment_number=config.get("segment_number", 30),
+            loop=config.get("loop", False),
+            base_thickness=config.get("base_thickness", 20),
+            curve=config.get("curve", 0)
+        )
+        
+        # Устанавливаем ширину
+        width = config.get("width", 300)
+        bar.setFixedWidth(width)
+        
+        return bar
+    
+    def _add_bar_from_config(self, config: dict):
+        """Добавляет бар из конфигурации"""
+        bar = self._create_bar(config)
+        
+        # Оборачиваем бар в контейнер с поворотом
+        rotation = config.get("rotation", 0)
+        container = RotatableBarContainer(bar, rotation)
+        
+        # Позиционируем контейнер
+        x = config.get("x", 0)
+        y = config.get("y", 0)
+        container.setParent(self.bars_container)
+        container.move(x, y)
+        container.show()
+        
+        # Сохраняем информацию
+        bar_info = {
+            "widget": bar,
+            "container": container,
+            "config": config.copy()
+        }
+        self.bars.append(bar_info)
+        
+        # Устанавливаем расписание если есть
+        schedule = config.get("schedule")
+        if schedule:
+            bar.set_schedule(schedule)
+    
+    def add_bar(self, config: dict):
+        """Добавляет новый бар в окно"""
+        self._add_bar_from_config(config)
+        self.adjustSize()
+    
+    def remove_bar(self, index: int):
+        """Удаляет бар по индексу"""
+        if 0 <= index < len(self.bars):
+            bar_info = self.bars.pop(index)
+            bar_info["container"].deleteLater()
+            self.adjustSize()
+    
+    def update_bar_config(self, index: int, config: dict):
+        """Обновляет конфигурацию бара по индексу"""
+        if 0 <= index < len(self.bars):
+            bar_info = self.bars[index]
+            
+            # Обновляем позицию
+            if "x" in config or "y" in config:
+                x = config.get("x", bar_info["config"]["x"])
+                y = config.get("y", bar_info["config"]["y"])
+                bar_info["container"].move(x, y)
+                bar_info["config"]["x"] = x
+                bar_info["config"]["y"] = y
+            
+            # Обновляем поворот
+            if "rotation" in config:
+                bar_info["container"].set_rotation(config["rotation"])
+                bar_info["config"]["rotation"] = config["rotation"]
+            
+            # Обновляем ширину
+            if "width" in config:
+                bar_info["widget"].setFixedWidth(config["width"])
+                bar_info["container"].setFixedSize(config["width"], bar_info["widget"].height())
+                bar_info["config"]["width"] = config["width"]
+            
+            # Обновляем расписание
+            if "schedule" in config:
+                bar_info["widget"].set_schedule(config["schedule"])
+                bar_info["config"]["schedule"] = config["schedule"]
+    
+    def move_bar(self, index: int, x: int, y: int):
+        """Перемещает бар в новую позицию"""
+        self.update_bar_config(index, {"x": x, "y": y})
+    
+    def rotate_bar(self, index: int, angle: float):
+        """Поворачивает бар на указанный угол"""
+        self.update_bar_config(index, {"rotation": angle})
+    
+    def play_all(self, start_offset_ms: int = 0):
+        """Запускает все бары"""
+        for bar_info in self.bars:
+            bar_info["widget"].play(start_offset_ms)
+    
+    def stop_all(self, clear_levels: bool = True):
+        """Останавливает все бары"""
+        for bar_info in self.bars:
+            bar_info["widget"].stop(clear_levels)
+    
+    def set_all_schedules(self, schedule):
+        """Устанавливает одинаковое расписание для всех баров"""
+        for bar_info in self.bars:
+            bar_info["widget"].set_schedule(schedule)
+    
+    def get_bar(self, index: int) -> ScheduledSegmentedBar:
+        """Возвращает виджет бара по индексу"""
+        if 0 <= index < len(self.bars):
+            return self.bars[index]["widget"]
+        return None
+    
+    def set_container_size(self, width: int, height: int):
+        """Изменяет размер контейнера для баров"""
+        self.window_width = width
+        self.window_height = height
+        self.bars_container.setFixedSize(width, height)
+        self.adjustSize()
+
+
+# Пример использования:
+"""
+# Создание конфигурации баров
+bars_config = [
+    {
+        "x": 50,
+        "y": 50,
+        "rotation": 0,
+        "segment_number": 30,
+        "loop": True,
+        "base_thickness": 20,
+        "curve": 0,
+        "width": 400,
+        "schedule": [
+            {"start": 0, "duration": 1000, "brightness": 100, "segments": [0, 1, 2, 3, 4]}
+        ]
+    },
+    {
+        "x": 100,
+        "y": 150,
+        "rotation": 45,
+        "segment_number": 20,
+        "loop": False,
+        "base_thickness": 15,
+        "curve": 20,
+        "width": 300,
+        "schedule": [
+            {"start": 500, "duration": 1500, "brightness": 80, "segments": list(range(20))}
+        ]
+    },
+    {
+        "x": 50,
+        "y": 250,
+        "rotation": -30,
+        "segment_number": 40,
+        "loop": True,
+        "base_thickness": 25,
+        "curve": 10,
+        "width": 500,
+        "schedule": [
+            {"start": 0, "duration": 2000, "brightness": 100, "end_brightness": 0}
+        ]
+    }
+]
+
+# Создание окна
+window = FloatingScheduledBars(
+    title="Scheduled Bars Demo",
+    bars_config=bars_config,
+    window_width=600,
+    window_height=500,
+    bpm=120,
+    player=None
+)
+
+# Запуск всех баров
+window.play_all()
+
+# Перемещение бара
+window.move_bar(0, 100, 80)
+
+# Поворот бара
+window.rotate_bar(1, 90)
+
+# Обновление конфигурации
+window.update_bar_config(0, {
+    "rotation": 15,
+    "schedule": [...]
+})
+
+# Добавление нового бара
+window.add_bar({
+    "x": 200,
+    "y": 300,
+    "rotation": 90,
+    "segment_number": 25,
+    "width": 350,
+    "curve": 15
+})
+
+# Изменение размера контейнера
+window.set_container_size(800, 600)
+
+window.show()
+"""
