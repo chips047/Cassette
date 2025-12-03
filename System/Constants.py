@@ -266,16 +266,16 @@ SettingsDict = {
         },
         {
             "type": "selector",
-            "title": "Default Scaling (ms / px)",
+            "title": "Default Scaling",
             "key": "default_scaling",
             "map": {
-                "100": 100,
-                "200": 200,
-                "300": 300,
-                "400": 400,
-                "500": 500
+                "Very small": 100,
+                "Small": 200,
+                "Medium": 300,
+                "Big": 400,
+                "Very big": 500
             },
-            "default": "200"
+            "default": "Very big"
         }
     ],
 
@@ -347,7 +347,7 @@ SettingsDict = {
             "map": {
                 "Smooth": "smooth",
                 "Bouncy": "bouncy",
-                "Sharp": "sharp"
+                "Roll": "roll"
             },
             "default": "Bouncy"
         },
