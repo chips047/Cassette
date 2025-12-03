@@ -331,6 +331,10 @@ class Controls:
             border: {Metrics.glass_border_thick}px solid {Colors.glass_border};
             min-height: {Metrics.element_height}px;
         }}
+
+        DraggableValueControl:hover {{
+            background-color: {Colors.third_background}; 
+        }}
     """
     
     CycleButton = f"""
@@ -345,6 +349,18 @@ class Controls:
         }}
     """
     
+    MiniWaveformPreview = f"""
+        MiniWaveformPreview {{
+            background-color: {Colors.secondary_background};
+            border-radius: {Roundings.button}px;
+            border: {Metrics.glass_border_thick}px solid {Colors.glass_border};
+            min-height: {Metrics.element_height}px;
+        }}
+        MiniWaveformPreview:hover {{
+            background-color: {Colors.third_background}; 
+        }}
+    """
+
     Checkbox = f"""
         QCheckBox {{
             spacing: 8px;
