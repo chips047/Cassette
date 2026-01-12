@@ -2,7 +2,7 @@
 
 # Cassette
 
-**Create stunning Glyphtones — easier than ever.**
+**Shine vintage.**
 
 It’s an early release: it works well but can be temperamental. If you enjoy experimenting, welcome aboard.
 
@@ -20,9 +20,21 @@ It’s an early release: it works well but can be temperamental. If you enjoy ex
 Recommended for a smooth experience:
 
 * **Memory**: 8 GB RAM or more
-* **CPU**: 4-core processor
+* **CPU**: 4 - core processor
 * **Clock speed**: 2.0 GHz or higher
-* **Free disk space**: 1 GB+
+* **Free disk space**: 500 MB+
+
+**Requires installed FFMpeg:**
+- **Windows**\
+PowerShell: `winget install ffmpeg`
+
+- **Linux**\
+**Arch:** `sudo pacman -S ffmpeg`\
+**Ubuntu:** `sudo apt install ffmpeg`\
+**Fedora:** `sudo dnf install ffmpeg`\
+**Debian:** `sudo apt install ffmpeg`
+
+- [You can also check FFMpeg packages here.](https://ffmpeg.org/download.html)
 
 ## Installation and running
 
@@ -52,26 +64,20 @@ To enable live ringtone preview on a connected phone:
 ## FAQ & Troubleshooting
 
 ### Error: `Failed to build Aubio==0.4.9`
-
-Possible causes and steps:
-
-1. Make sure you are using **Python 3.10** — many prebuilt wheels target that version.
-2. Consider installing aubio via your OS package manager or use Conda for prebuilt binaries.
+- Make sure you are using **Python 3.10** - prebuilt wheels target that version.
 
 ### Phone not detected by Cassette
 
 1. Try a different cable and port. Some cables are power - only.
-2. Confirm Cassette Receiver is installed on the phone.
+2. Confirm Cassette Receiver is installed on the phone. But, you don't have to start it.
 3. Ensure USB debugging is enabled and the phone has accepted the PC's connection.
-
-### Can we get more effects?
-
-New effects are in development. In the meantime, you can layer effects by placing one glyph, applying effect A, then placing another glyph on top with effect B.
 
 ## Roadmap
 
 * Undo / Redo
 * Glyph UI preview window
+* Import from BNGC and Audacity Label File.
+* MAYBE an auto ringtone creator.
 
 ## Contact
 - Discord only: **chips047**
