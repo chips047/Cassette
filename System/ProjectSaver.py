@@ -231,17 +231,36 @@ class Composition(BaseComposition):
         return self.last_glyph_id, glyph
 
     def get_glyph(self, glyph_id: int):
-        return self.glyphs.get(glyph_id, "NOT FOUND")
+        return self.glyphs.get(glyph_id)
 
-    def copy_glyph(self, glyph: dict, offset: int = 0) -> int:
-        new_glyph = glyph.copy()
-        new_glyph["start"] = max(0, new_glyph["start"] + offset)
+    def copy_glyph(self, glyph: dict, offset: int = 0, audio_ms: int | None = None):
+        new_glyph = copy.deepcopy(glyph)
+
+        start = glyph["start"] + offset
+        duration = glyph["duration"]
+
+        if audio_ms is not None:
+            audio_ms = int(audio_ms)
+
+            if start >= audio_ms:
+                return None, None
+
+            end = start + duration
+
+            if end > audio_ms:
+                duration = audio_ms - start
+
+        if duration < 10:
+            return None, None
+
+        new_glyph["start"] = start
+        new_glyph["duration"] = duration
 
         self.last_glyph_id += 1
         new_id = self.last_glyph_id
-
         self.glyphs[new_id] = new_glyph
-        return new_id
+
+        return new_id, new_glyph
 
     def save(self):
         save_path = Utils.get_songs_path(f"{self.id}/Save.json")
@@ -286,6 +305,9 @@ class Composition(BaseComposition):
     
     def update_bunch_of_glyphs(self, data: dict):
         self.glyphs.update(data)
+    
+    def delete_bunch_of_glyphs(self, keys):
+        self.glyphs.delete_keys(keys)
     
     def replace_glyph(self, id, data: dict):
         self.glyphs[id] = data
