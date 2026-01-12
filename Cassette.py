@@ -1,41 +1,19 @@
-try:
-    import os
-    import sys
-    import traceback
-    
-    #sys.stdout = open(os.devnull, 'w')
-    #sys.stderr = open(os.devnull, 'w')
-    
-    #os.environ["QT_FONT_DPI"] = "120"
-    #os.environ["QT_SCALE_FACTOR"] = "2"
+import os
+import sys
+        
+pid = os.getpid()
+print(f"Cassette PID is {pid}")
 
-    def excepthook(type, value, tb):
-        print("PYTHON DIED:", value, "".join(traceback.format_tb(tb)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(BASE_DIR)
+sys.path.insert(0, BASE_DIR)
 
-    sys.excepthook = excepthook
-    
-    import faulthandler
-    faulthandler.enable()
+from PyQt5.QtGui import *
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
 
-    from PyQt5.QtGui import *
-    from PyQt5.QtCore import *
-    from PyQt5.QtWidgets import *
-
-    from PyQt5.QtCore import qInstallMessageHandler
-
-    def handler(msg_type, msg_log_context, message):
-        print("QT SAYS:", message)
-
-    qInstallMessageHandler(handler)
-
-    
-    
-    from System import Styles
-
-except ModuleNotFoundError as e:
-    from System import Utils
-
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+from loguru import logger    
+from System import Styles
 
 QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
@@ -44,12 +22,33 @@ QApplication.setAttribute(Qt.AA_UseDesktopOpenGL)
 app = QApplication(sys.argv)
 
 from System import Utils
-from loguru import logger
 from System.Constants import *
+
+prepare_default_settings(SettingsDict)
+load_settings()
+
+if CurrentSettings["msaa"]:
+    fmt = QSurfaceFormat()
+    fmt.setSamples(CurrentSettings["msaa"])
+    QSurfaceFormat.setDefaultFormat(fmt)
+
+from System import UI
+from System import Player
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
 
 app.setWindowIcon(Utils.Icons.WindowIcon)
+
+def is_ffmpeg_installed():
+    envdir_list = [os.curdir] + os.environ["PATH"].split(os.pathsep)
+    ffmpeg_found = False
+
+    for envdir in envdir_list:
+        if "ffmpeg" in envdir.lower():
+            ffmpeg_found = True
+            break
+    
+    return ffmpeg_found
 
 class StartupFadeOverlay(QWidget):
     finished = pyqtSignal()
@@ -103,15 +102,12 @@ class ApplicationWindow(QMainWindow):
         self.setWindowTitle("Cassette")
         self.resize(1280, 800)
         logger.info("Starting up...")
-
-        prepare_default_settings(SettingsDict)
-        load_settings()
         
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
         self.main_menu_widget = MainMenu(self)
-        self.compositor_widget = CompositorWidget()
+        self.compositor_widget = CompositorWidget(self)
 
         main_menu_effect = QGraphicsOpacityEffect(self.main_menu_widget)
         main_menu_effect.setOpacity(1.0)
@@ -131,6 +127,12 @@ class ApplicationWindow(QMainWindow):
         self.setStyleSheet(f"background-color: {Styles.Colors.background};")
 
         self.intro_overlay = StartupFadeOverlay(self)
+        
+        if not is_ffmpeg_installed():
+            UI.ErrorWindow(
+                "FFmpeg?",
+                "FFmpeg was not found. Audio can't be loaded, but the main menu will still work.\n\nTo install FFmpeg on Linux, use your package manager, for example:\n-- Ubuntu/Debian: sudo apt install ffmpeg\n-- Arch: sudo pacman -S ffmpeg\n-- Fedora: sudo dnf install ffmpeg\n\nTo install FFmpeg on Windows, use PowerShell:\n-- winget install ffmpeg\n\nRestart the app after installation."
+            ).exec_()
 
     def fade_out(self, widget):
         logger.info("Fading out")
@@ -258,10 +260,22 @@ class ApplicationWindow(QMainWindow):
         self.anim_out_compositor.start()
     
     def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+        
         if self.compositor_widget.content_widget.composition:
             self.compositor_widget.content_widget.composition.syncer.exit_app()
         
-        super().closeEvent(event)
+        if Player.player.is_playing:
+            Player.player.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
+        
+            logger.info("Window hidden, app will close in 3 seconds...")
+            QTimer.singleShot(1700, lambda: Utils.ui_sound("Close"))
+            QTimer.singleShot(3000, QApplication.instance().quit)
+        
+        else:
+            Utils.ui_sound("Close")
+            QTimer.singleShot(1800, QApplication.instance().quit)
 
 if __name__ == '__main__':
     if os.path.exists("System/Fonts/NDot57.otf"):
