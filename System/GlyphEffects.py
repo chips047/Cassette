@@ -14,14 +14,16 @@ def parse_effect_args(config: dict, settings_meta: dict) -> dict:
     args = {}
 
     for meta in settings_meta:
-        arg_name = meta.get("key")
-        if not arg_name:
-            continue
+        try:
+            arg_name = meta.get("key")
+            if not arg_name:
+                continue
 
-        value = config.get(meta["key"], 1)
-        print(f"{config}: {arg_name}: VALUE: {value}")
-
-        args[arg_name] = value
+            value = config.get(meta["key"], 1)
+            args[arg_name] = value
+        
+        except Exception as e:
+            print(f"ERROR FOUND - - - {str(e)}")
 
     return args
 
