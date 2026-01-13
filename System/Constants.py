@@ -99,31 +99,15 @@ def is_segmented(track, model):
     return segments.get(model, {}).get(str(track), False)
 
 # ANIMATIONS :))) (ms)
-VALUE_POPUP_IN = 220
-
-TOOLTIP_POPUP_IN = 600
-TOOLTIP_TEXT_FADE_IN = 250
-
 TEXTBOX_SHAKE = 100
 TEXTBOX_SHAKE_PER = 30
 TEXTBOX_INPUT = 250
-
-DIALOG_POPUP_IN = 550
-DIALOG_POPUP_OUT = 300
-DIALOG_POPUP_FADEOUT = 100
 
 # Perfomance
 TILE_SIZE = 1024
 
 # Compositor Defaults
-DEFAULT_SCALING = 200.0
-
-GLYPH_RESIZE_SENSITIVITY = 10
-ARROW_KEY_INCREMENT = 1
-
 STATUS_BAR_DEFAULT = f"Cassette {open('version').read()}"
-
-SAMPLING_RATE = 22050
 
 # Qt Timer FPS
 FPS_60 = 16
@@ -227,12 +211,31 @@ DEFAULT_DURATION = 100
 DEFAULT_BRIGHTNESS = 100
 
 SettingsDict = {
-    "Visuals and Performance": [
+    "Performance": [
         {
             "type": "checkbox",
-            "title": "Antialiasing",
+            "title": "CPU Antialiasing",
             "key": "antialiasing",
-            "description": "Strongly affects performance on weak computers.",
+            "description": "Antialiasing on CPU rendered components.",
+            "default": True
+        },
+        {
+            "type": "selector",
+            "title": "OpenGL MSAA: Requires restart.",
+            "key": "msaa",
+            "map": {
+                "No MSAA": 0,
+                "2x": 2,
+                "4x": 4,
+                "8x": 8
+            },
+            "default": "4x"
+        },
+        {
+            "type": "checkbox",
+            "title": "Compositor GPU Rendering",
+            "key": "gpu",
+            "description": "Significantly improves smoothness. Beta feature. Requires restart.",
             "default": True
         },
         {
@@ -240,82 +243,15 @@ SettingsDict = {
             "title": "Waveform Tile Width",
             "key": "tile_width",
             "map": {
+                "256": 256,
                 "512": 512,
-                "1024": 1024,
-                "2048": 2048
+                "1024": 1024
             },
-            "default": "1024"
-        },
-        {
-            "type": "selector",
-            "title": "Waveform Smoothing",
-            "key": "waveform_smoothing",
-            "map": {
-                "Accuracy": 0.5,
-                "Balance": 1.7,
-                "Smooth": 3
-            },
-            "default": "Balance"
-        },
-        {
-            "type": "checkbox",
-            "title": "Center Playhead",
-            "description": "Move the playhead to the center.",
-            "key": "center_playhead",
-            "default": False
-        },
-        {
-            "type": "selector",
-            "title": "Default Scaling",
-            "key": "default_scaling",
-            "map": {
-                "Very small": 100,
-                "Small": 200,
-                "Medium": 300,
-                "Big": 400,
-                "Very big": 500
-            },
-            "default": "Very big"
+            "default": "512"
         }
     ],
 
-    "Connectivity & Devices": [
-        {
-            "type": "checkbox",
-            "title": "Device Auto - Search",
-            "key": "auto_search",
-            "description": "Automatically searches for a connected Nothing Phone.",
-            "default": True
-        }
-    ],
-
-    "User Experience": [
-        {
-            "type": "checkbox",
-            "title": "Disable sounds",
-            "key": "disable_sounds",
-            "description": "All UI sounds will be disabled :(",
-            "default": False
-        },
-        {
-            "type": "slider",
-            "title": "Playhead Arrow Move Increment",
-            "min": 1,
-            "max": 10,
-            "key": "arrow_increment",
-            "default": 1
-        },
-        {
-            "type": "textbox",
-            "title": "Audio Compensation Delay (ms)",
-            "min": 0,
-            "max": 2000,
-            "key": "audio_delay",
-            "default": "0"
-        }
-    ],
-
-    "Animations": [
+    "Interface": [
         {
             "type": "selector",
             "title": "Animation Multiplier",
@@ -335,14 +271,21 @@ SettingsDict = {
         },
         {
             "type": "checkbox",
-            "title": "Reduce Animations",
-            "key": "reduce_animations",
-            "description": "Reduce all these cool animations :(",
-            "default": False
+            "title": "Textbox Animations",
+            "key": "textbox_animations",
+            "description": "Enables textbox animations.",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Floating Window Animations",
+            "key": "floating_window_animations",
+            "description": "Enables popup background animations.",
+            "default": True
         },
         {
             "type": "selector",
-            "title": "Animation Character",
+            "title": "Animation Style",
             "key": "animation_style",
             "map": {
                 "Smooth": "smooth",
@@ -356,11 +299,135 @@ SettingsDict = {
             "title": "Window Hover Smoothing",
             "key": "window_hover_smoothing",
             "map": {
-                "Slow": "slow",
-                "Normal": "normal",
-                "No Smoothing": "no_smoothing"
+                "Slow": "0.07",
+                "Normal": "0.2",
+                "Very Fast": "0.8"
             },
             "default": "Normal"
+        },
+        {
+            "type": "checkbox",
+            "title": "Glyph 3D Tilt",
+            "description": "Enables 3D tilt when resizing or moving a glyph.",
+            "key": "glyph_tilt_animation",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Glyph Spawn Animation",
+            "description": "Enables animations when spawning or despawning a glyph.",
+            "key": "glyph_spawn_animation",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Marquee Smoothing",
+            "description": "Makes the marquee selector smooth and fluid.",
+            "key": "marquee_smoothing",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Marquee Hide Animation",
+            "description": "Enables the marquee hide/damping animation.",
+            "key": "marquee_hide_animation",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "BPM Animations",
+            "description": "Enables beat - synced animations.",
+            "key": "bpm_animations",
+            "default": True
+        }
+    ],
+
+    "User Experience": [
+        {
+            "type": "slider",
+            "title": "Playhead Arrow Increment",
+            "min": 1,
+            "max": 10,
+            "key": "arrow_increment",
+            "default": 1
+        },
+        {
+            "type": "slider",
+            "title": "Zoom Step (on Wheel)",
+            "min": 1,
+            "max": 100,
+            "key": "zoom_step",
+            "default": 20
+        },
+        {
+            "type": "selector",
+            "title": "Horizontal Scroll Acceleration",
+            "key": "scroll_acceleration",
+            "map": {
+                "Low": "0.1",
+                "Normal": "0.2",
+                "High": "0.4"
+            },
+            "default": "Normal"
+        },
+        {
+            "type": "checkbox",
+            "title": "Disable Sounds",
+            "key": "disable_sounds",
+            "description": "Disables all UI sounds.",
+            "default": False
+        },
+        {
+            "type": "checkbox",
+            "title": "Sound Tone Effects",
+            "description": "Enables dynamic tonal variation for UI sounds.",
+            "key": "sound_tone_effects",
+            "default": True
+        },
+        {
+            "type": "selector",
+            "title": "Waveform Smoothing",
+            "key": "waveform_smoothing",
+            "map": {
+                "Accuracy": 0.5,
+                "Balance": 1.7,
+                "Smooth": 3
+            },
+            "default": "Balance"
+        },
+        {
+            "type": "selector",
+            "title": "Playhead Position",
+            "key": "playhead_position",
+            "map": {
+                "Left": 0.25,
+                "Center": 0.5,
+                "Right": 0.75
+            },
+            "default": "Left"
+        },
+        {
+            "type": "selector",
+            "title": "Default Scaling",
+            "key": "default_scaling",
+            "map": {
+                "Very small": 100,
+                "Small": 200,
+                "Medium": 300,
+                "Big": 400,
+                "Very big": 500
+            },
+            "default": "Very big"
+        }
+    ],
+
+    "Devices": [
+        {
+            "type": "checkbox",
+            "title": "Device Auto - Search",
+            "key": "auto_search",
+            "description": "Automatically searches for a connected Nothing Phone.",
+            "default": True
         }
     ]
 }
