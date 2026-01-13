@@ -128,7 +128,6 @@ class BaseComposition:
         return singles, effects
 
     def prepare_cropped_audio(self, audio_path: str | None = None):
-        print(f"loaded {audio_path}")
         full_song = AudioSegment.from_file(audio_path)
         audio = full_song[self.start_ms:self.end_ms]
 
@@ -171,7 +170,6 @@ class BaseComposition:
 
         self.export()
         for model in PortVariants[self.model]:
-            print("model ", model)
             self.export(number_model_to_code(model))
         
         Utils.open_file(os.path.abspath(Utils.get_songs_path(str(self.id))))
