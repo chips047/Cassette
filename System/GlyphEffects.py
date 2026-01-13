@@ -147,7 +147,7 @@ def sidebeat(glyph: dict, model: str, bpm: int, part: str):
 def fade_to(glyph: dict, model: str, bpm: int, fade_to_brightness = 100):
     n, segs, duration, start, end, brightness, turned_on_segs = get_data(glyph, model, True)
     
-    item = {"start": start, "duration": duration, "brightness": brightness, "end_brightness": fade_to_brightness}
+    item = {"start": start, "duration": duration, "brightness": brightness, "end_brightness": fade_to_brightness, "track": n}
     if turned_on_segs:
         item["segments"] = turned_on_segs
     
