@@ -37,7 +37,7 @@ class KeyboardController:
         if key == Qt.Key.Key_Space:
             pos_ms = self.conductor.get_playhead_ms()
             
-            if pos_ms >= self.playback_manager.duration_ms:
+            if pos_ms >= self.playback_manager.duration_ms - 5:
                 pos_ms = 0
                 self.conductor.set_playhead_position_ms(0)
             
@@ -603,7 +603,7 @@ class GlyphItem(QGraphicsObject):
             radius, radius
         )
         
-        debug_mode = False
+        debug_mode = True
         if debug_mode:
             painter.save()
 
@@ -636,12 +636,17 @@ class GlyphItem(QGraphicsObject):
     
     def hoverMoveEvent(self, event):
         x = event.pos().x()
-        width = self.boundingRect().width()
+        visual_width = self._ms_to_px(self.duration_ms)
         
-        if x < self.resize_margin or x > width - self.resize_margin:
+        hit_margin = self.resize_margin
+        
+        if -hit_margin < x < hit_margin:
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         
-        elif 0 < x < width:
+        elif visual_width - hit_margin < x < visual_width + hit_margin:
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+        
+        elif 0 <= x <= visual_width:
             self.setCursor(Qt.CursorShape.OpenHandCursor)
         
         else:
@@ -656,7 +661,7 @@ class GlyphItem(QGraphicsObject):
         self.hover_timer.stop()
         
         if event.button() != Qt.MouseButton.LeftButton:
-            event.ignore()
+            event.accept()
             return
 
         self._drag_start_pos = event.scenePos()
@@ -677,12 +682,12 @@ class GlyphItem(QGraphicsObject):
             return
 
         x = event.pos().x()
-        width = self.boundingRect().width()
+        visual_width = self._ms_to_px(self.duration_ms)
         
         if x < self.resize_margin:
             self._interaction_mode = 'resize_left'
         
-        elif x > width - self.resize_margin:
+        elif x > visual_width - self.resize_margin:
             self._interaction_mode = 'resize_right'
         
         else:
@@ -721,13 +726,6 @@ class GlyphItem(QGraphicsObject):
         
         if not CurrentSettings["glyph_tilt_animation"]:
             return
-        
-        self.group_animate(
-            [
-                self.make_animation([(0.0, self.click_tilt_y), (1.0, 0.0)], b"clickTiltY", 350),
-                self.make_animation([(0.0, self.click_tilt_x), (1.0, 0.0)], b"clickTiltX", 350)
-            ], lambda: self.set_animating(False)
-        )
 
     def _animate_press(self, event):
         self.pulse_animation.start()
@@ -763,9 +761,9 @@ class GlyphItem(QGraphicsObject):
     
         self.group_animate(
             [
-                self.make_animation([(0.0, self.click_tilt_y), (1.0, target_tilt_y)], b"clickTiltY", 350),
-                self.make_animation([(0.0, self.click_tilt_x), (1.0, target_tilt_x)], b"clickTiltX", 350)
-            ]
+                self.make_animation([(0.0, self.click_tilt_y), (0.5, target_tilt_y), (1.0, 0.0)], b"clickTiltY", 700),
+                self.make_animation([(0.0, self.click_tilt_x), (0.5, target_tilt_x), (1.0, 0.0)], b"clickTiltX", 700)
+            ], lambda: self.set_animating(False)
         )
     
     def remove_glyph(self):
@@ -940,6 +938,8 @@ class GlyphController(QObject):
         copied_start_ms = min(data['start'] for data in self.copied_data)
         time_offset = int(current_ms - copied_start_ms)
         audio_ms = self.conductor.playback_manager.duration_ms
+        
+        self.conductor.scene.clearSelection()
 
         for glyph_data in self.copied_data:
             new_id, new_data = self.composition.copy_glyph(
@@ -1119,8 +1119,6 @@ class GlyphController(QObject):
         vx = min(view_pos.x(), viewport.width())
         vx = max(0, vx)
         vy = view_pos.y()
-        
-        print(viewport.mapToGlobal(QPoint(int(vx), int(vy))))
 
         return viewport.mapToGlobal(QPoint(int(vx), int(vy)))
 
@@ -1744,7 +1742,7 @@ class ScrollableContent(QGraphicsView):
 
         painter.end()
         self.waveform_tiles[tile_index] = pixmap
-        print(time.time() - start)
+        
         return pixmap
 
     def control_popup(self, title, label, key, min_val = 1, max_val = None):
@@ -1823,6 +1821,9 @@ class ScrollableContent(QGraphicsView):
 
         effect_name = first_glyph.get("effect", {}).get("name")
         effect_config = GlyphEffects.EffectsConfig.get(effect_name, {})
+        
+        if not effect_name:
+            return self.composition.update_bunch_of_glyphs(updated_glyphs)
         
         if not effect_config["supports_segmentation"]:
             UI.ErrorWindow(
