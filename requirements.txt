@@ -1,5 +1,4 @@
 --find-links ./System/Wheels
-cryptography
 numpy
 pygame
 PyQt5
