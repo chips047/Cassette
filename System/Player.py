@@ -314,7 +314,6 @@ class PlaybackManager(QObject):
         self._stop_on_end = stop_on_end
 
         self._speed_timer.stop()
-        print(interval)
         self._speed_timer.setInterval(int(interval * 1000))
         self._speed_timer.start()
     
@@ -685,7 +684,6 @@ class PlaybackManager(QObject):
             new_speed = self._speed_start + (self._target_speed - self._speed_start) * eased
             self._update_playback_start()
             self.speed = new_speed
-            print(new_speed)
 
             self._speed_step += 1
     
