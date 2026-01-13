@@ -29,7 +29,7 @@ def _proc_load_audio(file_path, queue):
 
 def _proc_analyze_bpm(file_path, queue):
     try:
-        bpm, peaks = Audio.analyze_bpm_and_beat_grid(file_path)
+        bpm, peaks = Audio.analyze_bpm_and_beats(file_path)
         queue.put(("SUCCESS", (bpm, peaks)))
     
     except Exception as e:
@@ -439,8 +439,10 @@ class AudioSetupDialog(UI.FloatingWindow):
 
         self.bpm_anim_timer.stop()
         
+        logger.debug(f"BPM Remove Interval: {round(60000 / bpm / 8)} ({60000 / bpm})")
+        
         self.bpm_input.setPlaceholderText(f"Counting BPM {round(bpm)}")
-        self.bpm_remove_timer.start(60)
+        self.bpm_remove_timer.start(round(60000 / bpm / 4))
 
         if bpm != 0:
             return
@@ -451,7 +453,8 @@ class AudioSetupDialog(UI.FloatingWindow):
         Utils.ui_sound("Gambling")
 
     def get_perfect_width(self):
-        text = str(self.bpm_input.text())
+        text = str(self.bpm_input.text() or self.bpm_input.placeholderText())
+        
         metrics = self.bpm_input.fontMetrics()
         text_width = metrics.horizontalAdvance(text)
 
@@ -520,26 +523,28 @@ class AudioSetupDialog(UI.FloatingWindow):
 
     def _bpm_remove_step(self):
         current = self.bpm_input.placeholderText()
-
         match = re.search(r"\d{2,3}$", current)
-        
-        if match:
-            bpm_digits = match.group()
 
-            if current != bpm_digits:
-                self.bpm_input.setPlaceholderText(current[1:])
+        if not match:
+            return self.bpm_input.setPlaceholderText(current[2:])
+
+        bpm_digits = match.group()
+        bpm_start_index = match.start()
+
+        if current == bpm_digits:
+            self.bpm_remove_timer.stop()
+            self.bpm_input.setText(bpm_digits)
+            self.bpm_input.setPlaceholderText("BPM")
+            self.shrink_bpm_input()
             
-            else:
-                self.bpm_remove_timer.stop()
-                
-                self.bpm_input.setText(bpm_digits)
-                self.bpm_input.setPlaceholderText("BPM")
-                
-                self.shrink_bpm_input()
-        
-        else:
-            self.bpm_input.setPlaceholderText(current[1:])
+            return
 
+        remaining_before_digits = bpm_start_index
+        step = min(2, remaining_before_digits)
+
+        new_text = current[step:]
+        self.bpm_input.setPlaceholderText(new_text)
+    
     def on_bpm_changed(self, value):
         self.update_bpm(int(value))
 
