@@ -20,44 +20,71 @@ def thread_excepthook(args):
 
 threading.excepthook = thread_excepthook
 
-class RepeatingTimer:
-    def __init__(self, callback):
-        self.callback = callback
-        self._stop_event = threading.Event()
-        self._thread = None
-    
-    def connect(self, slot):
-        self.callback = slot
+class FastUISound:
+    def __init__(self, path, loop=False):
+        self.data, self.fs = sf.read(path, dtype='float32')
+        if self.data.ndim == 1:
+            self.data = np.stack([self.data, self.data], axis=-1)
 
-    def setInterval(self, ms):
-        self.interval = ms / 1000
+        self.loop = loop
+        self.position = 0.0
+        self.speed = 1.0
+        self.volume = 1.0
+        self.lock = threading.Lock()
+        self.is_playing = False
 
-    def start(self):
-        if self._thread and self._thread.is_alive():
-            return  
+        self.stream = sd.OutputStream(
+            samplerate=self.fs,
+            channels=self.data.shape[1],
+            blocksize=64,
+            callback=self._callback,
+            latency='low'
+        )
+        self.stream.start()
 
-        self._stop_event.clear()
-        self._thread = threading.Thread(target = self._run, daemon = True)
-        self._thread.start()
+    def _callback(self, outdata, frames, time_info, status):
+        if not self.is_playing:
+            outdata.fill(0)
+            return
 
-    def _run(self):
-        while not self._stop_event.is_set():
-            time.sleep(self.interval)
-            if not self._stop_event.is_set():
-                self.callback()
+        with self.lock:
+            pos = self.position + np.arange(frames) * self.speed
+            idx_int = np.floor(pos).astype(int)
+            idx_frac = pos - idx_int
+            idx_int = np.clip(idx_int, 0, len(self.data) - 2)
 
-        self._thread = None
+            s0 = self.data[idx_int]
+            s1 = self.data[idx_int + 1]
+            outdata[:] = ((1 - idx_frac)[:, None] * s0 + idx_frac[:, None] * s1) * self.volume
+
+            self.position += frames * self.speed
+
+            if self.position >= len(self.data):
+                if self.loop:
+                    self.position %= len(self.data)
+                
+                else:
+                    outdata.fill(0)
+                    raise sd.CallbackStop()
+
+    def play(self, speed=1.0, volume=1.0):
+        with self.lock:
+            self.speed = speed
+            self.volume = volume
+            self.position = 0.0
+            self.is_playing = True
 
     def stop(self):
-        self._stop_event.set()
-        self._thread = None
+        self.is_playing = False
 
-class Player:
+class PlaybackManager(QObject):
+    playback_state_changed = pyqtSignal(bool)
+    audio_loaded = pyqtSignal(np.ndarray, int, float)
+    
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.is_playing = False
-        
         self.playback_start_audio_ms = 0
         self.playback_start_wall_time = 0 # Why do I use this? Because some players update their UI 120 frames per second. And for smoothness we need smooth timing.
         
@@ -65,10 +92,18 @@ class Player:
         self.stream = None
         self.lock = threading.RLock()
 
-        self._mid_timer = RepeatingTimer(self._midpass_tick)
-        self._bc_timer = RepeatingTimer(self._bitcrush_tick)
-        self._speed_timer = RepeatingTimer(self._speed_tick)
-        self._volume_timer = RepeatingTimer(self._volume_tick)
+        self._delay_timer = QTimer()
+        self._mid_timer = QTimer()
+        self._bc_timer = QTimer()
+        self._speed_timer = QTimer()
+        self._volume_timer = QTimer()
+        
+        self._delay_timer.timeout.connect(self._delay_tick)
+        self._mid_timer.timeout.connect(self._midpass_tick)
+        self._bc_timer.timeout.connect(self._bitcrush_tick)
+        self._speed_timer.timeout.connect(self._speed_tick)
+        self._volume_timer.timeout.connect(self._volume_tick)
+        self._mid_timer.timeout.connect(self._midpass_tick)
     
     def _setup_parameters(self):
         self.fade_factor = 1.0
@@ -101,7 +136,6 @@ class Player:
         self._bitcrush_state = None
 
         self._channel_delays_ms = np.array([0.0, 0.0], dtype='float64')
-        self._delay_timer = RepeatingTimer(self._delay_tick)
         self._delay_steps = 0
         self._delay_step = 0
         self._delay_start = np.array([0.0, 0.0], dtype='float64')
@@ -112,6 +146,10 @@ class Player:
 
     def load_audio(self, path):
         try:
+            if self.stream:
+                self.cleanup()
+                logger.warning("Loading audio: Player has been automatically cleaned up")
+            
             self._setup_parameters()
 
             self.data, self.fs = sf.read(path, dtype='float32')
@@ -136,6 +174,8 @@ class Player:
                 self._filter_states = np.zeros((channels, 4), dtype='float64')
 
             self.stream.start()
+            
+            self.audio_loaded.emit(self.data, self.fs, len(self.data) / self.fs)
         
         except Exception as e:
             logger.error(f"Something went wrong while loading the audio: {traceback.format_exc()}")
@@ -241,11 +281,15 @@ class Player:
         else:
             self.play(ms)
     
-    def stop(self):
+    def stop(self):        
         with self.lock:
             self.is_playing = False
+
+        self.playback_state_changed.emit(False)
     
     def play(self, start_pos_ms):
+        self.playback_state_changed.emit(True)
+        
         with self.lock:
             self.position = int(start_pos_ms * self.fs / 1000)
             self.is_playing = True
@@ -270,7 +314,8 @@ class Player:
         self._stop_on_end = stop_on_end
 
         self._speed_timer.stop()
-        self._speed_timer.setInterval(interval * 1000)
+        print(interval)
+        self._speed_timer.setInterval(int(interval * 1000))
         self._speed_timer.start()
     
     def set_volume(self, volume, duration = 0.0, steps = 50):
@@ -287,16 +332,19 @@ class Player:
         self._volume_start = self.volume
 
         self._volume_timer.stop()
-        self._volume_timer.setInterval(interval * 1000)
+        self._volume_timer.setInterval(int(interval * 1000))
         self._volume_timer.start()
 
     def audio_callback(self, outdata, frames, time_info, status):
-        try:
-            if not self.is_playing:
-                outdata.fill(0)
-                return
+        if status:
+            logger.warning(f"Audio callback status: {status}")
 
+        try:
             with self.lock:
+                if not self.is_playing or self.data is None:
+                    outdata.fill(0)
+                    return
+                
                 pos = self.position + np.arange(frames) * self.speed
                 fade = self.fade_factor
                 local_volume = self.volume
@@ -419,7 +467,7 @@ class Player:
             with self.lock:
                 self.position += frames * self.speed
                 if self.position >= len(self.data):
-                    self.is_playing = False
+                    self.stop()
         
         except Exception as e:
             logger.error(f"Failed to play the audio block: {traceback.format_exc()}")
@@ -436,7 +484,7 @@ class Player:
             end_speed = None,
             start_ms = None,
             duration = 1.5,
-            steps = 50,
+            steps = 100,
             cleanup_on_finish = False
         ):
 
@@ -599,7 +647,6 @@ class Player:
 
             self._mid_timer.stop()
             self._mid_timer.setInterval(interval_ms)
-            self._mid_timer.connect(self._midpass_tick)
             self._mid_timer.start()
     
     def _volume_tick(self):
@@ -638,6 +685,7 @@ class Player:
             new_speed = self._speed_start + (self._target_speed - self._speed_start) * eased
             self._update_playback_start()
             self.speed = new_speed
+            print(new_speed)
 
             self._speed_step += 1
     
@@ -709,25 +757,6 @@ class Player:
 
         self._mid_step += 1
     
-    def cleanup(self):
-        with self.lock:
-            self._bc_timer.stop()
-            self._mid_timer.stop()
-            self._speed_timer.stop()
-            self._volume_timer.stop()
-
-            if self.stream:
-                self.stream.stop()
-                self.stream.close()
-                self.stream = None
-
-class PlaybackManager(QObject, Player):
-    playback_state_changed = pyqtSignal(bool)
-    audio_loaded = pyqtSignal(np.ndarray, int, float)
-
-    def __init__(self):
-        super().__init__()
-    
     def toggle_playback(self, ms = None):
         if self.is_playing:
             self.stop()
@@ -735,14 +764,30 @@ class PlaybackManager(QObject, Player):
         else:
             self.play(ms)
     
-    def stop(self):
-        self.playback_state_changed.emit(False)
-        return super().stop()
+    def cleanup(self):
+        with self.lock:
+            try:
+                if self.stream:
+                    self.stream.abort()
+                    self.stream.close()
+                    self.stream = None
+            
+            except Exception:
+                logger.error(f"Error during stream cleanup: {traceback.format_exc()}")
+            
+            self.stream = None
+            
+            self._bc_timer.stop()
+            self._mid_timer.stop()
+            self._speed_timer.stop()
+            self._volume_timer.stop()
 
-    def play(self, start_pos_ms):
-        self.playback_state_changed.emit(True)
-        return super().play(start_pos_ms)
+            self.is_playing = False
 
-    def load_audio(self, path):
-        super().load_audio(path)
-        self.audio_loaded.emit(self.data, self.fs, len(self.data) / self.fs)
+            self.data = None
+            self.fs = None
+            self._filter_states = None
+            self._bitcrush_state = None
+            self.position = 0.0
+
+player = PlaybackManager()
