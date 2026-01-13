@@ -1463,25 +1463,26 @@ class Textbox(QLineEdit):
         new_char = event.text()
 
         if CurrentSettings["textbox_animations"] and not self.arrow_pressed and cur_text:
-            if key == Qt.Key_Left:
-                tone = 0.85 + (self.cursorPosition() / len(super().text())) * 0.4
-                print(tone)
+            if key in (Qt.Key_Left, Qt.Key_Right):
+                pos = self.cursorPosition()
+                
+                if key == Qt.Key_Left:
+                    pos -= 1
+                
+                elif key == Qt.Key_Right:
+                    pos += 1
+                
+                direction = -1 if key == Qt.Key_Left else 1
+                tone = 0.85 + (pos / len(cur_text)) * 0.4
+                
+                print(f"{'Left' if direction == -1 else 'Right'} key | Tone {tone}")
 
                 Utils.ui_sound("ArrowTick", tone)
                 self.arrow_pressed = True
-                self.arrow_direction = -1
-                self.animate_arrow_hold(-6)
+                self.arrow_direction = direction
                 
-                return super().keyPressEvent(event)
-            
-            if key == Qt.Key_Right:
-                tone = 0.85 + (self.cursorPosition() / len(super().text())) * 0.4
+                self.animate_arrow_hold(6 * direction)
 
-                Utils.ui_sound("ArrowTick", tone)
-                self.arrow_pressed = True
-                self.arrow_direction = 1
-                self.animate_arrow_hold(6)
-                
                 return super().keyPressEvent(event)
 
         control_keys = {
