@@ -206,7 +206,7 @@ class FadeScrollArea(QScrollArea):
             self._animations[widget].stop()
 
         animation = QPropertyAnimation(widget, b"opacity")
-        animation.setDuration(250)
+        animation.setDuration(175)
         animation.setStartValue(current_opacity)
         animation.setEndValue(target_opacity)
         
@@ -406,7 +406,7 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        UI.DialogInputWindow("Shit.").exec_()
+        UI.TestWindow().exec_()
     
     def on_about(self):
         UI.About().exec_()
@@ -489,3 +489,7 @@ class MainMenu(QWidget):
             layout.addWidget(track_item, row, col)
         
         return widget
+
+    def showEvent(self, event):
+        self.refresh_tracks()
+        super().showEvent(event)
