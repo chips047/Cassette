@@ -36,7 +36,6 @@ def prepare_default_settings(setting_components):
 
                 elif element_type.startswith("selector"):
                     default_val = element_params["map"][element_params["default"]]
-                    print(default_val, "bruhhh")
                 
                 else:
                     default_val = None
