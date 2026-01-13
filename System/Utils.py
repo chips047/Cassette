@@ -181,10 +181,11 @@ def ui_sound(name, tone=None):
         array = pygame.sndarray.array(sound)
 
         rate = np.random.uniform(0.97, 1.03)
+        
         if tone:
             rate = tone
 
-        if tone == 1:
+        if tone == 1 or not CurrentSettings["sound_tone_effects"]:
             sound.play()
             return
 
@@ -195,6 +196,7 @@ def ui_sound(name, tone=None):
             array_resample = array.mean(axis=1)
 
         new_length = int(len(array_resample) / rate)
+        
         resampled = np.interp(
             np.linspace(0, len(array_resample), new_length),
             np.arange(len(array_resample)),
@@ -232,3 +234,39 @@ def auto_cast(value: str):
         pass
 
     return value
+
+class Animations:
+    def make_animation(object, keyframes: list, property: bytes, duration: int, curve: QEasingCurve = QEasingCurve.OutCubic, loop = False, finished = None):
+        anim = QPropertyAnimation(object, property)
+        anim.setDuration(duration)
+        anim.setKeyValues(keyframes)
+        anim.setEasingCurve(curve)
+        
+        if loop:
+            anim.setLoopCount(-1)
+        
+        if finished:
+            anim.finished.connect(finished)
+
+        return anim
+    
+    def group_animate(animations, finished = None, valueChanged = None, multiplier = 1.0):
+        anim_group = QParallelAnimationGroup()
+
+        if multiplier == 1.0:
+            multiplier = float(CurrentSettings["animation_multiplier"])
+
+        if multiplier != 1.0:
+            for animation in animations:
+                animation.setDuration(int(animation.duration() * multiplier))
+
+        for animation in animations:
+            if valueChanged:
+                animation.valueChanged.connect(valueChanged)
+            
+            anim_group.addAnimation(animation)
+        
+        if finished:
+            anim_group.finished.connect(finished)
+
+        return anim_group
