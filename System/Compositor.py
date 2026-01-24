@@ -256,21 +256,25 @@ class MarqueeItem(QGraphicsObject):
         if not self.isVisible():
             return
 
-        lerp_factor = 0.15 if CurrentSettings["marquee_smoothing"] else 0.5
-        lerp_factor_damper = 0.15
+        lerp_factor = (0.15 if CurrentSettings["marquee_smoothing"] else 0.5) if not self.player.is_playing else 1.0
+
+        if lerp_factor >= 1.0:
+            new_curr_pos = self._target_pos
         
-        new_curr_x = self._lerp(self._current_pos.x(), self._target_pos.x(), lerp_factor)
-        new_curr_y = self._lerp(self._current_pos.y(), self._target_pos.y(), lerp_factor)
-        new_curr_pos = QPointF(new_curr_x, new_curr_y)
+        else:
+            new_curr_x = self._lerp(self._current_pos.x(), self._target_pos.x(), lerp_factor)
+            new_curr_y = self._lerp(self._current_pos.y(), self._target_pos.y(), lerp_factor)
+            new_curr_pos = QPointF(new_curr_x, new_curr_y)
 
         if self._is_closing:
             if not CurrentSettings["marquee_hide_animation"]:
                 return self._finish_and_hide()
-            
+
+            lerp_factor_damper = 0.15
             new_start_x = self._lerp(self._start_pos.x(), self._target_pos.x(), lerp_factor_damper)
             new_start_y = self._lerp(self._start_pos.y(), self._target_pos.y(), lerp_factor_damper)
             new_start_pos = QPointF(new_start_x, new_start_y)
-
+        
         else:
             new_start_pos = self._start_pos
 
@@ -603,7 +607,7 @@ class GlyphItem(QGraphicsObject):
             radius, radius
         )
         
-        debug_mode = True
+        debug_mode = False
         if debug_mode:
             painter.save()
 
@@ -895,10 +899,21 @@ class GlyphController(QObject):
     
     def spawn_glyph(self, event):
         key = event.key()
+        
         track_index = self.track_key_map.get(key)
-        current_ms = int(self.conductor.get_playhead_ms())
         
         if track_index is None:
+            return
+        
+        audio_duration = self.conductor.playback_manager.duration_ms
+        current_ms = self.conductor.get_playhead_ms()
+
+        default_duration = self.composition.duration_ms
+
+        remaining_time = max(0, audio_duration - current_ms)
+        actual_duration = min(default_duration, remaining_time)
+
+        if actual_duration <= 0:
             return
         
         if int(track_index) > self.composition.track_number:
@@ -906,7 +921,8 @@ class GlyphController(QObject):
         
         new_id, new_data = self.composition.new_glyph(
             track_index,
-            current_ms
+            current_ms,
+            actual_duration
         )
         
         self._create_glyph_item(new_id, new_data)
@@ -1233,6 +1249,24 @@ class InteractionHandler:
         if self.conductor.get_playhead_position_px() != new_x:
             self.conductor.set_playhead_position_px(new_x)
 
+    def _handle_ruler_hover(self, event):
+        y = event.y()
+        
+        playhead_hover = self.conductor.playhead_hover
+        waveform_end = Styles.Metrics.Waveform.height + Styles.Metrics.Tracks.ruler_height
+        
+        if waveform_end > y > 0:
+            if not playhead_hover.isVisible():
+                playhead_hover.show()
+            
+            scene_x = self.conductor.mapToScene(event.pos())
+            
+            playhead_hover.setPos(scene_x.x(), 0)
+        
+        else:
+            if playhead_hover.isVisible():
+                playhead_hover.hide()
+
     def process_mouse_press_event(self, event: QMouseEvent):
         ruler_or_waveform_rect = QRectF(
             0, 0, self.conductor.width(),
@@ -1259,25 +1293,32 @@ class InteractionHandler:
 
     def process_mouse_move_event(self, event: QMouseEvent):
         self.marquee_tick(event)
+        self._handle_ruler_hover(event)
     
     def process_mouse_release_event(self, event: QMouseEvent):
         self.end_marquee(event)
+    
+    def process_mouse_leave_event(self, event: QMouseEvent):
+        playhead_hover = self.conductor.playhead_hover
+        playhead_hover.hide()
 
 class PlayheadItem(QGraphicsItem):
-    def __init__(self, conductor):
+    def __init__(self, conductor, custom_height = None):
         super().__init__()
         self.conductor = conductor
+        
         self.w = 2
+        self.h = custom_height
 
     def boundingRect(self) -> QRectF:
-        return QRectF(-self.w / 2, 0, self.w, self.conductor.height())
+        return QRectF(-self.w / 2, 0, self.w, self.h or self.conductor.height())
 
     def paint(self, painter: QPainter, option, widget):
         pen = QPen(QColor(255, 0, 0), 2.0)
         pen.setCosmetic(True)
         
         painter.setPen(pen)
-        painter.drawLine(0, 0, 0, self.conductor.height())
+        painter.drawLine(0, 0, 0, self.h or self.conductor.height())
 
 class ScrollableContent(QGraphicsView):
     def __init__(self, parent):
@@ -1331,7 +1372,15 @@ class ScrollableContent(QGraphicsView):
         self.playhead_timer.timeout.connect(self._on_playback_position_updated)
         
         self.playhead = PlayheadItem(self)
+        self.playhead_hover = PlayheadItem(
+            self,
+            Styles.Metrics.Tracks.ruler_height + Styles.Metrics.Waveform.height
+        )
+        
         self.scene.addItem(self.playhead)
+        self.scene.addItem(self.playhead_hover)
+        
+        self.playhead_hover.hide()
         
         self.marquee_item = MarqueeItem(self.composition, self.playback_manager)
         self.scene.addItem(self.marquee_item)
@@ -1425,6 +1474,21 @@ class ScrollableContent(QGraphicsView):
         
         self.set_playhead_position_px(normalized_pos * self.total_content_width)
     
+    def _force_mouse_update(self):
+        global_pos = QCursor.pos()
+        local_pos = self.viewport().mapFromGlobal(global_pos)
+
+        fake_event = QMouseEvent(
+            QEvent.MouseMove,
+            local_pos,
+            global_pos,
+            Qt.NoButton,
+            QApplication.mouseButtons(),
+            QApplication.keyboardModifiers()
+        )
+
+        self.mouse_controller.process_mouse_move_event(fake_event)
+    
     def load_composition(self, composition):
         self.prepare_audio()
         self.playback_manager.playback_state_changed.connect(self._on_playback_state_changed)
@@ -1439,6 +1503,15 @@ class ScrollableContent(QGraphicsView):
         self.mouse_controller    = InteractionHandler(self, self.playback_manager, self.composition)
         self.keyboard_controller = KeyboardController(self, self.playback_manager, self.composition)
         
+        self.horizontalScrollBar().valueChanged.connect(self._force_mouse_update)
+        
+        self.glyph_visualizer = UI.GlyphVisualizer(
+            self.composition.model,
+            self.playback_manager,
+            self.composition.bpm
+        )
+        self.glyph_visualizer.setParent(None)
+        
         self.glyph_controller.elements_changed.connect(self.main_window_ref.on_elements_changed)
         
         for id, glyph in self.composition.glyphs.items():
@@ -1448,6 +1521,8 @@ class ScrollableContent(QGraphicsView):
         
         self.update_scene_rect()
         self.update()
+        
+        self.glyph_visualizer.show()
     
     def unload_composition(self):
         logger.warning("Unloading composition and clearing state")
@@ -1462,16 +1537,22 @@ class ScrollableContent(QGraphicsView):
         self.playback_manager.playback_state_changed.disconnect()
         
         logger.warning("Syncer stoppped")
-        self.glyph_controller.elements_changed.disconnect()
+        
+        self.set_playhead_position_px(0)
+        self.horizontalScrollBar().setValue(0)
 
         self.glyph_controller.cleanup_tooltip()
-
+        self.glyph_visualizer.exit()
+        
+        self.glyph_controller.elements_changed.disconnect()
+        self.horizontalScrollBar().valueChanged.disconnect(self._force_mouse_update)
+        
         self.glyph_controller = None
         self.wheel_controller = None
         self.mouse_controller = None
         self.keyboard_controller = None
+        
         self.waveform_tiles = {}
-        self.set_playhead_position_px(0)
         
         logger.warning("Controllers cleared")
         logger.warning("Caches and state cleared")
@@ -1584,13 +1665,20 @@ class ScrollableContent(QGraphicsView):
 
     def _stop_playback(self):
         self.playhead_timer.stop()
+        self.glyph_visualizer.stop_all()
         
         if self.composition:
             self.composition.syncer.stop()
     
     def _start_playback(self):
         self.playhead_timer.start()
-        self.composition.syncer.play(self.get_playhead_ms())
+        
+        position = self.get_playhead_ms()
+        
+        self.glyph_visualizer.set_schedule(self.composition.glyphs.visualizator_data)
+        self.glyph_visualizer.play_all(position)
+        
+        self.composition.syncer.play(position)
 
     def change_brightness(self, brightness):
         self.composition.set_brightness(brightness)
@@ -1600,7 +1688,7 @@ class ScrollableContent(QGraphicsView):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.scale_view(0, True)
+        self.scale_view(0)
         self.update_scene_rect()
 
     def update_scene_rect(self):
@@ -1747,7 +1835,7 @@ class ScrollableContent(QGraphicsView):
 
     def control_popup(self, title, label, key, min_val = 1, max_val = None):
         dialog = UI.DialogInputWindow(title, label, min_val, max_val, bpm = self.composition.bpm, player = self.playback_manager)
-        if dialog.exec_() != QDialog.Accepted:
+        if not dialog.exec_():
             return
 
         user_input = dialog.result_text
@@ -1798,7 +1886,7 @@ class ScrollableContent(QGraphicsView):
             first_glyph.get("segments"),
         )
 
-        if popup.exec_() != QDialog.Accepted:
+        if not popup.exec_():
             return
 
         segments = popup.saved_segments
@@ -1879,8 +1967,6 @@ class ScrollableContent(QGraphicsView):
                     if element:
                         result = GlyphEffects.effectCallback(name, settings, element)
                         self.composition.replace_glyph(sel_id, result)
-                
-                self.update()
 
             has_non_segmented = [
                 not is_segmented(self.composition.get_glyph(sel_id)["track"], self.composition.model)
@@ -1941,6 +2027,7 @@ class ScrollableContent(QGraphicsView):
         except Exception as e:
             logger.error(f"Context menu error: {e}")
             logger.error(traceback.format_exc())
+            
             UI.ErrorWindow(
                 "Context Menu Error",
                 "An unexpected error occurred while opening the context menu."
@@ -1979,6 +2066,10 @@ class ScrollableContent(QGraphicsView):
     def mouseReleaseEvent(self, event):
         self.mouse_controller.process_mouse_release_event(event)
         return super().mouseReleaseEvent(event)
+    
+    def leaveEvent(self, event):
+        self.mouse_controller.process_mouse_leave_event(event)
+        return super().leaveEvent(event)
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
@@ -2044,7 +2135,6 @@ class CompositorWidget(QWidget):
                 child.setFocusPolicy(Qt.NoFocus)
 
         self.content_widget.setFocusPolicy(Qt.StrongFocus)
-        self.content_widget.setFocus()
         self.glyph_dur_control.valueChanged.connect(self.set_default_glyph_duration)
         self.brightness_control.valueChanged.connect(self.set_default_brightness)
     
@@ -2081,6 +2171,7 @@ class CompositorWidget(QWidget):
         self.mini_preview_widget.set_audio_data(self.playback_manager.data)
         
         self.on_elements_changed()
+        self.window().activateWindow()
 
     def export_ringtone(self):
         UI.ExportDialogWindow(
