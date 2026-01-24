@@ -71,6 +71,156 @@ PortVariants = {
     ]
 }
 
+ModelVisualizerMaps = {
+    "PHONE1": {
+        "glyphs": {
+            "1": {
+                "svg": "M41.66,47.69 V58.08 C41.66,68.73 33.01,77.38 22.36,77.38 C11.71,77.38 3.06,68.73 3.06,58.08 V22.18 C3.06,11.53 11.71,2.88 22.36,2.88 C33.01,2.88 41.66,11.53 41.66,22.18",
+                "position": (5, 0)
+            },
+            
+            "2": {
+                "svg": "M3.54,43.78 L37.25,3.61",
+                "position": (130, 10)
+            },
+
+            "3": {
+                "svg": "M158.48,37.83 C138.94,14.3 109.87,0.76 79.29,0.96 C55.43,0.96 34.12,9.45 18.5,23.15",
+                "position": (10, 90)
+            },
+            
+            "4": {
+                "svg": "M18.5,23.15 C9.2,31.32 3.5,41.5 0.57,47.68 L0.57,125.8",
+                "position": (10, 90)
+            },
+            
+            "5": {
+                "svg": "M0.57,125.8 V158.4 C19.95,191.2 49.11,205.12 79.94,205.12 C85.2,205.12 90.3,204.5 95.1,203.4",
+                "position": (10, 90)
+            },
+            
+            "6": {
+                "svg": "M95.1,203.4 C123.5,197.2 146.8,183.5 159.31,167.23 V106.58",
+                "position": (10, 90)
+            },
+            
+            "7": {
+                "svg": "M3.99,3.80 L3.99,45.68",
+                "position": (90, 320),
+                "segments": 8
+            },
+            
+            "8": {
+                "svg": "M3.99,3.11 L3.99,10.95",
+                "position": (90, 373)
+            }
+        },
+        
+        "size": (180, 385),
+        "thickness": 6
+    },
+    
+    "PHONE3A": {
+        "glyphs": {
+            "1": {
+                "svg": "M-5.69,72.38 C12.45,28.38 40.50,10.20 65.68,5.18",
+                "position": (20, 10),
+                "segments": 20
+            },
+            
+            "2": {
+                "svg": "M15.00,5.00 C32.00,40.00 32.00,75.00 15.00,110.00",
+                "position": (210, 70),
+                "segments": 11
+            },
+            
+            "3": {
+                "svg": "M2.91,7.12 L35.89,40.28",
+                "position": (20, 178),
+                "segments": 5
+            }
+        },
+        
+        "size": (250, 240),
+        "thickness": 10
+    },
+    
+    "PHONE2A": {
+        "glyphs": {
+            "1": {
+                "svg": "M65.68,5.18 C40.50,10.20 12.45,28.38 -5.69,72.38",
+                "position": (20, 20),
+                "segments": 24
+            },
+            
+            "2": {
+                "svg": "M15.00,5.00 C15.00,40.00 15.00,75.00 15.00,110.00",
+                "position": (225, 80)
+            },
+            
+            "3": {
+                "svg": "M2.91,7.12 C10.00,15.00 20.00,30.00 35.89,40.28",
+                "position": (20, 192)
+            }
+        },
+        
+        "size": (255, 250),
+        "thickness": 10
+    },
+    
+    "PHONE2": {
+        "glyphs": {
+            "1": {
+                "svg": "M4,47 V22 C4,10 13,4 23.5,4 C34,4 43,10 43,22",
+                "position": (0, 0)
+            },
+            "2": {
+                "svg": "M34.5,1.5 V19.5 C34.5,25.5 31,31 25,34 C19.5,37 13,36.5 8,33",
+                "position": (9, 45)
+            },
+            "3": {
+                "svg": "M37,3 L3,42",
+                "position": (130, 10)
+            },
+            "4": {
+                "svg": "M4,4 C38,1 71,15 94,40",
+                "position": (75, 90)
+            },
+            "5": {
+                "svg": "M49,-4.25 C31.5,3.25 16.5,15.75 4,32",
+                "position": (0, 105)
+            },
+            "6": {
+                "svg": "M3,3 V44",
+                "position": (0, 150)
+            },
+            "7": {
+                "svg": "M4,3 C30,30 65,42 95,39",
+                "position": (3, 260)
+            },
+            "8": {
+                "svg": "M3,32 C20.5,23.25 38,10.75 49.25,-4.25",
+                "position": (117, 262)
+            },
+            "9": {
+                "svg": "M3.5,4 V35",
+                "position": (168, 195)
+            },
+            "10": {
+                "svg": "M4,3 V43",
+                "position": (90, 320)
+            },
+            "11": {
+                "svg": "M3.99,3.11 L3.99,10.95",
+                "position": (90, 371)
+            }
+        },
+        
+        "size": (177, 385),
+        "thickness": 6
+    }
+}
+
 def number_model_to_code(number: str):
     return {
         "1": "PHONE1",
@@ -130,6 +280,94 @@ ModelTracks = {
     "PHONE2A": 3,
     "PHONE3A": 3
 }
+
+# Shaders
+GLYPH_VS = """
+// GLYPH_VS
+#version 330 core
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in vec2 aNormal;
+layout (location = 2) in float aSegIdx;
+
+uniform mat4 mvp;
+uniform float uThickness;
+
+flat out float vSegIdx;
+
+void main() {
+    vec2 offsetPos = aPos + (aNormal * uThickness * 0.5);
+    gl_Position = mvp * vec4(offsetPos, 0.0, 1.0);
+    vSegIdx = aSegIdx;
+}
+"""
+
+GLYPH_FS = """
+#version 330 core
+flat in float vSegIdx;
+out vec4 FragColor;
+uniform vec3 uColorOn;
+uniform vec3 uColorOff;
+uniform float uLevels[128];
+void main() {
+    float level = uLevels[int(vSegIdx)] / 100.0;
+    FragColor = vec4(mix(uColorOff, uColorOn, level), 1.0);
+}
+"""
+
+FLOATING_WINDOW_VS = """
+#version 330 core
+layout (location = 0) in vec3 position;
+layout (location = 1) in vec2 texCoord;
+
+uniform mat4 u_curr_mvp;
+
+out vec2 UV;
+
+void main() {
+    gl_Position = u_curr_mvp * vec4(position, 1.0);
+    UV = texCoord;
+}
+"""
+
+FLOATING_WINDOW_FS = """
+#version 330 core
+in vec2 UV;
+out vec4 color;
+
+uniform vec4 u_rectColor;
+uniform vec4 u_borderColor;
+uniform float u_rectAlpha;
+uniform float u_borderAlpha;
+uniform float u_globalAlpha;
+uniform float u_borderThicknessPixels;
+uniform float u_radius;
+uniform vec2 u_size;
+
+float roundedBoxSDF(vec2 p, vec2 b, float r) {
+    vec2 q = abs(p) - b + r;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void main() {
+    vec2 halfSize = u_size * 0.5;
+    float dist_center = roundedBoxSDF((UV - 0.5) * u_size, halfSize, u_radius);
+    
+    float smoothing = fwidth(dist_center);
+    
+    float mask = smoothstep(smoothing, -smoothing, dist_center);
+    
+    if (mask * u_globalAlpha < 0.001) discard;
+
+    float innerMask = smoothstep(smoothing, -smoothing, dist_center + u_borderThicknessPixels);
+
+    vec4 borderCol = vec4(u_borderColor.rgb, u_borderColor.a * u_borderAlpha);
+    vec4 rectCol = vec4(u_rectColor.rgb, u_rectColor.a * u_rectAlpha);
+
+    vec4 finalColor = mix(borderCol, rectCol, innerMask);
+    
+    color = vec4(finalColor.rgb, finalColor.a * mask * u_globalAlpha);
+}
+"""
 
 # Columns (To export)
 class PhoneModel(Enum):
@@ -247,6 +485,19 @@ SettingsDict = {
                 "1024": 1024
             },
             "default": "512"
+        },
+        {
+            "type": "selector",
+            "title": "Motion Blur Intensity",
+            "key": "motion_blur",
+            "map": {
+                "No Blur": "0.0",
+                "Low": "0.4",
+                "Mid": "0.8",
+                "High": "1.2",
+                "Very High": "3.0"
+            },
+            "default": "Low"
         }
     ],
 
@@ -289,7 +540,8 @@ SettingsDict = {
             "map": {
                 "Smooth": "smooth",
                 "Bouncy": "bouncy",
-                "Roll": "roll"
+                "Roll": "roll",
+                "Glitch": "glitch"
             },
             "default": "Bouncy"
         },
