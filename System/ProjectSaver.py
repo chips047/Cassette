@@ -10,7 +10,7 @@ from pydub import AudioSegment
 
 from System import UI
 from System import Porter
-from System import Exporter
+from System import ExporterImporter
 from System import GlyphEffects
 from System import RTVisualizer
 
@@ -25,6 +25,7 @@ def get_metadata(file_path):
         "-show_format",
         file_path
     ]
+    
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     metadata = json.loads(result.stdout)
     
@@ -39,46 +40,129 @@ class SyncedDict(dict):
         super().__init__(*args, **kwargs)
         self.composition = composition
         self._sync_callback = sync_callback
-
-    def __setitem__(self, key, value):
-        if "effect" in value:
-            if value["effect"]["name"] != "None":
-                self.composition.cached_effects[str(key)] = GlyphEffects.effect_to_glyph(
-                    value, self.composition.bpm, self.composition.model
-                )
+        self._glyph_id_to_track = {}
+        
+        self.visualizator_data = {}
+        self._process_initial_data()
+    
+    def _process_initial_data(self):
+        for glyph_id, glyph_data in self.items():
+            track = glyph_data.get("track")
             
-            else:
-                self.composition.cached_effects.pop(str(key), None)
+            if track:
+                self._glyph_id_to_track[glyph_id] = track
+        
+        for glyph_id, glyph_data in self.items():
+            self._process_glyph_effect(glyph_id, glyph_data)
+            self._add_glyph_to_visualizator(glyph_id, glyph_data)
+    
+    def _process_glyph_effect(self, glyph_id, glyph_data):
+        if "effect" in glyph_data and glyph_data["effect"]["name"] != "None":
+            effect_glyph_data = GlyphEffects.effect_to_glyph(
+                glyph_data, 
+                self.composition.bpm, 
+                self.composition.model
+            )
+            
+            self.composition.cached_effects[str(glyph_id)] = effect_glyph_data
+        
+        else:
+            self.composition.cached_effects.pop(str(glyph_id), None)
+    
+    def _add_glyph_to_visualizator(self, glyph_id, glyph_data):
+        track = glyph_data["track"]
+        
+        if track not in self.visualizator_data:
+            self.visualizator_data[track] = {}
+        
+        if "effect" not in glyph_data or glyph_data["effect"]["name"] == "None":
+            self.visualizator_data[track][glyph_id] = glyph_data
+        
+        else:
+            if str(glyph_id) in self.composition.cached_effects:
+                effect_glyphs = self.composition.cached_effects[str(glyph_id)]
+                
+                #if isinstance(effect_glyphs, list):
+                for idx, effect_glyph in enumerate(effect_glyphs):
+                    effect_glyph_id = f"effect_{glyph_id}_{idx}"
+                    self.visualizator_data[track][effect_glyph_id] = effect_glyph
+                #
+                #else:
+                #    effect_glyph_id = f"effect_{glyph_id}"
+                #    self.visualizator_data[track][effect_glyph_id] = effect_glyphs
+    
+    def _remove_glyph_from_visualizator(self, glyph_id):
+        track = self._glyph_id_to_track.get(glyph_id)
+        
+        if track and track in self.visualizator_data:
+            self.visualizator_data[track].pop(glyph_id, None)
 
+            keys_to_remove = [
+                k for k in self.visualizator_data[track].keys() 
+                if str(k).startswith(f"effect_{glyph_id}")
+            ]
+            
+            for k in keys_to_remove:
+                self.visualizator_data[track].pop(k)
+
+            if not self.visualizator_data[track]:
+                self.visualizator_data.pop(track, None)
+    
+    def __setitem__(self, key, value):
+        if key in self:
+            self._remove_glyph_from_visualizator(key)
+        
+        self._process_glyph_effect(key, value)
+        
         super().__setitem__(key, value)
+        
+        self._add_glyph_to_visualizator(key, value)
+        
+        track = value.get("track")
+        if track:
+            self._glyph_id_to_track[key] = track
+        
         self._sync_callback(self)
         self.composition.save()
-
+    
     def __delitem__(self, key):
+        self.composition.cached_effects.pop(str(key), None)
+        self._remove_glyph_from_visualizator(key)
+        
         super().__delitem__(key)
+        self._glyph_id_to_track.pop(key, None)
+        
         self._sync_callback(self)
         self.composition.save()
     
     def delete_keys(self, keys):
         for key in keys:
+            self.composition.cached_effects.pop(str(key), None)
+            self._remove_glyph_from_visualizator(key)
+                
             super().__delitem__(key)
+            self._glyph_id_to_track.pop(key, None)
         
         self._sync_callback(self)
         self.composition.save()
-
+    
     def update(self, *args, **kwargs):
-        if args and isinstance(args[0], dict):
-            glyphs = args[0]
-
-            for id, glyph in glyphs.items():
-                if "effect" in glyph:
-                    self.composition.cached_effects[str(id)] = GlyphEffects.effect_to_glyph(glyph, self.composition.bpm, self.composition.model)
-
-            super().update(glyphs, *args[1:], **kwargs)
+        glyphs_to_update = args[0]
+        glyphs_to_update.update(kwargs)
         
-        else:
-            super().update(*args, **kwargs)
-
+        for glyph_id, glyph_data in glyphs_to_update.items():
+            if glyph_id in self:
+                self._remove_glyph_from_visualizator(glyph_id)
+            
+            self._process_glyph_effect(glyph_id, glyph_data)
+            super().__setitem__(glyph_id, glyph_data)
+            self._add_glyph_to_visualizator(glyph_id, glyph_data)
+            
+            track = glyph_data.get("track")
+            
+            if track:
+                self._glyph_id_to_track[glyph_id] = track
+        
         self._sync_callback(self)
         self.composition.save()
 
@@ -89,7 +173,6 @@ class BaseComposition:
         self.audio_settings = settings.get("audio", {})
 
         self.bpm = self.audio_settings.get("bpm")
-        self.sampling_rate = self.audio_settings.get("sampling_rate")
         self.start_ms = self.audio_settings.get("start_ms")
         self.end_ms = self.audio_settings.get("end_ms")
         self.fade_in_duration = self.audio_settings.get("fade_in", 0)
@@ -141,7 +224,7 @@ class BaseComposition:
     def export(self, model: str | None = None, open_folder: bool = False):
         if model != self.model and model:
             ported_glyphs = Porter.Port.port_glyphs(model, self)
-            Exporter.glyphs_to_ogg(
+            ExporterImporter.glyphs_to_ogg(
                 Utils.get_songs_path(f"{self.id}/cropped_song.ogg"),
                 Utils.get_songs_path(f"{self.id}/Composed_{model}.ogg"),
                 ported_glyphs,
@@ -154,7 +237,7 @@ class BaseComposition:
             for effect in effects:
                 singles.extend(GlyphEffects.effect_to_glyph(effect, self.bpm, self.model))
             
-            Exporter.glyphs_to_ogg(
+            ExporterImporter.glyphs_to_ogg(
                 self.cropped_song_path,
                 Utils.get_songs_path(f"{self.id}/Composed.ogg"),
                 singles,
@@ -193,8 +276,8 @@ class Composition(BaseComposition):
 
         self.syncer = RTVisualizer.GlyphSyncer(self)
 
-        self.glyphs = SyncedDict(settings.get("glyphs", {}), sync_callback=self.syncer.sync, composition=self)
         self.cached_effects = {}
+        self.glyphs = SyncedDict(settings.get("glyphs", {}), sync_callback=self.syncer.sync, composition=self)
         self.last_glyph_id = max(map(int, self.glyphs.keys())) if self.glyphs else 0
 
         if CurrentSettings["auto_search"]:
@@ -284,7 +367,6 @@ class Composition(BaseComposition):
                     "artist": author,
                     "start_ms": self.start_ms,
                     "end_ms": self.end_ms,
-                    "sampling_rate": self.sampling_rate,
                     "bpm": self.bpm,
                     "beats": self.beats,
                     "fade_in": self.fade_in_duration,
