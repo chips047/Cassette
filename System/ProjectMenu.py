@@ -147,9 +147,10 @@ class TrackItemWidget(QWidget):
     
     def on_delete_clicked(self):
         dialog = UI.DialogWindow("Remove?")
-        if dialog.exec_() == QDialog.Accepted:
+        
+        if dialog.exec_():
             shutil.rmtree(Utils.get_songs_path(str(self.project_id)), ignore_errors = True)
-            self.main_menu.refresh_tracks()
+            QTimer.singleShot(0, self.main_menu.refresh_tracks)
     
     def on_export_clicked(self):
         composition = ProjectSaver.MinimalComposition(self.project_id)
@@ -289,7 +290,7 @@ class MainMenu(QWidget):
             widget = item.widget()
             
             if widget is not None:
-                widget.setParent(None)
+                widget.deleteLater()
 
         self.tracks_widget = self.create_tracks_grid()
         self.tracks_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
@@ -319,16 +320,19 @@ class MainMenu(QWidget):
         QApplication.processEvents() # to fix center issues
 
         dialog = AudioSetupDialog(file_path)
-        if dialog.exec_() == QDialog.Accepted:
-            settings = dialog.saved_settings
-            
-            composition = ProjectSaver.Composition(
-                file_path,
-                settings
-            )
-            
-            self.composition_created.emit(composition)
-    
+        
+        if not dialog.exec_():
+            return
+        
+        settings = dialog.saved_settings
+        
+        composition = ProjectSaver.Composition(
+            file_path,
+            settings
+        )
+        
+        self.composition_created.emit(composition)
+
     def go_to_glyphtones(self):
         webbrowser.open("https://glyphtones.firu.dev/")
 
@@ -406,10 +410,12 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        UI.TestWindow().exec_()
+        test = UI.TestWindow()
+        test.exec_()
     
     def on_about(self):
-        UI.About().exec_()
+        dialog = UI.About()
+        dialog.exec_()
 
     def create_button_panel(self):
         panel = QWidget()
