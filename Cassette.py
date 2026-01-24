@@ -12,7 +12,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from loguru import logger    
+from loguru import logger
 from System import Styles
 
 QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
@@ -133,6 +133,18 @@ class ApplicationWindow(QMainWindow):
                 "FFmpeg?",
                 "FFmpeg was not found. Audio can't be loaded, but the main menu will still work.\n\nTo install FFmpeg on Linux, use your package manager, for example:\n-- Ubuntu/Debian: sudo apt install ffmpeg\n-- Arch: sudo pacman -S ffmpeg\n-- Fedora: sudo dnf install ffmpeg\n\nTo install FFmpeg on Windows, use PowerShell:\n-- winget install ffmpeg\n\nRestart the app after installation."
             ).exec_()
+        
+        #self._memory_leak_test()
+
+    def _memory_leak_test(self):
+        for i in range(100):
+            window = UI.ErrorWindow(
+                "Hm",
+                "Tf?"
+            )
+            
+            QTimer.singleShot(500, window.start_exit_animation)
+            window.exec_()
 
     def fade_out(self, widget):
         logger.info("Fading out")
@@ -259,22 +271,28 @@ class ApplicationWindow(QMainWindow):
         self.anim_out_compositor.finished.connect(on_fade_out_compositor_finished)
         self.anim_out_compositor.start()
     
+    def _exit_effects(self):
+        Utils.ui_sound("Close")
+        
+        if self.compositor_widget.content_widget.composition:
+            self.compositor_widget.content_widget.glyph_visualizer.exit(False)
+    
     def closeEvent(self, event):
         event.ignore()
         self.hide()
         
         if self.compositor_widget.content_widget.composition:
             self.compositor_widget.content_widget.composition.syncer.exit_app()
-        
+
         if Player.player.is_playing:
             Player.player.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
         
             logger.info("Window hidden, app will close in 3 seconds...")
-            QTimer.singleShot(1700, lambda: Utils.ui_sound("Close"))
-            QTimer.singleShot(3000, QApplication.instance().quit)
+            QTimer.singleShot(1700, self._exit_effects)
+            QTimer.singleShot(3200, QApplication.instance().quit)
         
         else:
-            Utils.ui_sound("Close")
+            self._exit_effects()
             QTimer.singleShot(1800, QApplication.instance().quit)
 
 if __name__ == '__main__':
