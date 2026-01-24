@@ -238,3 +238,68 @@ def get_glyph_array_indexes(glyph_index: int, zone_index: int, columns_model: Co
             
             else:
                 return PHONE3A_36COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL[glyph_index + zone_index + offset]
+
+def labels_to_glyphs(data):
+    labels = [l for l in data.split("\n") if l.strip()]
+    grouped_glyphs = {}
+
+    for line in labels:
+        parts_tab = line.split("\t")
+
+        if len(parts_tab) < 3:
+            continue
+
+        start_ms = int(float(parts_tab[0]) * 1000)
+        end_ms = int(float(parts_tab[1]) * 1000)
+        duration_ms = end_ms - start_ms
+        label = parts_tab[2]
+
+        parts_label = label.split("-")
+        track_full = parts_label[0]
+        brightness = parts_label[1]
+        end_brightness = parts_label[2] if len(parts_label) == 4 else None
+
+        if "." in track_full:
+            track_id, segment_str = track_full.split(".")
+            current_segment = int(segment_str) - 1
+            has_segment = True
+
+        else:
+            track_id = track_full
+            current_segment = None
+            has_segment = False
+
+        group_key = (start_ms, duration_ms, track_id, brightness, end_brightness, has_segment)
+
+        if group_key in grouped_glyphs:
+            if has_segment:
+                grouped_glyphs[group_key]["segments"].append(current_segment)
+
+        else:
+            new_glyph = {
+                "start": start_ms,
+                "duration": duration_ms,
+                "track": track_id,
+                "brightness": brightness,
+            }
+
+            if end_brightness:
+                new_glyph["end_brightness"] = end_brightness
+
+            if has_segment:
+                new_glyph["segments"] = [current_segment]
+
+            grouped_glyphs[group_key] = new_glyph
+
+    glyphs = list(grouped_glyphs.values())
+    
+    return glyphs
+
+def convert_to_glyphs(path):
+    file = open(path).read()
+    
+    if "\t" in file:
+        return labels_to_glyphs(file)
+
+    else:
+        print("unknown")
