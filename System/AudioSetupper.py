@@ -263,7 +263,7 @@ class TrimmingWaveformWidget(QWidget):
         self._is_playing = is_playing
         self.update()
 
-class AudioSetupDialog(UI.FloatingWindow):
+class AudioSetupDialog(UI.FloatingWindowGPU):
     def __init__(self, file_path):
         self.player = Player.player
         
@@ -271,7 +271,7 @@ class AudioSetupDialog(UI.FloatingWindow):
             "Audio",
             player = self.player,
             max_tilt_angle = 8,
-            enable_transition_audio_effects = False
+            enable_audioplayer_effects = False
         )
         
         self.player.load_audio(file_path)        
@@ -433,24 +433,21 @@ class AudioSetupDialog(UI.FloatingWindow):
     def on_bpm_ready(self, bpm, snapped_times):
         logger.info(f"BPM found: {bpm}")
         self.snapped_times = snapped_times
-
-        if not bpm:
-            bpm = 0
-
+        
         self.bpm_anim_timer.stop()
-        
-        logger.debug(f"BPM Remove Interval: {round(60000 / bpm / 8)} ({60000 / bpm})")
-        
-        self.bpm_input.setPlaceholderText(f"Counting BPM {round(bpm)}")
-        self.bpm_remove_timer.start(round(60000 / bpm / 4))
 
-        if bpm != 0:
-            return
-        
-        if random.randint(0, 500) != 500:
-            return
+        if bpm:
+            remove_interval = round(60000 / bpm / 4)
+            self.bpm_input.setPlaceholderText(f"Counting BPM {round(bpm)}")
+            self.bpm_remove_timer.start(remove_interval)
             
-        Utils.ui_sound("Gambling")
+            return
+
+        self.bpm_input.setPlaceholderText("Counting BPM 0")
+        self.bpm_remove_timer.start(30)
+
+        if random.randint(1, 500) == 500:
+            Utils.ui_sound("Gambling")
 
     def get_perfect_width(self):
         text = str(self.bpm_input.text() or self.bpm_input.placeholderText())
