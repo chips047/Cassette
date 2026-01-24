@@ -31,7 +31,7 @@ def effect_to_glyph(element, bpm = None, model = None):
     name = element["effect"]["name"]
     config = element["effect"]["settings"]
 
-    if name == "None": return
+    if name == "None": return []
 
     effect_info = EffectsConfig[name]
     effect_fn = effect_info.get("function")
