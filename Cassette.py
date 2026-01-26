@@ -1,5 +1,7 @@
 import os
 import sys
+
+import multiprocessing as mp
         
 pid = os.getpid()
 print(f"Cassette PID is {pid}")
@@ -296,6 +298,8 @@ class ApplicationWindow(QMainWindow):
             QTimer.singleShot(1800, QApplication.instance().quit)
 
 if __name__ == '__main__':
+    mp.freeze_support()
+    
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")
         logger.info("Loaded font NDot57.otf")
