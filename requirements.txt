@@ -1,4 +1,3 @@
---find-links ./System/Wheels
 numpy
 pygame
 PyQt5
@@ -8,3 +7,4 @@ aubio
 requests
 soundfile
 sounddevice
+PyOpenGL
