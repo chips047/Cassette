@@ -19,7 +19,7 @@ jobs:
           - os: windows-latest
             artifact_name: win-x64
             sep: ";"
-          - os: macos-13
+          - os: macos-15-intel
             artifact_name: macos-intel
             sep: ":"
           - os: macos-latest
