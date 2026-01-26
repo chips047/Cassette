@@ -1,4 +1,4 @@
-name: Build wheels + PyInstaller (macOS / Windows / Linux)
+name: Build aubio wheels + PyInstaller (macOS / Windows / Linux)
 
 on:
   workflow_dispatch:
@@ -7,43 +7,31 @@ on:
   pull_request:
 
 jobs:
-  build-and-package:
-    # matrix: разные раннеры + параметры для cibuildwheel
+  build-matrix:
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64
           - id: linux-x86_64
             runs_on: ubuntu-latest
             platform: linux
             cibw_archs: "x86_64"
-          # Linux aarch64 (github предоставляет некоторые arm runners like ubuntu-24.04-arm)
           - id: linux-aarch64
             runs_on: ubuntu-24.04-arm
             platform: linux
             cibw_archs: "aarch64"
-          # Windows x86_64
           - id: windows-x86_64
             runs_on: windows-latest
             platform: windows
             cibw_archs: "x86_64"
-          # Windows arm64 (if available)
-          - id: windows-arm64
-            runs_on: windows-11-arm
-            platform: windows
-            cibw_archs: "arm64"
-          # macOS Intel
           - id: macos-x86_64
             runs_on: macos-14
             platform: macos
             cibw_archs: "x86_64"
-          # macOS Apple Silicon (arm64)
           - id: macos-arm64
             runs_on: macos-14-arm64
             platform: macos
             cibw_archs: "arm64"
-          # macOS universal2 (one wheel that contains both archs)
           - id: macos-universal2
             runs_on: macos-14
             platform: macos
@@ -52,92 +40,118 @@ jobs:
 
     runs-on: ${{ matrix.runs_on }}
     name: Build on ${{ matrix.id }}
+
     env:
-      # собираем только для CPython 3.10 (как в твоём исходном файле) — поменяй при желании
+      # Python target (отредактируй если нужно другие версии)
       CIBW_BUILD: "cp310-*"
-      # пропуски (подправь если нужно)
       CIBW_SKIP: "*-pp* *-musllinux*"
-      # использую переменную из матрицы; у macOS-universal2 тоже установлено cibw_archs
-      CIBW_ARCHS: ${{ matrix.cibw_archs }}
-      # пустая строка для большинства; задана только для macos-universal2
-      CIBW_MACOS_UNIVERSAL2: ${{ matrix.cibw_macos_universal2 }}
-      # путь вывода wheel'ов
       WHEELHOUSE_DIR: wheelhouse
+      # эти переменные заполняются из матрицы дальше
+      CIBW_ARCHS: ${{ matrix.cibw_archs }}
+      CIBW_MACOS_UNIVERSAL2: ${{ matrix.cibw_macos_universal2 }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python (needed to run pip/cibuildwheel wrapper)
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install build tools (pip, cibuildwheel)
+      - name: Install system build tools (Linux/macOS)  # Windows step below handles its own toolchain
+        if: matrix.platform != 'windows'
         run: |
+          # Нужные системные зависимости для сборки aubio могут отличаться — добавляем базовые инструменты
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y build-essential git pkg-config autoconf automake libtool python3-dev
+          fi
+
+      - name: Clone aubio
+        run: |
+          git clone --depth 1 https://github.com/aubio/aubio.git aubio-src
+          cd aubio-src
+          git submodule update --init --recursive || true
+
+      - name: Build aubio wheel with cibuildwheel
+        run: |
+          # Устанавливаем cibuildwheel в окружение runner'а и запускаем его внутри клона aubio
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install cibuildwheel==2.*  # фиксируем major версию (при желании можно убрать)
+          python -m pip install cibuildwheel==2.*
+          cd aubio-src
+          # запуск cibuildwheel в директории aubio — он найдёт setup.py / pyproject.toml
+          python -m cibuildwheel . --output-dir ../${{ env.WHEELHOUSE_DIR }} --platform ${{ matrix.platform }}
+        env:
+          CIBW_BUILD: ${{ env.CIBW_BUILD }}
+          CIBW_ARCHS: ${{ env.CIBW_ARCHS }}
+          CIBW_MACOS_UNIVERSAL2: ${{ env.CIBW_MACOS_UNIVERSAL2 }}
+          CIBW_SKIP: ${{ env.CIBW_SKIP }}
 
-      - name: Build wheels with cibuildwheel
-        # используем сам pip-инсталлер cibuildwheel; можно заменить на uses: pypa/cibuildwheel@v2
+      - name: List wheels
         run: |
-          python -m cibuildwheel --platform ${{ matrix.platform }} --output-dir $WHEELHOUSE_DIR
-        # если нужно использовать action вместо прямого вызова, можно заменить на uses: pypa/cibuildwheel@v2
+          ls -la ${{ env.WHEELHOUSE_DIR }} || true
 
-      - name: List built wheels
-        run: ls -la $WHEELHOUSE_DIR || true
-
-      - name: Create venv and install app + dependencies
+      - name: Create venv and install aubio wheel + requirements (Linux / macOS)
+        if: matrix.platform != 'windows'
         shell: bash
         run: |
           python -m venv venv
           source venv/bin/activate
           python -m pip install --upgrade pip
-          # установим собранные wheel'ы (если есть)
-          if ls $WHEELHOUSE_DIR/*.whl 1> /dev/null 2>&1; then
-            python -m pip install $WHEELHOUSE_DIR/*.whl
+          if ls ${{ env.WHEELHOUSE_DIR }}/*.whl 1> /dev/null 2>&1; then
+            python -m pip install ${{ env.WHEELHOUSE_DIR }}/*.whl
           fi
-          # установим requirements проекта (если есть)
           if [ -f requirements.txt ]; then
             python -m pip install -r requirements.txt
           fi
           python -m pip install pyinstaller
 
-      - name: Build with PyInstaller (macOS / Linux)
-        if: matrix.platform != 'windows'
-        shell: bash
-        run: |
-          source venv/bin/activate
-          # Пример: адаптируй имя главного скрипта — у тебя в исходном был Cassette.py
-          pyinstaller --onedir --add-data version:. --add-data System:System --hidden-import OpenGL Cassette.py || true
-        continue-on-error: false
-
-      - name: Build with PyInstaller (Windows)
+      - name: Create venv and install aubio wheel + requirements (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
           python -m venv venv
           .\venv\Scripts\Activate.ps1
           python -m pip install --upgrade pip
-          if (Test-Path "$env:GITHUB_WORKSPACE\wheelhouse\*.whl") {
-            python -m pip install $env:GITHUB_WORKSPACE\wheelhouse\*.whl
-          }
-          if (Test-Path "$env:GITHUB_WORKSPACE\requirements.txt") {
-            python -m pip install -r requirements.txt
-          }
+          $wh = Get-ChildItem -Path "${{ github.workspace }}\wheelhouse" -Filter *.whl -ErrorAction SilentlyContinue
+          if ($wh) { python -m pip install ${wh.FullName} }
+          if (Test-Path requirements.txt) { python -m pip install -r requirements.txt }
           python -m pip install pyinstaller
-          # Windows: аналог параметров, путь к дополнительным данным может отличаться
+
+      - name: Run PyInstaller (Linux / macOS)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          source venv/bin/activate
+          # Подставь имя главного скрипта / опции PyInstaller под свой проект
+          pyinstaller --onedir \
+            --add-data "version:version" \
+            --add-data "System:System" \
+            --hidden-import OpenGL \
+            Cassette.py
+
+      - name: Run PyInstaller (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          .\venv\Scripts\Activate.ps1
+          # На Windows синтаксис --add-data: "src;dest"
           pyinstaller --onedir --add-data "version;." --add-data "System;System" --hidden-import OpenGL Cassette.py
 
-      - name: Upload wheels artifact
+      - name: Upload aubio wheels
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.id }}
           path: ${{ env.WHEELHOUSE_DIR }}/*.whl
 
-      - name: Upload PyInstaller dist artifact
+      - name: Upload PyInstaller build (dist)
         uses: actions/upload-artifact@v4
         with:
           name: app-dist-${{ matrix.id }}
           path: dist/**
 
+      - name: Cleanup dist for next job
+        if: always()
+        run: |
+          rm -rf dist build __pycache__ || true
