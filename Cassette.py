@@ -1,7 +1,6 @@
 import os
 import sys
 import subprocess
-import pydub.utils
 
 import multiprocessing as mp
 from loguru import logger
@@ -10,6 +9,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
+
+if sys.platform == "win32":
+    # It prevents appearing of CMD because of pydub ffmpeg operations.
+    
+    class NoWindowPopen(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
+            super().__init__(*args, **kwargs)
+
+    subprocess.Popen = NoWindowPopen
 
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -34,19 +46,6 @@ def is_ffmpeg_installed():
             break
     
     return ffmpeg_found
-
-if sys.platform == "win32":
-    # It prevents appearing of CMD because of pydub ffmpeg operations.
-    
-    class NoWindowPopen(subprocess.Popen):
-        def __init__(self, *args, **kwargs):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            kwargs["startupinfo"] = startupinfo
-            super().__init__(*args, **kwargs)
-
-    pydub.utils.Popen = NoWindowPopen
 
 class StartupFadeOverlay(QWidget):
     finished = pyqtSignal()
