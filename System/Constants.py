@@ -485,19 +485,6 @@ SettingsDict = {
                 "1024": 1024
             },
             "default": "512"
-        },
-        {
-            "type": "selector",
-            "title": "Motion Blur Intensity",
-            "key": "motion_blur",
-            "map": {
-                "No Blur": "0.0",
-                "Low": "0.4",
-                "Mid": "0.8",
-                "High": "1.2",
-                "Very High": "3.0"
-            },
-            "default": "Low"
         }
     ],
 
