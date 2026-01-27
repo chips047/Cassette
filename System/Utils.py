@@ -137,15 +137,6 @@ def NType(size):
     
     return Ntype
 
-class Icons:
-    WindowIcon = QIcon("System/Icons/Icon256.ico")
-    Duration = QIcon("System/Icons/Duration.png")
-    Brightness = QIcon("System/Icons/Brightness.png")
-    Speed = QIcon("System/Icons/Speed.png")
-    Play = QIcon("System/Icons/Play.png")
-    Pause = QIcon("System/Icons/Pause.png")
-    Effect = QIcon("System/Icons/Effect.png")
-
 def open_file(path):
     if platform.system() == "Windows":
         os.startfile(path)

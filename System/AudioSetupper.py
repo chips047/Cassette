@@ -343,8 +343,8 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
         self.play_button = QPushButton()
         self.play_button.setObjectName("play_button")
         
-        self.play_icon = QIcon(Utils.Icons.Play)
-        self.pause_icon = QIcon(Utils.Icons.Pause)
+        self.play_icon = QIcon(QIcon("System/Icons/Play.png"))
+        self.pause_icon = QIcon(QIcon("System/Icons/Pause.png"))
         
         self.play_button.setIcon(self.play_icon)
         self.play_button.setIconSize(QSize(45, 45))

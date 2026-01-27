@@ -2,11 +2,10 @@ import os
 import sys
 
 import multiprocessing as mp
-        
-pid = os.getpid()
-print(f"Cassette PID is {pid}")
+from loguru import logger
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
 
@@ -14,32 +13,14 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from loguru import logger
-from System import Styles
-
-QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-QApplication.setAttribute(Qt.AA_UseDesktopOpenGL) 
-
-app = QApplication(sys.argv)
-
-from System import Utils
-from System.Constants import *
-
-prepare_default_settings(SettingsDict)
-load_settings()
-
-if CurrentSettings["msaa"]:
-    fmt = QSurfaceFormat()
-    fmt.setSamples(CurrentSettings["msaa"])
-    QSurfaceFormat.setDefaultFormat(fmt)
-
 from System import UI
+from System import Utils
+from System import Styles
 from System import Player
+
+from System.Constants import *
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
-
-app.setWindowIcon(Utils.Icons.WindowIcon)
 
 def is_ffmpeg_installed():
     envdir_list = [os.curdir] + os.environ["PATH"].split(os.pathsep)
@@ -297,9 +278,21 @@ class ApplicationWindow(QMainWindow):
             self._exit_effects()
             QTimer.singleShot(1800, QApplication.instance().quit)
 
-if __name__ == '__main__':
-    mp.freeze_support()
-    
+def main():
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    QApplication.setAttribute(Qt.AA_UseDesktopOpenGL) 
+
+    app = QApplication(sys.argv)
+
+    prepare_default_settings(SettingsDict)
+    load_settings()
+
+    if CurrentSettings.get("msaa"):
+        fmt = QSurfaceFormat()
+        fmt.setSamples(CurrentSettings["msaa"])
+        QSurfaceFormat.setDefaultFormat(fmt)
+
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")
         logger.info("Loaded font NDot57.otf")
@@ -308,9 +301,19 @@ if __name__ == '__main__':
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
         logger.info("Loaded font NType82.otf")
 
+    app.setWindowIcon(QIcon("System/Icons/Icon256.ico"))
+
     main_window = ApplicationWindow()
     main_window.show() 
     main_window.intro_overlay.start(670)
 
     Utils.ui_sound("Startup")
     sys.exit(app.exec_())
+
+if __name__ == '__main__':
+    mp.freeze_support()
+    
+    pid = os.getpid()
+    logger.info(f"Main Process PID: {pid}")
+    
+    main()

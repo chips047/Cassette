@@ -2094,10 +2094,10 @@ class CompositorWidget(QWidget):
         self.export_button =       UI.NothingButton("Export")
         self.top_status_label =    QLabel(STATUS_BAR_DEFAULT)
         self.mini_preview_widget = UI.MiniWaveformPreview()
-        self.glyph_dur_control =   UI.DraggableValueControl(Utils.Icons.Duration, "duration", 100, 5, 5000, 5, "ms")
-        self.brightness_control =  UI.DraggableValueControl(Utils.Icons.Brightness, "brightness", 100, 5, 100, 5, "%")
-        self.playspeed_button =    UI.CycleButton(Utils.Icons.Speed, "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
-        self.default_effect =      UI.CycleButton(Utils.Icons.Effect, "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
+        self.glyph_dur_control =   UI.DraggableValueControl(QIcon("System/Icons/Duration.png"), "duration", 100, 5, 5000, 5, "ms")
+        self.brightness_control =  UI.DraggableValueControl(QIcon("System/Icons/Brightness.png"), "brightness", 100, 5, 100, 5, "%")
+        self.playspeed_button =    UI.CycleButton(QIcon("System/Icons/Speed.png"), "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
+        self.default_effect =      UI.CycleButton(QIcon("System/Icons/Effect.png"), "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
         
         # Other Settings
         self.top_status_label.setFont(Utils.NDot(14))
