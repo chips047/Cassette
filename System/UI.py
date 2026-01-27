@@ -1784,7 +1784,6 @@ class FloatingWindowGPU(QOpenGLWidget):
             max_tilt_angle = 12,
             animation_style = "bouncy",
             enable_audioplayer_effects: bool = True,
-            enable_motion_blur: bool = True,
             enable_tilt: bool = True,
             
             open_animation_enabled = True,
@@ -1794,9 +1793,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         ):
         
         super().__init__(parent)
-        
-        self.enable_motion_blur = enable_motion_blur and float(CurrentSettings["motion_blur"]) > 0 # or CurrentSettings["floating_window_motion_blur"]
-        
+
         self.bpm = bpm
         self.player = player
         self.margin = margin
@@ -1936,8 +1933,6 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.content_opacity_effect = QGraphicsOpacityEffect(self.content_widget)
         self.content_opacity_effect.setOpacity(0.0)
         self.content_widget.setGraphicsEffect(self.content_opacity_effect)
-        
-        self.motion_blur_paused = False
 
     # Animation Properties - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2361,11 +2356,6 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         
         self.plan_timers(actions)
-        
-        if self.enable_motion_blur:
-            QTimer.singleShot(485, lambda: setattr(self, "motion_blur_paused", False))
-        
-        self.motion_blur_paused = True
     
     def animation_close_glitch(self, size):
         actions = [
@@ -2388,8 +2378,6 @@ class FloatingWindowGPU(QOpenGLWidget):
                 (1.0, 0.8)
             ], b"exitScale", 210
         )
-        
-        self.motion_blur_paused = True
         
         QTimer.singleShot(40, self.scale_animation.start)
         QTimer.singleShot(580, self._really_close)
@@ -2528,11 +2516,6 @@ class FloatingWindowGPU(QOpenGLWidget):
         ]
         
         self.plan_timers(actions)
-        
-        if self.enable_motion_blur:
-            QTimer.singleShot(85, lambda: setattr(self, "motion_blur_paused", False))
-        
-        self.motion_blur_paused = True
     
     def animation_disturbe_smooth(self):
         self.anim_tilt_x = self.make_animation(
@@ -3676,9 +3659,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             margin = 50,
             
             open_animation_enabled = False,
-            close_animation_enabled = False,
-            
-            enable_motion_blur = False
+            close_animation_enabled = False
         )
         
         self.scale_in()
