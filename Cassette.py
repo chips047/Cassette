@@ -1,5 +1,7 @@
 import os
 import sys
+import subprocess
+import pydub.utils
 
 import multiprocessing as mp
 from loguru import logger
@@ -32,6 +34,19 @@ def is_ffmpeg_installed():
             break
     
     return ffmpeg_found
+
+if sys.platform == "win32":
+    # It prevents appearing of CMD because of pydub ffmpeg operations.
+    
+    class NoWindowPopen(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startupinfo
+            super().__init__(*args, **kwargs)
+
+    pydub.utils.Popen = NoWindowPopen
 
 class StartupFadeOverlay(QWidget):
     finished = pyqtSignal()
