@@ -2,9 +2,9 @@ numpy
 pygame
 PyQt5
 loguru
-pydub
 aubio
 requests
 soundfile
 sounddevice
 PyOpenGL
+mutagen
