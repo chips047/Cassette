@@ -21,9 +21,7 @@ from . import GlyphEffects
 from . import ExporterImporter
 
 from .Constants import *
-
-from pydub import AudioSegment
-from collections import deque
+from loguru import logger
 
 MAX_SIZE = 16777215
 
@@ -1548,7 +1546,7 @@ class Textbox(QLineEdit):
                 direction = -1 if key == Qt.Key_Left else 1
                 tone = 0.85 + (pos / len(cur_text)) * 0.4
                 
-                print(f"{'Left' if direction == -1 else 'Right'} key | Tone {tone}")
+                logger.info(f"{'Left' if direction == -1 else 'Right'} key | Tone {tone}")
 
                 Utils.ui_sound("ArrowTick", tone)
                 self.arrow_pressed = True
@@ -1946,7 +1944,7 @@ class FloatingWindowGPU(QOpenGLWidget):
     def backgroundOpacity(self): return self.background_opacity; self.update()
     
     @backgroundOpacity.setter
-    def backgroundOpacity(self, value): self.background_opacity = value; self.update(); print(value, "opa")
+    def backgroundOpacity(self, value): self.background_opacity = value; self.update()
 
     @pyqtProperty(float) # type: ignore
     def exitRotation(self): return self.exit_rotation
@@ -3027,7 +3025,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.on_cancel()
     
     def __del__(self):
-        print("Floating Window has been removed from RAM")
+        logger.warning("Floating Window has been removed from RAM")
 
 class DialogInputWindow(FloatingWindowGPU):
     def __init__(self, title = "Input Dialog", placeholder = "Type something...", min_number = 0, max_number = 100, max_length = 100, input_type = "number", bpm = None, player = None):
@@ -3315,7 +3313,7 @@ class Settings(FloatingWindowGPU):
                     widget = CheckboxWithLabel(
                         element_params["title"],
                         element_params["description"],
-                        saved_value.lower() == "true" if saved_value is not None
+                        str(saved_value).lower() == "true" if saved_value is not None
                         else element_params["default"]
                     )
 
