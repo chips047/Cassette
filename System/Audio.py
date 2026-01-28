@@ -1,22 +1,59 @@
+import av
+import math
 import aubio
+import soundfile
 import tempfile
 
 import numpy as np
 
 from PyQt5.QtCore import *
 from loguru import logger
-from pydub import AudioSegment
 
-import math
+class NoAudioStreams(Exception):
+    pass
 
 def ensure_wav(path):
     if path.lower().endswith(".wav"):
         return path
 
-    tmp_path = tempfile.mktemp(suffix=".wav")
-    audio = AudioSegment.from_file(path)
-    audio.export(tmp_path, format="wav", parameters=["-acodec", "pcm_s16le"])
+    tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp_path = tmp_file.name
+    tmp_file.close()
+
+    input_container = av.open(path)
+        
+    if not input_container.streams.audio:
+        raise NoAudioStreams()
+
+    in_stream = input_container.streams.audio[0]
+    output_container = av.open(tmp_path, mode='w', format='wav')
     
+    out_stream = output_container.add_stream('pcm_s16le', rate=in_stream.rate)
+    out_stream.layout = in_stream.layout
+    
+    resampler = av.AudioResampler(
+        format='s16', 
+        layout=in_stream.layout, 
+        rate=in_stream.rate
+    )
+    
+    for packet in input_container.demux(in_stream):
+        for frame in packet.decode():
+            resampled_frames = resampler.resample(frame)
+            
+            for resampled_frame in resampled_frames:
+                for out_packet in out_stream.encode(resampled_frame):
+                    output_container.mux(out_packet)
+
+    for out_packet in out_stream.encode():
+        output_container.mux(out_packet)
+    
+    if input_container:
+        input_container.close()
+    
+    if output_container:
+        output_container.close()
+
     return tmp_path
 
 def analyze_bpm_and_beats(
@@ -84,15 +121,7 @@ def analyze_bpm_and_beats(
     return bpm, beats
 
 def load_audio(path, sr = 44100, mono = True):
-    audio = AudioSegment.from_file(path)
+    file_path = ensure_wav(path)
+    data, fs = soundfile.read(file_path, dtype='float32')
 
-    if audio.frame_rate != sr:
-        audio = audio.set_frame_rate(sr)
-
-    if mono and audio.channels > 1:
-        audio = audio.set_channels(1)
-
-    samples = np.array(audio.get_array_of_samples())
-    y = samples.astype(np.float32) / 32768.0  
-
-    return y, sr
+    return data, fs
