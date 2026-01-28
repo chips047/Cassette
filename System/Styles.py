@@ -79,6 +79,7 @@ class Buttons:
                 padding: 0px 15px;
                 border-radius: {rounding}px;
                 height: {height}px;
+                outline: none;
                 {f"border: {border};" if border else ""}
             }}
 
@@ -157,6 +158,7 @@ class Controls:
             border: none;
             padding: 0;
             border-radius: {Roundings.button - 5}px;
+            outline: none;
         }}
 
         QPushButton#segmentedButton:hover {{
@@ -182,6 +184,7 @@ class Controls:
             border: none;
             padding: 0;
             border-radius: {Roundings.button - 2}px;
+            outline: none;
         }}
 
         QPushButton#segmentedButton:hover {{
