@@ -19,18 +19,38 @@ from . import Player
 
 import multiprocessing as mp
 
-def _proc_load_audio(file_path, queue):
-    try:
-        data, sr = Audio.load_audio(file_path)
-        queue.put(("SUCCESS", (data, sr)))
-    
-    except Exception as e:
-        queue.put(("ERROR", str(e)))
-
 def _proc_analyze_bpm(file_path, queue):
     try:
         bpm, peaks = Audio.analyze_bpm_and_beats(file_path)
         queue.put(("SUCCESS", (bpm, peaks)))
+    
+    except Exception as e:
+        queue.put(("ERROR", str(e)))
+
+def _proc_load_audio(file_path, queue):
+    try:
+        data, fs = Audio.load_audio(file_path)
+        audio_calc = data.astype(np.float32)
+        
+        if audio_calc.ndim > 1:
+            audio_calc = np.mean(audio_calc, axis=1)
+
+        audio_calc = audio_calc - np.mean(audio_calc)
+        max_val = np.max(np.abs(audio_calc))
+        if max_val > 0:
+            audio_calc = audio_calc / max_val
+
+        samples_per_pixel = len(audio_calc) / 1000
+        step = max(1, int(np.ceil(samples_per_pixel)))
+        
+        padded_len = ((len(audio_calc) + step - 1) // step) * step
+        padded = np.pad(audio_calc, (0, padded_len - len(audio_calc)), mode="constant")
+        reshaped = padded.reshape(-1, step)
+
+        waveform_data = np.mean(np.abs(reshaped), axis=1)
+        waveform_data = Utils.gaussian_filter1d_np(waveform_data, sigma=2)
+        
+        queue.put(("SUCCESS", (data, fs, waveform_data)))
     
     except Exception as e:
         queue.put(("ERROR", str(e)))
@@ -50,6 +70,8 @@ class TrimmingWaveformWidget(QWidget):
 
         self.start_time = 0.0
         self.end_time = 0.0
+        
+        self.waveform_amplitudes = []
 
         self.dragging_handle = None
         self._playback_position = 0.0
@@ -59,29 +81,37 @@ class TrimmingWaveformWidget(QWidget):
     def _generate_pixmap(self):
         width = self.width()
         height = self.height()
+        y_center = height / 2.0
 
         pixmap = QPixmap(width, height)
         pixmap.fill(QColor(Styles.Colors.Floating.background))
 
+        if len(self.waveform_amplitudes) == 0:
+            self.waveform_pixmap = pixmap
+            return
+
         painter = QPainter(pixmap)
         CurrentSettings["antialiasing"] and painter.setRenderHint(QPainter.Antialiasing)
 
-        bar_width = width / len(self.smooth_top)
-        path = QPainterPath()
+        amplitudes_top = y_center - self.waveform_amplitudes * y_center
+        amplitudes_bottom = y_center + self.waveform_amplitudes * y_center
 
-        for i in range(len(self.smooth_top)):
-            x = i * bar_width
-            y = max(0, min(height, self.smooth_top[i]))
+        path = QPainterPath()
+        
+        x_step = width / len(self.waveform_amplitudes)
+
+        for i in range(len(amplitudes_top)):
+            x = i * x_step
+            y = max(0, min(height, amplitudes_top[i]))
             
             if i == 0:
                 path.moveTo(x, y)
-            
             else:
                 path.lineTo(x, y)
 
-        for i in reversed(range(len(self.smooth_bottom))):
-            x = i * bar_width
-            y = max(0, min(height, self.smooth_bottom[i]))
+        for i in reversed(range(len(amplitudes_bottom))):
+            x = i * x_step
+            y = max(0, min(height, amplitudes_bottom[i]))
             path.lineTo(x, y)
 
         path.closeSubpath()
@@ -99,55 +129,17 @@ class TrimmingWaveformWidget(QWidget):
         painter.end()
         self.waveform_pixmap = pixmap
 
-    def set_data(self, audio_data, sampling_rate, peaks=None):
+    def set_data(self, audio_data, sampling_rate, waveform_amplitudes):
         self.audio_data = audio_data
         self.sampling_rate = sampling_rate
+        self.waveform_amplitudes = waveform_amplitudes
+        
         self.duration = len(audio_data) / sampling_rate if sampling_rate > 0 else 0
         self.end_time = self.duration
         self.is_loading = False
 
-        self._prepare_waveform()
-        self.update()
-    
-    def _prepare_waveform(self, mode="avg"):
-        width = self.width()
-        height = self.height()
-        y_center = height / 2.0
-
-        audio = self.audio_data.astype(np.float32)
-        audio = audio - np.mean(audio)
-        max_val = np.max(np.abs(audio))
-        
-        if max_val > 0:
-            audio = audio / max_val
-
-        samples_per_pixel = len(audio) / float(width)
-        step = max(1, int(np.ceil(samples_per_pixel)))
-        padded_len = ((len(audio) + step - 1) // step) * step
-        padded = np.pad(audio, (0, padded_len - len(audio)), mode="constant")
-        reshaped = padded.reshape(-1, step)
-
-        if mode == "minmax":
-            min_vals = np.min(reshaped, axis=1)
-            max_vals = np.max(reshaped, axis=1)
-
-            amplitudes_top = y_center - max_vals * y_center
-            amplitudes_bottom = y_center - min_vals * y_center
-
-        elif mode == "rms":
-            rms_vals = np.sqrt(np.mean(reshaped**2, axis=1))
-            amplitudes_top = y_center - rms_vals * y_center
-            amplitudes_bottom = y_center + rms_vals * y_center
-
-        elif mode == "avg":
-            avg_vals = np.mean(np.abs(reshaped), axis=1)
-            amplitudes_top = y_center - avg_vals * y_center
-            amplitudes_bottom = y_center + avg_vals * y_center
-
-        self.smooth_top = Utils.gaussian_filter1d_np(amplitudes_top, sigma = 2)
-        self.smooth_bottom = Utils.gaussian_filter1d_np(amplitudes_bottom, sigma = 2)
-
         self._generate_pixmap()
+        self.update()
     
     def paintEvent(self, event):
         super().paintEvent(event)
@@ -272,9 +264,7 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
             player = self.player,
             max_tilt_angle = 8,
             enable_audioplayer_effects = False
-        )
-        
-        self.player.load_audio(file_path)        
+        )   
         
         self.file_path = file_path
         self.sampling_rate = 0
@@ -299,7 +289,7 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
         self.load_queue = mp.Queue()
         self.bpm_queue = mp.Queue()
         
-        self.load_process = mp.Process(target = _proc_load_audio, args = (audiofile, self.load_queue))
+        self.load_process = mp.Process(target=_proc_load_audio, args=(audiofile, self.load_queue))
         self.bpm_process = mp.Process(target = _proc_analyze_bpm, args = (audiofile, self.bpm_queue))
 
         self.process_monitor_timer = QTimer(self)
@@ -390,17 +380,20 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
         self.content_layout.addLayout(settings_layout)
     
     def poll_processes(self):
-        if not self.load_queue.empty():
+        if self.load_queue and not self.load_queue.empty():
             status, result = self.load_queue.get()
             
             if status == "SUCCESS":
-                self.on_audio_loaded(*result, [])
+                data, fs, waveform_data = result
+                
+                self.player.load_audio_from_data(data, fs)
+                self.on_audio_loaded(data, fs, waveform_data)
             
             else:
-                logger.error(f"Load error: {result}")
+                logger.error(f"Audio load error: {result}")
             
             self.load_process.join()
-
+        
         if not self.bpm_queue.empty():
             status, result = self.bpm_queue.get()
             
@@ -412,14 +405,14 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
             
             self.bpm_process.join()
             
-        if not self.load_process.is_alive() and not self.bpm_process.is_alive():
+        if not self.bpm_process.is_alive() and not self.load_process.is_alive():
             self.process_monitor_timer.stop()
     
-    def on_audio_loaded(self, audio_data, sampling_rate, peaks):
+    def on_audio_loaded(self, audio_data, sampling_rate, waveform_data):
         logger.info("Audio loaded.")
         self.sampling_rate = sampling_rate
         
-        self.trim_widget.set_data(audio_data, sampling_rate, peaks)
+        self.trim_widget.set_data(audio_data, sampling_rate, waveform_data)
         
         self.end_time_sec = self.trim_widget.duration
         self.end_time_label.max_number = self.end_time_sec
@@ -610,7 +603,7 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
         super().on_ok()
     
     def reject_callback(self):
-        self.cleanup()
+        self.cleanup(True)
         super().on_cancel()
 
     def get_settings(self):
@@ -633,7 +626,7 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
             "model": number_model_to_code(self.model_selector.currentText()),
         }
     
-    def cleanup(self):
+    def cleanup(self, cancelled = False):
         if self.load_process.is_alive():
             self.load_process.terminate()
         
@@ -644,10 +637,9 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
             self.process_monitor_timer.stop()
         
         if self.player.is_playing:
-            self.player.tape(duration = 3.0, end_speed = 0.0, cleanup_on_finish = True)
+            self.player.tape(duration = 1.0 if not cancelled else 3.0, end_speed = 0.0)
         
-        else: # I HATE THIS FUCKING SHIT
-            self.player.cleanup()
+        # If crashes, restore the lines.
 
         self.playback_timer.stop()
         self.bpm_anim_timer.stop()
