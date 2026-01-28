@@ -36,7 +36,7 @@ class FastUISound:
         self.stream = sd.OutputStream(
             samplerate=self.fs,
             channels=self.data.shape[1],
-            blocksize=64,
+            blocksize=128,
             callback=self._callback,
             latency='low'
         )
@@ -112,6 +112,7 @@ class PlaybackManager(QObject):
         self.is_playing = False
         self.duration_ms = 0
         self.volume = 1.0
+        self.fs = None
 
         self.cleanup_on_finished = False
 
@@ -148,7 +149,6 @@ class PlaybackManager(QObject):
         try:
             if self.stream:
                 self.cleanup()
-                logger.warning("Loading audio: Player has been automatically cleaned up")
             
             self._setup_parameters()
 
@@ -158,27 +158,50 @@ class PlaybackManager(QObject):
             if self.data.ndim == 1:
                 self.data = np.stack([self.data, self.data], axis=-1)
 
-            self.stream = sd.OutputStream(
-                channels = self.data.ndim,
-                samplerate = self.fs,
-                blocksize = 256,
-                latency = "low",
-                callback = self.audio_callback
-            )
-
-            max_abs = np.max(np.abs(self.data))
-
-            with self.lock:
-                self._track_peak_level = max(max_abs, 1e-6)
-                channels = self.data.shape[1]
-                self._filter_states = np.zeros((channels, 4), dtype='float64')
-
-            self.stream.start()
+            self._open_stream()
             
             self.audio_loaded.emit(self.data, self.fs, len(self.data) / self.fs)
         
         except Exception as e:
             logger.error(f"Something went wrong while loading the audio: {traceback.format_exc()}")
+
+    def load_audio_from_data(self, data, fs):
+        try:
+            if self.stream:
+                self.cleanup()
+            
+            self._setup_parameters()
+            
+            self.fs = fs
+            self.data = data
+            self.duration_ms = len(self.data) / self.fs * 1000
+
+            if self.data.ndim == 1:
+                self.data = np.stack([self.data, self.data], axis = -1)
+            
+            self._open_stream()
+            
+            self.audio_loaded.emit(self.data, self.fs, len(self.data) / self.fs)
+            
+        except Exception as e:
+            logger.error(f"Error initializing from data: {traceback.format_exc()}")
+
+    def _open_stream(self):
+        self.stream = sd.OutputStream(
+            channels = self.data.shape[1],
+            samplerate = self.fs,
+            blocksize = 256,
+            latency = "low",
+            callback = self.audio_callback
+        )
+        
+        max_abs = np.max(np.abs(self.data))
+        with self.lock:
+            self._track_peak_level = max(max_abs, 1e-6)
+            channels = self.data.shape[1]
+            self._filter_states = np.zeros((channels, 4), dtype='float64')
+        
+        self.stream.start()
 
     def smooth_channel_delay(self, left_from_ms = None, left_to_ms = None, right_from_ms = None, right_to_ms = None, duration = 0.5, steps = 50):
         if left_from_ms is None:
