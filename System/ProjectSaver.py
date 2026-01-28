@@ -1,12 +1,10 @@
 import os
+import av
 import copy
 import json
 import random
 import shutil
 import subprocess
-
-import numpy as np
-from pydub import AudioSegment
 
 from System import UI
 from System import Porter
@@ -184,19 +182,81 @@ class BaseComposition:
         self.cropped_song_path = Utils.get_songs_path(f"{self.id}/cropped_song.ogg")
         self.full_song_path = Utils.get_songs_path(f"{self.id}/full_song.ogg")
 
-    def export_segment(self, segment, path, fade_in = 0, fade_out = 0):
-        segment = segment.normalize()
+    def export_segment(self, input_path, output_path, start_ms, end_ms, fade_in=0, fade_out=0):
+        container = av.open(input_path)
+        input_stream = container.streams.audio[0]
+
+        # ПРЫЖОК К НУЖНОМУ ВРЕМЕНИ (оптимизация)
+        # Ищем чуть раньше (на 1 сек), чтобы кодек успел инициализироваться
+        seek_target = max(0, int((start_ms / 1000 - 1) * av.time_base))
+        container.seek(seek_target, stream=input_stream)
+
+        output_container = av.open(output_path, mode='w', format='opus')
+        output_stream = output_container.add_stream('libopus', rate=48000)
+
+        graph = av.filter.Graph()
+        buffer = graph.add_abuffer(input_stream)
+
+        # Фильтры
+        trim = graph.add("atrim", start=str(start_ms/1000), end=str(end_ms/1000))
+        reset_ts = graph.add("asetpts", "PTS-STARTPTS")
+        norm = graph.add("dynaudnorm")
+
+        buffer.link_to(trim)
+        trim.link_to(reset_ts)
+        reset_ts.link_to(norm)
+
+        last_link = norm
+        duration_sec = (end_ms - start_ms) / 1000
 
         if fade_in:
-            segment = segment.fade_in(fade_in)
+            f_in = graph.add("afade", type="in", start_time="0", duration=str(fade_in/1000))
+            last_link.link_to(f_in)
+            last_link = f_in
 
         if fade_out:
-            segment = segment.fade_out(fade_out)
+            f_out = graph.add("afade", type="out", start_time=str(max(0, duration_sec - fade_out/1000)), duration=str(fade_out/1000))
+            last_link.link_to(f_out)
+            last_link = f_out
 
-        tmp = path.replace(".ogg", ".opus")
-        segment.export(tmp, format="opus")
+        sink = graph.add("abuffersink")
+        last_link.link_to(sink)
+        graph.configure()
 
-        os.replace(tmp, path)
+        try:
+            for frame in container.decode(audio=0):
+                # Пропускаем кадры, которые до seek_target (если seek был неточным)
+                if frame.pts is not None and frame.time < (start_ms / 1000) - 0.5:
+                    continue
+
+                try:
+                    graph.push(frame)
+                    while True:
+                        try:
+                            filt_frame = graph.pull()
+                            for packet in output_stream.encode(filt_frame):
+                                output_container.mux(packet)
+                        except (av.EOFError, av.BlockingIOError):
+                            break
+                except av.EOFError:
+                    # Граф сказал "хватит" (например, atrim закончил работу)
+                    break
+        finally:
+            # Важно закрыть всё правильно
+            try:
+                graph.push(None) # Финализируем фильтры
+                while True:
+                    filt_frame = graph.pull()
+                    for packet in output_stream.encode(filt_frame):
+                        output_container.mux(packet)
+            except (av.EOFError, av.BlockingIOError):
+                pass
+
+        for packet in output_stream.encode():
+            output_container.mux(packet)
+
+        container.close()
+        output_container.close()
 
     def sorted_glyphs(self) -> tuple:
         singles, effects = [], []
@@ -211,15 +271,21 @@ class BaseComposition:
         return singles, effects
 
     def prepare_cropped_audio(self, audio_path: str | None = None):
-        full_song = AudioSegment.from_file(audio_path)
-        audio = full_song[self.start_ms:self.end_ms]
-
+        tmp_path = self.cropped_song_path.replace(".ogg", ".opus")
+        
         self.export_segment(
-            audio,
-            self.cropped_song_path,
+            audio_path,
+            tmp_path,
+            self.start_ms,
+            self.end_ms,
             self.fade_in_duration,
             self.fade_out_duration
         )
+
+        if os.path.exists(self.cropped_song_path):
+            os.remove(self.cropped_song_path)
+        
+        os.rename(tmp_path, self.cropped_song_path)
 
     def export(self, model: str | None = None, open_folder: bool = False):
         if model != self.model and model:
