@@ -306,13 +306,19 @@ class MainMenu(QWidget):
     def on_new_composition(self):
         options = QFileDialog.Options()
         options |= QFileDialog.Option.ReadOnly
-                    
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, 
-            "Open Audio File", "",
-            "Audio Files (*.wav *.mp3 *.ogg *.flac *.mp4);;All Files (*)", 
-            options = options
+        file_path = None
+    
+        dialog = QFileDialog(
+            self,
+            "Open Audio File",
+            "",
+            "Audio Files (*.wav *.mp3 *.ogg *.flac *.opus *.mp4 *.mkv *.mov);;All Files (*)"
         )
+        
+        dialog.setOptions(options)
+
+        if dialog.exec_() == QFileDialog.Accepted:
+            file_path = dialog.selectedFiles()[0]
         
         if not file_path:
             return
@@ -353,11 +359,9 @@ class MainMenu(QWidget):
         title_layout = QVBoxLayout(title_container)
         title_layout.setContentsMargins(25, 20, 25, 20)
         
-        title_label = QLabel(
-            Utils.get_time()
-        )
+        title_label = QLabel(Utils.get_time())
         title_label.setFont(Utils.NType(24))
-        title_label.setStyleSheet("background-color: transparent; color: #ffffff")
+        title_label.setStyleSheet("background-color: transparent; color: #ffffff;")
         title_layout.addWidget(title_label)
         
         container_layout.addWidget(title_container)
@@ -410,7 +414,7 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
     
     def on_import(self):
-        test = UI.TestWindow()
+        test = UI.ErrorWindow("Wait.", "This function is in development.", "I don't care")
         test.exec_()
     
     def on_about(self):
@@ -439,6 +443,7 @@ class MainMenu(QWidget):
                 color: white;
                 border: none;
                 padding: 8px 15px;
+                height: 30px;
                 border-radius: 20px;
             }}
             QPushButton:hover {{
@@ -452,6 +457,7 @@ class MainMenu(QWidget):
                 color: #ccc;
                 border: none;
                 padding: 8px 15px;
+                min-height: 30px;
                 border-radius: 20px;
             }
             QPushButton:hover {
