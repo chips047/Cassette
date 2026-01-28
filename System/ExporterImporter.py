@@ -4,6 +4,8 @@ import math
 import base64
 import subprocess
 
+import shutil
+from mutagen.oggopus import OggOpus
 from System.Constants import *
 
 TIME_STEP_MS = 16.666
@@ -11,9 +13,9 @@ TIME_STEP_MS = 16.666
 def glyphs_to_ogg(path_to_audio: str, destination: str, glyphs: dict, model_code: str):
     model = get_model(model_code)
     columns_model = get_columns_model(model)
-    audio_json_data = get_audio_json(path_to_audio)
+    audio_duration = get_audio_duration(path_to_audio)
 
-    author_lines = math.ceil(float(audio_json_data["format"]["duration"]) * 1000 / TIME_STEP_MS)
+    author_lines = math.ceil(float(audio_duration) * 1000 / TIME_STEP_MS)
     author_data = [[0 for _ in range(get_number_of_columns_from_columns_model(columns_model))] for _ in range(author_lines)]
     
     custom1_data = []
@@ -26,10 +28,9 @@ def glyphs_to_ogg(path_to_audio: str, destination: str, glyphs: dict, model_code
     
     columns_mode, custom2 = get_columns_mode_and_custom2(nglyph_data)
     
-    metadata = prepare_metadata(audio_json_data, author_compressed_base64, custom1_compressed_base64, columns_mode, custom2)
-    ffmetadata_content = build_ffmetadata(metadata)
+    metadata = prepare_metadata(author_compressed_base64, custom1_compressed_base64, columns_mode, custom2)
 
-    run_ffmpeg(path_to_audio, destination, audio_json_data, ffmetadata_content)
+    run_ffmpeg(path_to_audio, destination, metadata)
 
 def get_model(model_code: str):
     return PhoneModel[model_code]
@@ -110,13 +111,11 @@ def prepare_nglyph_data(model, author_data, custom1_data):
     }
     return nglyph_data
 
-def get_audio_json(path_to_audio: str):
-    return json.loads(
-        subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration,stream=duration", "-of", "json", path_to_audio],
-            capture_output=True, text=True
-        ).stdout
-    )
+def get_audio_duration(path_to_audio: str):
+    audio = OggOpus(path_to_audio)
+    duration = audio.info.length
+    
+    return duration
 
 def compress_and_encode_data(nglyph_data):
     author_raw_data = ('\r\n'.join(list(nglyph_data['AUTHOR'])) + '\r\n').encode('utf-8')
@@ -137,9 +136,9 @@ def get_columns_mode_and_custom2(nglyph_data):
     
     return columns_mode, custom2
 
-def prepare_metadata(audio_json_data, author_base64, custom1_base64, columns_mode, custom2):
+def prepare_metadata(author_base64, custom1_base64, columns_mode, custom2):
     return {
-        "TITLE": audio_json_data.get("format", {}).get("tags", {}).get("title") or "Made with Cassette",
+        "TITLE": "Made with Cassette",
         "ALBUM": "Made with Cassette",
         "AUTHOR": author_base64,
         "COMPOSER": f"v1-{DEVICE_CODENAME[columns_mode]} Glyph Composer",
@@ -147,30 +146,16 @@ def prepare_metadata(audio_json_data, author_base64, custom1_base64, columns_mod
         "CUSTOM2": custom2
     }
 
-def build_ffmetadata(metadata: dict):
-    def _escape_ffmetadata(content: str) -> str:
-        return content.replace('\\', '\\\\').replace('=', '\\=').replace(';', '\\;').replace('#', '\\#').replace('\n', '\\\n')
-
-    return ';FFMETADATA1\n' + '\n'.join([f"{_escape_ffmetadata(key)}={_escape_ffmetadata(value)}" for key, value in metadata.items()]) + '\n'
-
-def run_ffmpeg(path_to_audio, destination, audio_json_data, ffmetadata_content):
-    ffmpeg_command = ["ffmpeg", "-v", "error", "-i", path_to_audio, '-i', '-', '-y']
-
-    ffmpeg_command += [
-        '-map_metadata',
-        '1',
-        '-c:a',
-        'copy',
-        '-fflags',
-        '+bitexact',
-        '-flags:v',
-        '+bitexact',
-        '-flags:a',
-        '+bitexact',
-        destination
-    ]
-
-    subprocess.run(ffmpeg_command, input=ffmetadata_content.encode('utf-8'), capture_output=True, text=False)
+def run_ffmpeg(path_to_audio, destination, metadata):
+    if path_to_audio != destination:
+        shutil.copy2(path_to_audio, destination)
+    
+    audio = OggOpus(destination)
+    
+    for key, value in metadata.items():
+        audio[key] = str(value)
+    
+    audio.save()
 
 def encode_base64(data: bytes) -> str:
     return base64.b64encode(data).decode('utf-8').removesuffix('==').removesuffix('=')

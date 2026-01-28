@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 
 import multiprocessing as mp
 from loguru import logger
@@ -9,19 +8,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
-
-if sys.platform == "win32":
-    # It prevents appearing of CMD because of pydub ffmpeg operations.
-    
-    class NoWindowPopen(subprocess.Popen):
-        def __init__(self, *args, **kwargs):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            kwargs["startupinfo"] = startupinfo
-            super().__init__(*args, **kwargs)
-
-    subprocess.Popen = NoWindowPopen
 
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
@@ -35,17 +21,6 @@ from System import Player
 from System.Constants import *
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
-
-def is_ffmpeg_installed():
-    envdir_list = [os.curdir] + os.environ["PATH"].split(os.pathsep)
-    ffmpeg_found = False
-
-    for envdir in envdir_list:
-        if "ffmpeg" in envdir.lower():
-            ffmpeg_found = True
-            break
-    
-    return ffmpeg_found
 
 class StartupFadeOverlay(QWidget):
     finished = pyqtSignal()
@@ -124,12 +99,6 @@ class ApplicationWindow(QMainWindow):
         self.setStyleSheet(f"background-color: {Styles.Colors.background};")
 
         self.intro_overlay = StartupFadeOverlay(self)
-        
-        if not is_ffmpeg_installed():
-            UI.ErrorWindow(
-                "FFmpeg?",
-                "FFmpeg was not found. Audio can't be loaded, but the main menu will still work.\n\nTo install FFmpeg on Linux, use your package manager, for example:\n-- Ubuntu/Debian: sudo apt install ffmpeg\n-- Arch: sudo pacman -S ffmpeg\n-- Fedora: sudo dnf install ffmpeg\n\nTo install FFmpeg on Windows, use PowerShell:\n-- winget install ffmpeg\n\nRestart the app after installation."
-            ).exec_()
         
         #self._memory_leak_test()
 
@@ -298,6 +267,7 @@ def main():
     QApplication.setAttribute(Qt.AA_UseDesktopOpenGL) 
 
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
 
     prepare_default_settings(SettingsDict)
     load_settings()
