@@ -266,6 +266,9 @@ def main():
     fmt.setVersion(3, 3)
     fmt.setProfile(QSurfaceFormat.CoreProfile)
 
+    prepare_default_settings(SettingsDict)
+    load_settings()
+
     if CurrentSettings.get("msaa"):
         fmt.setSamples(CurrentSettings["msaa"])
     
@@ -273,12 +276,11 @@ def main():
     
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
+    from OpenGL.GL import glGetString, GL_VERSION, GL_SHADING_LANGUAGE_VERSION
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-
-    prepare_default_settings(SettingsDict)
-    load_settings()
 
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")
@@ -287,6 +289,9 @@ def main():
     if os.path.exists("System/Fonts/NType82.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
         logger.info("Loaded font NType82.otf")
+    
+    print(f"OpenGL Version: {glGetString(GL_VERSION)}")
+    print(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION)}")
 
     app.setWindowIcon(QIcon("System/Icons/Icon256.ico"))
 

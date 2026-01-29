@@ -282,9 +282,7 @@ ModelTracks = {
 }
 
 # Shaders
-GLYPH_VS = """
-// GLYPH_VS
-#version 330 core
+GLYPH_VS = """#version 330 core
 layout (location = 0) in vec2 aPos;
 layout (location = 1) in vec2 aNormal;
 layout (location = 2) in float aSegIdx;
@@ -301,8 +299,7 @@ void main() {
 }
 """
 
-GLYPH_FS = """
-#version 330 core
+GLYPH_FS = """#version 330 core
 flat in float vSegIdx;
 out vec4 FragColor;
 uniform vec3 uColorOn;
@@ -314,8 +311,7 @@ void main() {
 }
 """
 
-FLOATING_WINDOW_VS = """
-#version 330 core
+FLOATING_WINDOW_VS = """#version 330 core
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec2 texCoord;
 
@@ -329,8 +325,7 @@ void main() {
 }
 """
 
-FLOATING_WINDOW_FS = """
-#version 330 core
+FLOATING_WINDOW_FS = """#version 330 core
 in vec2 UV;
 out vec4 color;
 
