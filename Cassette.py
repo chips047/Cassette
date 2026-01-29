@@ -262,20 +262,23 @@ class ApplicationWindow(QMainWindow):
             QTimer.singleShot(1800, QApplication.instance().quit)
 
 def main():
+    fmt = QSurfaceFormat()
+    fmt.setVersion(3, 3)
+    fmt.setProfile(QSurfaceFormat.CoreProfile)
+
+    if CurrentSettings.get("msaa"):
+        fmt.setSamples(CurrentSettings["msaa"])
+    
+    QSurfaceFormat.setDefaultFormat(fmt)
+    
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-    QApplication.setAttribute(Qt.AA_UseDesktopOpenGL) 
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
     prepare_default_settings(SettingsDict)
     load_settings()
-
-    if CurrentSettings.get("msaa"):
-        fmt = QSurfaceFormat()
-        fmt.setSamples(CurrentSettings["msaa"])
-        QSurfaceFormat.setDefaultFormat(fmt)
 
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")

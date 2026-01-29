@@ -103,6 +103,9 @@ jobs:
             --add-data "version${{ matrix.sep }}." \
             --add-data "System${{ matrix.sep }}System" \
             --hidden-import OpenGL \
+            --hidden-import="av.sidedata.sidedata" \
+            --hidden-import av \
+            --collect-all av \
             --noconfirm \
             Cassette.py
 

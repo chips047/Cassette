@@ -15,21 +15,17 @@ from System import RTVisualizer
 from System.Constants import *
 from System import Utils
 
+import av
+
 def get_metadata(file_path):
-    cmd = [
-        "ffprobe",
-        "-v", "quiet",
-        "-print_format", "json",
-        "-show_format",
-        file_path
-    ]
+    container = av.open(file_path)
     
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    metadata = json.loads(result.stdout)
+    title = None
+    artist = "Unknown Artist"
     
-    tags = metadata.get("format", {}).get("tags", {})
-    title = tags.get("title")
-    artist = tags.get("artist", "Unknown Artist")
+    if container.metadata:
+        title = container.metadata.get('title')
+        artist = container.metadata.get('artist', "Unknown Artist")
     
     return title, artist
 
