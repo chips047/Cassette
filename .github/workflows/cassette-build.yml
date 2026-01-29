@@ -84,15 +84,21 @@ jobs:
           else
             source venv/bin/activate
           fi
-          
+
           ICON_PATH="System/Icons/Icon256.${{ matrix.icon_ext }}"
-          
           ICON_ARG=""
           if [ -f "$ICON_PATH" ]; then
             ICON_ARG="--icon=$ICON_PATH"
           fi
 
-          pyinstaller --onedir --windowed \
+          # Select bundle mode
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            BUNDLE_MODE="--onefile --windowed"
+          else
+            BUNDLE_MODE="--onedir --windowed"
+          fi
+
+          pyinstaller $BUNDLE_MODE \
             $ICON_ARG \
             --add-data "version${{ matrix.sep }}." \
             --add-data "System${{ matrix.sep }}System" \
