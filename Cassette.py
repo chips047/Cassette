@@ -265,6 +265,7 @@ def main():
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)
     fmt.setProfile(QSurfaceFormat.CoreProfile)
+    fmt.setOption(QSurfaceFormat.DeprecatedFunctions, False)
 
     prepare_default_settings(SettingsDict)
     load_settings()
@@ -290,8 +291,11 @@ def main():
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
         logger.info("Loaded font NType82.otf")
     
-    print(f"OpenGL Version: {glGetString(GL_VERSION)}")
-    print(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION)}")
+    try:
+        print(f"OpenGL Version: {glGetString(GL_VERSION)}")
+        print(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION)}")
+    except Exception as e:
+        logger.warning(f"Failed to retrieve OpenGL info: {e}")
 
     app.setWindowIcon(QIcon("System/Icons/Icon256.ico"))
 
