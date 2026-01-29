@@ -1,3 +1,4 @@
+import sys
 import json
 import socket
 import copy
@@ -8,7 +9,14 @@ from PyQt5.QtCore import *
 from System import UI
 from System.Constants import *
 
-ADB_PATH = "System/ADB/adb"
+if sys.platform == "win32":
+    ADB_PATH = "System/ADB/adb.exe"
+
+elif sys.platform == "darwin":
+    ADB_PATH = "System/ADB/adb-macos"
+
+else:
+    ADB_PATH = "System/ADB/adb-linux"
 
 class GlyphSyncer(QObject):
 	error_occurred = pyqtSignal(str, str)
