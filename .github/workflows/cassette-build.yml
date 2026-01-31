@@ -114,4 +114,5 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            ${{ runner.os == 'macOS' && 'dist/Cassette.app' || 'dist/*' }}
+            ${{ runner.os == 'macOS' && 'dist/Cassette.app' || 'dist/' }}
+          include-hidden-files: true
