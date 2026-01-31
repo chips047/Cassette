@@ -93,7 +93,7 @@ jobs:
 
           # Select bundle mode
           if [ "${{ runner.os }}" == "macOS" ]; then
-            BUNDLE_MODE="--onefile --windowed"
+            BUNDLE_MODE="--windowed"
           else
             BUNDLE_MODE="--onedir --windowed"
           fi
