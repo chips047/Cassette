@@ -311,7 +311,7 @@ void main() {
 }
 """
 
-FLOATING_WINDOW_VS = """#version 330 core
+FLOATING_WINDOW_VS = """#version 410 core
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec2 texCoord;
 
@@ -325,7 +325,7 @@ void main() {
 }
 """
 
-FLOATING_WINDOW_FS = """#version 330 core
+FLOATING_WINDOW_FS = """#version 410 core
 in vec2 UV;
 out vec4 color;
 

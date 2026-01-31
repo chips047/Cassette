@@ -2679,7 +2679,7 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         vs = shaders.compileShader(FLOATING_WINDOW_VS, GL_VERTEX_SHADER)
         fs = shaders.compileShader(FLOATING_WINDOW_FS, GL_FRAGMENT_SHADER)
-        self.shader_program = shaders.compileProgram(vs, fs)
+        self.shader_program = shaders.compileProgram(vs, fs, validate = False)
 
         vertices = np.array([
             1.0,   1.0, 0.0, 1.0, 1.0,
