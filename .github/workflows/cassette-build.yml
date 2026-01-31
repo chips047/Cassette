@@ -93,7 +93,7 @@ jobs:
 
           # Select bundle mode
           if [ "${{ runner.os }}" == "macOS" ]; then
-            BUNDLE_MODE="--windowed"
+            BUNDLE_MODE="--onefile --windowed"
           else
             BUNDLE_MODE="--onedir --windowed"
           fi
@@ -113,4 +113,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/
+          path: |
+            ${{ runner.os == 'macOS' && 'dist/Cassette.app' || 'dist/*' }}
