@@ -264,8 +264,8 @@ class ApplicationWindow(QMainWindow):
 def main():
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)
-    fmt.setProfile(QSurfaceFormat.CoreProfile)
-    fmt.setOption(QSurfaceFormat.DeprecatedFunctions, False)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    fmt.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
 
     prepare_default_settings(SettingsDict)
     load_settings()
@@ -277,8 +277,7 @@ def main():
     
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-    
-    from OpenGL.GL import glGetString, GL_VERSION, GL_SHADING_LANGUAGE_VERSION
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -290,12 +289,6 @@ def main():
     if os.path.exists("System/Fonts/NType82.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
         logger.info("Loaded font NType82.otf")
-    
-    try:
-        print(f"OpenGL Version: {glGetString(GL_VERSION)}")
-        print(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION)}")
-    except Exception as e:
-        logger.warning(f"Failed to retrieve OpenGL info: {e}")
 
     app.setWindowIcon(QIcon("System/Icons/Icon256.ico"))
 

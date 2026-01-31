@@ -1821,6 +1821,13 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.setup_animation_properties()
         self.update_bpm(self.bpm)
         
+        fmt = QSurfaceFormat()
+        fmt.setVersion(3, 3)
+        fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+        fmt.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
+        
+        self.setFormat(fmt)
+        
         if self.open_animation_enabled:
             QTimer.singleShot(0, self.start_open_animation)
 
@@ -2652,9 +2659,23 @@ class FloatingWindowGPU(QOpenGLWidget):
     # Render - - - - - - - - - - - - - - - - - - - - - - - -
     
     def initializeGL(self):
+        logger.debug("Initializing OpenGL context for FloatingWindow.")
+        
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glClearColor(0, 0, 0, 0)
+        
+        try:
+            print(f"OpenGL Version: {glGetString(GL_VERSION)}")
+            print(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION)}")
+            ctx = self.context()
+            print(f"OpenGL Version: {ctx.format().majorVersion()}.{ctx.format().minorVersion()}")
+            print(f"Is Core Profile: {ctx.format().profile() == QSurfaceFormat.CoreProfile}")
+        
+        except Exception as e:
+            logger.warning(f"Failed to retrieve OpenGL info: {e}")
+
+        logger.warning("Compiling shaders for FloatingWindow.")
 
         vs = shaders.compileShader(FLOATING_WINDOW_VS, GL_VERTEX_SHADER)
         fs = shaders.compileShader(FLOATING_WINDOW_FS, GL_FRAGMENT_SHADER)
