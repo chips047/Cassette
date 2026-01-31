@@ -1822,7 +1822,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.update_bpm(self.bpm)
         
         fmt = QSurfaceFormat()
-        fmt.setVersion(3, 3)
+        fmt.setVersion(4, 1)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         fmt.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
         
@@ -3797,9 +3797,10 @@ class GlyphVisualizer(FloatingWindowGPU):
         
         self.prog = shaders.compileProgram(
             shaders.compileShader(GLYPH_VS, GL_VERTEX_SHADER),
-            shaders.compileShader(GLYPH_FS, GL_FRAGMENT_SHADER)
+            shaders.compileShader(GLYPH_FS, GL_FRAGMENT_SHADER),
+            validate = False
         )
-
+        
         self.loc_mvp = glGetUniformLocation(self.prog, "mvp")
         self.loc_thickness = glGetUniformLocation(self.prog, "uThickness")
         self.loc_color_on = glGetUniformLocation(self.prog, "uColorOn")

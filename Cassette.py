@@ -263,7 +263,7 @@ class ApplicationWindow(QMainWindow):
 
 def main():
     fmt = QSurfaceFormat()
-    fmt.setVersion(3, 3)
+    fmt.setVersion(4, 1)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     fmt.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
 
