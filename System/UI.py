@@ -3501,7 +3501,7 @@ class Tutorial(FloatingWindowGPU):
             },
             4: {
                 "label": "Basics - Visualizator",
-                "text": "You can move the visualizator up and down by dragging it with `Left Mouse Button`. You also can resize by scrolling `Wheel` while hovering over it."
+                "text": "You can move the visualizator by dragging it with `Left Mouse Button`. You also can resize by scrolling `Wheel` while hovering over it."
             },
             5: {
                 "label": "Basics - Navigation",
