@@ -79,7 +79,7 @@ class KeyboardController:
         if self.glyph_controller.spawn_glyph(event):
             return event.accept()
 
-        if key == Qt.Key.Key_Delete:
+        if key == Qt.Key.Key_Delete or key == Qt.Key.Key_Backspace:
             self.glyph_controller.delete_glyphs()
             return event.accept()
         
