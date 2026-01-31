@@ -3489,7 +3489,7 @@ class Tutorial(FloatingWindowGPU):
             },
             1: {
                 "label": "Basics",
-                "text": "`Space` to play / pause.\n`1, 2, 3, 4, 5, 6, 7, 8, 9, 0, Minus` to place a glyph. `Del` to delete it."
+                "text": "`Space` to play / pause.\n`1, 2, 3, 4, 5, 6, 7, 8, 9, 0, Minus` to place a glyph. `Del / Backspace` to delete it. `Ctrl + / -` or `Command + / -` to zoom."
             },
             2: {
                 "label": "Basics - Mouse",
@@ -3500,14 +3500,18 @@ class Tutorial(FloatingWindowGPU):
                 "text": "Use `Shift + Wheel` to scroll vertically. Use `Wheel` to scroll horizontally."
             },
             4: {
+                "label": "Basics - Visualizator",
+                "text": "You can move the visualizator up and down by dragging it with `Left Mouse Button`. You also can resize by scrolling `Wheel` while hovering over it."
+            },
+            5: {
                 "label": "Basics - Navigation",
                 "text": "Click `Eject` to go back to the main menu."
             },
-            5: {
+            6: {
                 "label": "Effects - Mixing",
                 "text": "You can combine effects! Place glyphs on top of each other with different effects."
             },
-            6: {
+            7: {
                 "label": "Shall we?",
                 "text": "Now, try yourself in glyphtones creation."
             }
@@ -3535,7 +3539,7 @@ class Tutorial(FloatingWindowGPU):
         self.make_page()
         self.sound_effect_roll()
 
-        if self.stage == 7:
+        if self.stage == 8:
             self.on_ok()
     
     def sound_effect_roll(self):
@@ -3800,7 +3804,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             shaders.compileShader(GLYPH_FS, GL_FRAGMENT_SHADER),
             validate = False
         )
-        
+
         self.loc_mvp = glGetUniformLocation(self.prog, "mvp")
         self.loc_thickness = glGetUniformLocation(self.prog, "uThickness")
         self.loc_color_on = glGetUniformLocation(self.prog, "uColorOn")
