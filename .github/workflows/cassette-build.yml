@@ -113,5 +113,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cassette-${{ matrix.artifact_name }}
-          path: dist/Cassette${{ runner.os == 'macOS' && '.app' || '' }}
+          path: |
+            dist/Cassette
+            ${{ runner.os == 'macOS' && '!dist/Cassette' || '' }}
           include-hidden-files: true
