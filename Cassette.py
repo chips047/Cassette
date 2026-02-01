@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 import traceback
 
 import multiprocessing as mp
@@ -55,6 +56,10 @@ class StartupFadeOverlay(QWidget):
         self._bg_opacity = 1.0
         self.color = QColor(0, 0, 0)
         
+        self.current_text = None
+        self.text_rect = self.rect()
+        self.is_easter_egg = False
+        
         self.setGeometry(parent.rect())
         self.raise_()
 
@@ -77,18 +82,61 @@ class StartupFadeOverlay(QWidget):
     def start(self, hold_ms = 600):
         self.setGeometry(self.parent().rect())
         self.show()
+        self.adjustSize()
+        
+        a_chance = random.random() > 0.98
+        
+        if a_chance or CurrentSettings.get("first_start"):
+            self.is_easter_egg = a_chance
+            
+            if self.is_easter_egg:
+                self.current_text = random.choice([
+                    "I feel alive.", "Exciting.", "Vintage.",
+                    "Can you hear it?", "I've been waiting.",
+                    "Are we alone?", "Witnessing...", "The tape remembers."
+                ])
+                
+                margin = 80
+                w, h = 400, 100
+                rx = random.randint(margin, max(margin, self.width() - w - margin))
+                ry = random.randint(margin, max(margin, self.height() - h - margin))
+                self.text_rect = QRect(rx, ry, w, h)
+            
+            else:
+                self.current_text = "Get ready."
+                self.text_rect = self.rect()
+        
+        else:
+            self.text_rect = self.rect()
         
         QTimer.singleShot(hold_ms, self.bg_anim.start)
 
     def _on_finished(self):
+        settings = QSettings("chips047", "Cassette")
+        settings.setValue("first_start", False)
+        settings.sync()
+        load_settings()
+        
         self.close()
         self.finished.emit()
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+
         alpha = int(self._bg_opacity * 255)
-        self.color.setAlpha(alpha) 
-        painter.fillRect(self.rect(), self.color)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, alpha))
+
+        if not self.current_text:
+            return
+
+        text_color = QColor(255, 255, 255, alpha)
+        painter.setPen(text_color)
+        
+        font_size = 12 if self.is_easter_egg else 30
+        painter.setFont(Utils.NType(font_size))
+        
+        painter.drawText(self.text_rect, Qt.AlignCenter, self.current_text)
 
 class ApplicationWindow(QMainWindow):
     def __init__(self):
