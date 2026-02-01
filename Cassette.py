@@ -1,5 +1,6 @@
 import os
 import sys
+import traceback
 
 import multiprocessing as mp
 from loguru import logger
@@ -21,6 +22,27 @@ from System import Player
 from System.Constants import *
 from System.ProjectMenu import MainMenu
 from System.Compositor import CompositorWidget
+
+processing_exception = False
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    global processing_exception
+    
+    if processing_exception:
+        return
+    
+    processing_exception = True
+    
+    try:
+        UI.ErrorWindow(f"Panic: {exc_value}", str('\n'.join(traceback.format_exception(exc_type, exc_value, exc_traceback))) + "\nCassette will now close.", "No way").exec_()
+    
+    except Exception as e:
+        print(f"Critical failure in error handler: {e}")
+    
+    finally:
+        processing_exception = False
+
+sys.excepthook = handle_exception
 
 class StartupFadeOverlay(QWidget):
     finished = pyqtSignal()
