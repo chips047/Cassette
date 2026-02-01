@@ -290,7 +290,8 @@ def main():
         QFontDatabase.addApplicationFont("System/Fonts/NType82.otf")
         logger.info("Loaded font NType82.otf")
 
-    app.setWindowIcon(QIcon("System/Icons/Icon256.ico"))
+    icon_format = "ico" if sys.platform == "win32" else "icns"
+    app.setWindowIcon(QIcon(f"System/Icons/Icon256.{icon_format}"))
 
     main_window = ApplicationWindow()
     main_window.show() 
