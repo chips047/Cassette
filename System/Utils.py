@@ -93,19 +93,18 @@ def get_time():
     elif hours >= 22 or hours <= 5:
         return random.choice(
             [
-                "Good night.",
                 "Sleep tight.",
                 "Sweet dreams.",
                 "Nighty night."
             ]
         )
     
-    elif 7 <= hours <= 11:
+    elif 6 <= hours <= 11:
         return random.choice(
             [
                 "Good morning.",
                 "Rise and shine.",
-                "Time to start the day. With Cassette."
+                "You should get a coffee."
             ]
         )
     
@@ -113,8 +112,8 @@ def get_time():
         return random.choice(
             [
                 "Good afternoon.",
-                "Hope you're having a great day.",
-                "Keep up the good work."
+                "A great day.",
+                "Music time."
             ]
         )
     
