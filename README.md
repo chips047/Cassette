@@ -1,10 +1,30 @@
 ![Hello.](.github/title.png)
 
 # Cassette
+**Cross - platform. Smooth. Precise. Optimized. Designed.**
 
-**Shine vintage.**
+<div>
+  <a href="https://github.com/Chipik0/Cassette/releases">
+    <img src="https://img.shields.io/github/v/release/Chipik0/Cassette?include_prereleases&style=flat-square&color=white&labelColor=black" alt="Latest Alpha Version">
+  </a>
+  <img src="https://img.shields.io/github/languages/top/Chipik0/Cassette?style=flat-square&color=white&labelColor=black" alt="Top Language">
+  <a href="https://github.com/Chipik0/Cassette/releases">
+    <img src="https://img.shields.io/github/downloads/Chipik0/Cassette/total?style=flat-square&color=white&labelColor=black" alt="Total Downloads">
+  </a>
+  <img src="https://img.shields.io/github/created-at/Chipik0/Cassette?style=flat-square&color=white&labelColor=black" alt="Created At">
+</div>
 
-It’s an early release: it works well but can be temperamental. If you enjoy experimenting, welcome aboard.
+<div>
+  <img src="https://img.shields.io/badge/Windows-black?style=flat-square&logo=windows&logoColor=white">
+  <img src="https://img.shields.io/badge/Linux-black?style=flat-square&logo=linux&logoColor=white">
+  <img src="https://img.shields.io/badge/macOS-black?style=flat-square&logo=apple&logoColor=white">
+</div>
+
+<p>
+
+![Compositor](.github/compositor.png)
+![Glyph Effects](.github/context.png)
+![Audio Import Window](.github/import.png)
 
 ## Table of contents
 
@@ -22,31 +42,16 @@ Recommended for a smooth experience:
 * **Memory**: 8 GB RAM or more
 * **CPU**: 4 - core processor
 * **Clock speed**: 2.0 GHz or higher
-* **Free disk space**: 500 MB+
-
-**Requires installed FFMpeg:**
-- **Windows**\
-PowerShell: `winget install ffmpeg`
-
-- **Linux**\
-**Arch:** `sudo pacman -S ffmpeg`\
-**Ubuntu:** `sudo apt install ffmpeg`\
-**Fedora:** `sudo dnf install ffmpeg`\
-**Debian:** `sudo apt install ffmpeg`
-
-- [You can also check FFMpeg packages here.](https://ffmpeg.org/download.html)
+* **Free disk space**: 300 MB+
 
 ## Installation and running
 
 1. Download the appropriate release from the Releases page.
-- **Important:** The `nopython` package requires **Python 3.10** installed on your system. Cassette supports Python 3.10 only.
-
 2. Unpack the archive.
 3. Start Cassette:
 
-* **Windows**: `Cassette.bat`
-* **Windows-nopython**: `Cassette-nopython.bat`
-* **Linux / macOS**: `Cassette.sh`
+* **Windows**: `Cassette.exe`
+* **Linux / macOS**: `Cassette`
 
 ## Real - time preview on your phone
 
@@ -63,9 +68,6 @@ To enable live ringtone preview on a connected phone:
 
 ## FAQ & Troubleshooting
 
-### Error: `Failed to build Aubio==0.4.9`
-- Make sure you are using **Python 3.10** - prebuilt wheels target that version.
-
 ### Phone not detected by Cassette
 
 1. Try a different cable and port. Some cables are power - only.
@@ -75,7 +77,6 @@ To enable live ringtone preview on a connected phone:
 ## Roadmap
 
 * Undo / Redo
-* Glyph UI preview window
 * Import from BNGC and Audacity Label File.
 * MAYBE an auto ringtone creator.
 
