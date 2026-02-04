@@ -182,10 +182,11 @@ class BaseComposition:
         container = av.open(input_path)
         input_stream = container.streams.audio[0]
 
-        # ПРЫЖОК К НУЖНОМУ ВРЕМЕНИ (оптимизация)
-        # Ищем чуть раньше (на 1 сек), чтобы кодек успел инициализироваться
-        seek_target = max(0, int((start_ms / 1000 - 1) * av.time_base))
-        container.seek(seek_target, stream=input_stream)
+        start_time = start_ms / 1000.0
+        end_time = end_ms / 1000.0
+        seek_time = max(0, start_time - 2.0)
+
+        container.seek(int(seek_time / input_stream.time_base), stream=input_stream)
 
         output_container = av.open(output_path, mode='w', format='opus')
         output_stream = output_container.add_stream('libopus', rate=48000)
@@ -193,25 +194,25 @@ class BaseComposition:
         graph = av.filter.Graph()
         buffer = graph.add_abuffer(input_stream)
 
-        # Фильтры
-        trim = graph.add("atrim", start=str(start_ms/1000), end=str(end_ms/1000))
+        trim = graph.add("atrim", f"start={start_time}:end={end_time}")
         reset_ts = graph.add("asetpts", "PTS-STARTPTS")
         norm = graph.add("dynaudnorm")
 
         buffer.link_to(trim)
         trim.link_to(reset_ts)
         reset_ts.link_to(norm)
-
         last_link = norm
+
         duration_sec = (end_ms - start_ms) / 1000
 
         if fade_in:
-            f_in = graph.add("afade", type="in", start_time="0", duration=str(fade_in/1000))
+            f_in = graph.add("afade", f"type=in:start_time=0:duration={fade_in/1000}")
             last_link.link_to(f_in)
             last_link = f_in
 
         if fade_out:
-            f_out = graph.add("afade", type="out", start_time=str(max(0, duration_sec - fade_out/1000)), duration=str(fade_out/1000))
+            fade_start = max(0, duration_sec - fade_out/1000)
+            f_out = graph.add("afade", f"type=out:start_time={fade_start}:duration={fade_out/1000}")
             last_link.link_to(f_out)
             last_link = f_out
 
@@ -219,35 +220,55 @@ class BaseComposition:
         last_link.link_to(sink)
         graph.configure()
 
-        try:
-            for frame in container.decode(audio=0):
-                # Пропускаем кадры, которые до seek_target (если seek был неточным)
-                if frame.pts is not None and frame.time < (start_ms / 1000) - 0.5:
-                    continue
+        filter_ended = False
 
-                try:
-                    graph.push(frame)
-                    while True:
-                        try:
-                            filt_frame = graph.pull()
-                            for packet in output_stream.encode(filt_frame):
-                                output_container.mux(packet)
-                        except (av.EOFError, av.BlockingIOError):
-                            break
-                except av.EOFError:
-                    # Граф сказал "хватит" (например, atrim закончил работу)
-                    break
-        finally:
-            # Важно закрыть всё правильно
+        for frame in container.decode(audio=0):
+            if filter_ended:
+                break
+
+            if frame.time is not None and frame.time < start_time - 2.0:
+                continue
+            
+            if frame.time is not None and frame.time > end_time + 2.0:
+                break
+            
             try:
-                graph.push(None) # Финализируем фильтры
-                while True:
+                graph.push(frame)
+            
+            except av.EOFError:
+                filter_ended = True
+                break
+            
+            while True:
+                try:
                     filt_frame = graph.pull()
                     for packet in output_stream.encode(filt_frame):
                         output_container.mux(packet)
-            except (av.EOFError, av.BlockingIOError):
+                
+                except av.BlockingIOError:
+                    break
+                
+                except av.EOFError:
+                    filter_ended = True
+                    break
+        
+        if not filter_ended:
+            try:
+                graph.push(None)
+            
+            except av.EOFError:
                 pass
-
+            
+        while True:
+            try:
+                filt_frame = graph.pull()
+                
+                for packet in output_stream.encode(filt_frame):
+                    output_container.mux(packet)
+            
+            except (av.BlockingIOError, av.EOFError):
+                break
+            
         for packet in output_stream.encode():
             output_container.mux(packet)
 
