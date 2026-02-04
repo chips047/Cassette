@@ -48,7 +48,8 @@ def prepare_default_settings(setting_components):
         if key in exceptions:
             continue
         
-        settings.remove(key)
+        if key != "new_user":
+            settings.remove(key)
 
     settings.sync()
 
@@ -532,6 +533,7 @@ SettingsDict = {
             "title": "Window Hover Smoothing",
             "key": "window_hover_smoothing",
             "map": {
+                "No Tilt": "0.0",
                 "Slow": "0.07",
                 "Normal": "0.2",
                 "Very Fast": "0.8"
