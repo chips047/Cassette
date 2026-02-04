@@ -115,5 +115,4 @@ jobs:
           name: cassette-${{ matrix.artifact_name }}
           path: |
             ${{ runner.os == 'macOS' && 'dist/' || 'dist/Cassette' }}
-            ${{ runner.os == 'macOS' && '!dist/Cassette' || '' }}
           include-hidden-files: true
