@@ -97,18 +97,11 @@ jobs:
             BUNDLE_MODE="--onedir --windowed"
           fi
 
-          pyinstaller $BUNDLE_MODE \
-            $ICON_ARG \
-            --add-data "version${{ matrix.sep }}." \
-            --add-data "System${{ matrix.sep }}System" \
-            --hidden-import OpenGL \
-            --hidden-import="OpenGL.platform.egl" \
-            --hidden-import="av.sidedata.sidedata" \
-            --hidden-import av \
-            --exclude-binary "libstdc++.so.6" \
-            --noconfirm \
-            Cassette.py
+          pyinstaller --noconfirm Cassette.spec
 
+      - name: Inspect size
+        run: find dist/Cassette -type f -exec du -h {} + | sort -hr | head -n 20
+      
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
