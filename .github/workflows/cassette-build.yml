@@ -103,9 +103,9 @@ jobs:
             --add-data "version${{ matrix.sep }}." \
             --add-data "System${{ matrix.sep }}System" \
             --hidden-import OpenGL \
+            --hidden-import="OpenGL.platform.egl" \
             --hidden-import="av.sidedata.sidedata" \
             --hidden-import av \
-            --collect-all av \
             --noconfirm \
             Cassette.py
 
@@ -115,4 +115,5 @@ jobs:
           name: cassette-${{ matrix.artifact_name }}
           path: |
             ${{ runner.os == 'macOS' && 'dist/' || 'dist/Cassette' }}
+            ${{ runner.os == 'macOS' && '!dist/Cassette' || '' }}
           include-hidden-files: true
