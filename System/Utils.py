@@ -159,7 +159,7 @@ def run(*args, **kwargs):
     
     return subprocess.run(*args, **kwargs)
 
-def ui_sound(name, tone=None):
+def ui_sound(name, tone=None, volume=1.0):
     try:
         if CurrentSettings["disable_sounds"]:
             return
@@ -197,6 +197,7 @@ def ui_sound(name, tone=None):
         resampled_multi = np.repeat(resampled[:, None], mixer_channels, axis=1)
 
         new_sound = pygame.sndarray.make_sound(np.ascontiguousarray(resampled_multi))
+        new_sound.set_volume(volume)
         new_sound.play()
 
     except Exception as e:
