@@ -16,9 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             artifact_name: linux-x64
-            container: quay.io/pypa/manylinux2014_x86_64
             sep: ":"
             icon_ext: "png"
           - os: windows-latest
@@ -38,34 +37,28 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install System Dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          yum install -y mesa-libGL-devel alsa-lib-devel portaudio-devel
-
       - name: Set up Python
-        if: runner.os != 'Linux'
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
 
-      - name: Set up Python (Linux/Manylinux)
+      - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          ln -s /opt/python/cp310-cp310/bin/python3 /usr/bin/python
-          ln -s /opt/python/cp310-cp310/bin/pip3 /usr/bin/pip
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev
 
       - name: Install Build Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install wheel setuptools numpy pyinstaller
+          pip install wheel setuptools numpy
 
       - name: Clone and build aubio
         run: |
           git clone https://github.com/aubio/aubio.git
           cd aubio
           python setup.py bdist_wheel
-          pip install dist/*.whl
           cd ..
 
       - name: Setup Venv and Install Project
