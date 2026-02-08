@@ -76,6 +76,22 @@ jobs:
           fi
           pip install pyinstaller
 
+      - name: Cleanup unnecessary files
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            rm System/ADB/adb-macos
+            rm System/ADB/adb.exe
+          elif [ "${{ runner.os }}" == "Windows" ]; then
+            rm System/ADB/adb-macos
+            rm System/ADB/adb-linux
+          elif [ "${{ runner.os }}" == "macOS" ]; then
+            rm System/ADB/adb-linux
+            rm System/ADB/adb.exe
+          fi
+        
+          rm System/ADB/CassetteReceiver.apk
+
       - name: Run PyInstaller
         shell: bash
         run: |
@@ -100,7 +116,9 @@ jobs:
           pyinstaller --noconfirm cassette.spec
 
       - name: Inspect size
-        run: find dist/Cassette -type f -exec du -h {} + | sort -hr | head -n 20
+        shell: bash
+        run: |
+          find dist/Cassette -type f -exec du -h {} + | sort -hr | head -n 20
       
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
