@@ -1,7 +1,7 @@
+import mimetypes
 import os
 import json
 import shutil
-import random
 import webbrowser
 
 from PyQt5.QtGui import *
@@ -283,6 +283,7 @@ class MainMenu(QWidget):
         """)
         
         self.setup_ui()
+        self.setAcceptDrops(True)
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -328,7 +329,9 @@ class MainMenu(QWidget):
             return
         
         QApplication.processEvents() # to fix center issues
+        self._process_new_composition(file_path)
 
+    def _process_new_composition(self, file_path):
         dialog = AudioSetupDialog(file_path)
         
         if not dialog.exec_():
@@ -505,6 +508,21 @@ class MainMenu(QWidget):
             layout.addWidget(track_item, row, col)
         
         return widget
+
+    def dragEnterEvent(self, event):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        print(event.mimeData().urls())
+        for url in event.mimeData().urls():
+            file = url.toLocalFile()
+            mime, encoding = mimetypes.guess_type(file)
+
+            if "audio" in mime:
+                self._process_new_composition(file)
+                break
+        
+        super().dropEvent(event)
 
     def showEvent(self, event):
         self.refresh_tracks()
