@@ -38,7 +38,7 @@ a = Analysis(
     noarchive=False,
 )
 
-ignore = ('libstdc++.so.6')
+ignore = ('libstdc++.so.6',)
 a.binaries = [b for b in a.binaries if not any(n in os.path.basename(b[0]) for n in ignore)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
