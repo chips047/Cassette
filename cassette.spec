@@ -54,8 +54,8 @@ exe = EXE(
     name='Cassette',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=False,
+    strip=True,
+    upx=True,
     console=False,
     icon=icon_file,
 )
@@ -66,7 +66,7 @@ if not is_darwin:
         a.binaries,
         a.zipfiles,
         a.datas,
-        strip=False,
+        strip=True,
         upx=False,
         name='Cassette',
     )
