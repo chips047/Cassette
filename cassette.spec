@@ -3,16 +3,16 @@ import sys
 import os
 
 block_cipher = None
+is_darwin = sys.platform == 'darwin'
 
 if sys.platform == 'win32':
     icon_file = 'System/Icons/Icon256.ico'
-elif sys.platform == 'darwin':
+
+elif is_darwin:
     icon_file = 'System/Icons/Icon256.icns'
+
 else:
     icon_file = 'System/Icons/Icon256.png'
-
-if icon_file and not os.path.exists(icon_file):
-    icon_file = None
 
 a = Analysis(
     ['Cassette.py'],
@@ -46,8 +46,10 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    [],
-    exclude_binaries=True,
+    a.binaries if is_darwin else [],
+    a.zipfiles if is_darwin else [],
+    a.datas if is_darwin else [],
+    exclude_binaries=not is_darwin,
     name='Cassette',
     debug=False,
     bootloader_ignore_signals=False,
@@ -57,19 +59,20 @@ exe = EXE(
     icon=icon_file,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=True,
-    upx=True,
-    name='Cassette',
-)
+if not is_darwin:
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=True,
+        upx=True,
+        name='Cassette',
+    )
 
-if sys.platform == 'darwin':
+if is_darwin:
     app = BUNDLE(
-        coll,
+        exe,
         name='Cassette.app',
         icon=icon_file,
         bundle_identifier='com.cassette.app',

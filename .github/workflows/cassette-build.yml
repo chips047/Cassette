@@ -1,10 +1,10 @@
 name: Build Cassette Cross-Platform
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
     inputs:
       reason:
-        description: 'Manual Building'
+        description: 'Reason'
         required: false
         default: 'Manual Building'
 
@@ -70,10 +70,13 @@ jobs:
           else
             source venv/bin/activate
           fi
+
           pip install aubio/dist/*.whl
+          
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
+          
           pip install pyinstaller
 
       - name: Cleanup unnecessary files
@@ -82,14 +85,18 @@ jobs:
           if [ "${{ runner.os }}" == "Linux" ]; then
             rm System/ADB/adb-macos
             rm System/ADB/adb.exe
+            rm System/ADB/AdbWinApi.dll
+            rm System/ADB/AdbWinUsbApi.dll
           elif [ "${{ runner.os }}" == "Windows" ]; then
             rm System/ADB/adb-macos
             rm System/ADB/adb-linux
           elif [ "${{ runner.os }}" == "macOS" ]; then
             rm System/ADB/adb-linux
             rm System/ADB/adb.exe
+            rm System/ADB/AdbWinApi.dll
+            rm System/ADB/AdbWinUsbApi.dll
           fi
-        
+
           rm System/ADB/CassetteReceiver.apk
 
       - name: Run PyInstaller
@@ -115,11 +122,6 @@ jobs:
 
           pyinstaller --noconfirm cassette.spec
 
-      - name: Inspect size
-        shell: bash
-        run: |
-          find dist/Cassette -type f -exec du -h {} + | sort -hr | head -n 20
-      
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
