@@ -2405,6 +2405,7 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         speed = self.player.speed or 0.01
         interval_ms = int(round(60000.0 / (self.bpm * speed)))
+        QApplication.setCursorFlashTime(interval_ms)
 
         self.bpm_scale_animation = self.make_animation(
             [
