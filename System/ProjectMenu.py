@@ -57,7 +57,11 @@ def get_projects_info(songs_folder):
             
             except Exception:
                 pass
-
+        
+        else:
+            logger.warning(f"Project '{project_name}' is missing audio or JSON file. Removing.")
+            shutil.rmtree(project_path)
+    
     return projects
 
 class TrackItemWidget(QWidget):
