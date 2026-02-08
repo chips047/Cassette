@@ -97,7 +97,7 @@ jobs:
             BUNDLE_MODE="--onedir --windowed"
           fi
 
-          pyinstaller --noconfirm Cassette.spec
+          pyinstaller --noconfirm cassette.spec
 
       - name: Inspect size
         run: find dist/Cassette -type f -exec du -h {} + | sort -hr | head -n 20
