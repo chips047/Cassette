@@ -101,9 +101,6 @@ class GlyphSyncer(QObject):
 		return proc
 
 	def scan_devices(self):
-		if getattr(self, "devices", None) is None:
-			return
-
 		def _on_start_server_finished(proc, out, err):
 			self._run_cmd_async(["devices"], on_finished=_on_devices)
 
