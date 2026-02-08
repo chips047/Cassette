@@ -7,7 +7,11 @@ import traceback
 import multiprocessing as mp
 from loguru import logger
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 os.chdir(BASE_DIR)
 sys.path.insert(0, BASE_DIR)
@@ -148,7 +152,7 @@ class StartupFadeOverlay(QWidget):
             egg = EasterEggManager.get_egg()
             
             if not egg:
-                Utils.ui_sound("Startup")
+                Utils.ui_sound("Startup", volume = 0.35 if is_first_start else 1.0)
                 return QTimer.singleShot(wait_time, self.bg_anim.start)
             
             content = egg["content"]
@@ -405,7 +409,7 @@ class ApplicationWindow(QMainWindow):
 
         if Player.player.is_playing:
             Player.player.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
-        
+
             logger.debug("Window hidden, app will close in 3 seconds...")
             QTimer.singleShot(1700, self._exit_effects)
             QTimer.singleShot(3200, QApplication.instance().quit)

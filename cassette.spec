@@ -53,8 +53,8 @@ exe = EXE(
     name='Cassette',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,
-    upx=True,
+    strip=False,
+    upx=False,
     console=False,
     icon=icon_file,
 )
