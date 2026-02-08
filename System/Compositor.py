@@ -30,7 +30,6 @@ class KeyboardController(QObject):
         self.move_increment = CurrentSettings["arrow_increment"]
         self.shortcuts = []
         
-        self.destroyed.connect(self._release_shortcuts)
         self._setup_hotkeys()
 
     def _setup_hotkeys(self):
@@ -89,7 +88,7 @@ class KeyboardController(QObject):
         
         return True
     
-    def _release_shortcuts(self):
+    def cleanup_shortcuts(self):
         for sc in self.shortcuts:
             sc.activated.disconnect()
             sc.deleteLater()
@@ -884,12 +883,7 @@ class ScrollableContent(QGraphicsView):
         self.glyph_controller.elements_changed.disconnect()
         self.horizontalScrollBar().valueChanged.disconnect(self.mouse_controller._force_mouse_update)
         
-        # Clean up keyboard shortcuts before removing the controller reference
-        if self.keyboard_controller:
-            try:
-                self.keyboard_controller.cleanup_shortcuts()
-            except Exception:
-                pass
+        self.keyboard_controller.cleanup_shortcuts()
 
         self.glyph_controller = None
         self.wheel_controller = None
