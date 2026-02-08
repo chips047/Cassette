@@ -38,8 +38,9 @@ a = Analysis(
     noarchive=False,
 )
 
-ignore = ('libstdc++.so.6',)
-a.binaries = [b for b in a.binaries if not any(n in os.path.basename(b[0]) for n in ignore)]
+if sys.platform == "linux":
+    ignore = ('libstdc++.so.6',)
+    a.binaries = [b for b in a.binaries if not any(n in os.path.basename(b[0]) for n in ignore)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -65,7 +66,7 @@ if not is_darwin:
         a.binaries,
         a.zipfiles,
         a.datas,
-        strip=True,
+        strip=False,
         upx=False,
         name='Cassette',
     )
