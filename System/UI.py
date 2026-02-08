@@ -23,8 +23,6 @@ from . import ExporterImporter
 from .Constants import *
 from loguru import logger
 
-MAX_SIZE = 16777215
-
 def parse_svg_path_data(d_string: str) -> QPainterPath:
     path = QPainterPath()
     tokens = re.findall(r'([a-zA-Z]|-?[\d\.]+)', d_string)
@@ -676,7 +674,7 @@ class SegmentedBar(QWidget):
 
         for i in range(self.segment_number):
             path = QPainterPath()
-
+            
             if i != self.segment_number - 1:
                 rect = QRectF(i * seg_width, 0, seg_width + 1, height)
             
@@ -1072,6 +1070,7 @@ class ValuePopup(QWidget):
 
     def show_text(self, text: str, pos: QPoint):
         self.fade_out_animation.stop()
+        self.opacity_effect.setOpacity(1.0)
         
         if self.label.text() != text:
             self._layout_for_text(text)
@@ -1817,14 +1816,17 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         self.apply_attributes(dialog, stays_on_top)
         self.setup_layout(title)
-        self.setup_timers()
         self.setup_animation_properties()
+        self.setup_timers()
         self.update_bpm(self.bpm)
         
         fmt = QSurfaceFormat()
         fmt.setVersion(4, 1)
         fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         fmt.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
+        
+        if CurrentSettings.get("msaa"):
+            fmt.setSamples(CurrentSettings["msaa"])
         
         self.setFormat(fmt)
         
@@ -1854,7 +1856,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         if not CurrentSettings["floating_window_animations"]:
             return
 
-        if self.enable_tilt:
+        if self.enable_tilt and self.tilt_smoothing > 0:
             self.tilt_animation_timer = QTimer(self)
             self.tilt_animation_timer.setInterval(FPS_60)
             self.tilt_animation_timer.timeout.connect(self.tilt_rotation_update)
@@ -1938,6 +1940,9 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.content_opacity_effect = QGraphicsOpacityEffect(self.content_widget)
         self.content_opacity_effect.setOpacity(0.0)
         self.content_widget.setGraphicsEffect(self.content_opacity_effect)
+        
+        # EE
+        self.ee_exit_attempts = 0
 
     # Animation Properties - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -2665,16 +2670,6 @@ class FloatingWindowGPU(QOpenGLWidget):
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glClearColor(0, 0, 0, 0)
         
-        try:
-            print(f"OpenGL Version: {glGetString(GL_VERSION)}")
-            print(f"GLSL Version: {glGetString(GL_SHADING_LANGUAGE_VERSION)}")
-            ctx = self.context()
-            print(f"OpenGL Version: {ctx.format().majorVersion()}.{ctx.format().minorVersion()}")
-            print(f"Is Core Profile: {ctx.format().profile() == QSurfaceFormat.CoreProfile}")
-        
-        except Exception as e:
-            logger.warning(f"Failed to retrieve OpenGL info: {e}")
-
         logger.warning("Compiling shaders for FloatingWindow.")
 
         vs = shaders.compileShader(FLOATING_WINDOW_VS, GL_VERTEX_SHADER)
@@ -2769,6 +2764,29 @@ class FloatingWindowGPU(QOpenGLWidget):
             super().closeEvent(event)
         
         else:
+            self.ee_exit_attempts += 1
+            
+            if random.random() < 0.5:
+                if self.ee_exit_attempts == 50:
+                    Utils.ui_sound("CostOptimizer/WAYD")
+                
+                if self.ee_exit_attempts == 70:
+                    Utils.ui_sound("CostOptimizer/HCYLWY")
+                
+                if self.ee_exit_attempts > 70:
+                    self.chaos_mode()
+                
+                if self.ee_exit_attempts == 100:
+                    Utils.ui_sound("CostOptimizer/ONYD")
+                    
+                    self.title_label.setText("Dividing by zero: 3")
+                    
+                    QTimer.singleShot(1000, lambda: self.title_label.setText("Dividing by zero: 2"))
+                    QTimer.singleShot(2000, lambda: self.title_label.setText("Dividing by zero: 1"))
+                    QTimer.singleShot(2500, lambda: self.title_label.setText("LMAO"))
+                    QTimer.singleShot(2100, lambda: Utils.ui_sound("NOK/Charging"))
+                    QTimer.singleShot(3000, lambda: 1 / 0)
+            
             event.ignore()
             self.start_disturbe_animation()
 
@@ -2811,6 +2829,18 @@ class FloatingWindowGPU(QOpenGLWidget):
         self._drag_pos = None
     
     # Utils - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    def chaos_mode(self):
+        widgets = self.content_widget.findChildren(QWidget)
+
+        for widget in widgets:
+            dx = random.randint(-10, 10)
+            dy = random.randint(-10, 10)
+
+            widget.move(widget.x() + dx, widget.y() + dy)
+
+            dw = random.randint(-10, 10)
+            widget.resize(widget.width() + dw, widget.height() + dw)
+    
     def plan_timers(self, actions: list[tuple]):
         for delay, attr, value in actions:
             QTimer.singleShot(
@@ -3017,7 +3047,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             if self.bpm:
                 self.bpm_timer.stop()
         
-            if self.enable_tilt:
+            if self.enable_tilt and self.tilt_smoothing > 0:
                 self.tilt_animation_timer.stop()
         
         self.allow_exit = True
