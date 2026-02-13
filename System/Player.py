@@ -20,63 +20,6 @@ def thread_excepthook(args):
 
 threading.excepthook = thread_excepthook
 
-class FastUISound:
-    def __init__(self, path, loop=False):
-        self.data, self.fs = sf.read(path, dtype='float32')
-        if self.data.ndim == 1:
-            self.data = np.stack([self.data, self.data], axis=-1)
-
-        self.loop = loop
-        self.position = 0.0
-        self.speed = 1.0
-        self.volume = 1.0
-        self.lock = threading.Lock()
-        self.is_playing = False
-
-        self.stream = sd.OutputStream(
-            samplerate=self.fs,
-            channels=self.data.shape[1],
-            blocksize=128,
-            callback=self._callback,
-            latency='low'
-        )
-        self.stream.start()
-
-    def _callback(self, outdata, frames, time_info, status):
-        if not self.is_playing:
-            outdata.fill(0)
-            return
-
-        with self.lock:
-            pos = self.position + np.arange(frames) * self.speed
-            idx_int = np.floor(pos).astype(int)
-            idx_frac = pos - idx_int
-            idx_int = np.clip(idx_int, 0, len(self.data) - 2)
-
-            s0 = self.data[idx_int]
-            s1 = self.data[idx_int + 1]
-            outdata[:] = ((1 - idx_frac)[:, None] * s0 + idx_frac[:, None] * s1) * self.volume
-
-            self.position += frames * self.speed
-
-            if self.position >= len(self.data):
-                if self.loop:
-                    self.position %= len(self.data)
-                
-                else:
-                    outdata.fill(0)
-                    raise sd.CallbackStop()
-
-    def play(self, speed=1.0, volume=1.0):
-        with self.lock:
-            self.speed = speed
-            self.volume = volume
-            self.position = 0.0
-            self.is_playing = True
-
-    def stop(self):
-        self.is_playing = False
-
 class PlaybackManager(QObject):
     playback_state_changed = pyqtSignal(bool)
     audio_loaded = pyqtSignal(np.ndarray, int, float)
