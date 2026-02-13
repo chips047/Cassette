@@ -2,11 +2,52 @@ def hex_to_rgb(hex_color):
     hex_color = hex_color.lstrip('#')
     return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
+def make_button_style(
+        bg_color: str,
+        hover_color: str,
+        height: int = 50,
+        border: str = None,
+        rounding = 16
+    ) -> str:
+
+    base = f"""
+        QPushButton {{
+            background-color: {bg_color};
+            color: {Colors.font_color};
+            padding: 0px 15px;
+            border-radius: {rounding}px;
+            min-height: {height}px;
+            outline: none;
+            {f"border: {border};" if border else ""}
+        }}
+        
+        QPushButton:hover {{
+            background-color: {hover_color};
+        }}
+        
+        QPushButton:disabled {{
+            background-color: #777777;
+            color: #dddddd;
+        }}
+    """
+
+    return base.strip()
+
 class Colors:
     class EffectMenu:
         standard = "#2d2e31"
         hover = "#28292b"
         press = "#252628"
+    
+    class Waveform:
+        main_color = "#5AFFFFFF"
+    
+    class MainMenu:
+        button = "#333333"
+        button_hover = "#444444"
+        
+        small_button = "#3a3a3a"
+        small_button_hover = "#4a4a4a"
     
     nothing_accent = "#d6141f"
     nothing_accent_hover = "#c20808"
@@ -64,37 +105,6 @@ class Metrics:
         height = 150
 
 class Buttons:
-    def make_button_style(
-        bg_color: str,
-        hover_color: str,
-        height: int = 50,
-        border: str = None,
-        rounding = Roundings.button
-    ) -> str:
-
-        base = f"""
-            QPushButton {{
-                background-color: {bg_color};
-                color: {Colors.font_color};
-                padding: 0px 15px;
-                border-radius: {rounding}px;
-                height: {height}px;
-                outline: none;
-                {f"border: {border};" if border else ""}
-            }}
-
-            QPushButton:hover {{
-                background-color: {hover_color};
-            }}
-
-            QPushButton:disabled {{
-                background-color: #777777;
-                color: #dddddd;
-            }}
-        """
-
-        return base.strip()
-
     nothing_styled_button = make_button_style(
         Colors.nothing_accent,
         Colors.nothing_accent_hover
@@ -119,6 +129,28 @@ class Buttons:
         f"{Metrics.glass_border_thick}px solid {Colors.glass_border}",
         12
     )
+    
+    class MainMenu:
+        accent_button = make_button_style(
+            Colors.nothing_accent,
+            Colors.nothing_accent_hover,
+            45,
+            rounding = 20
+        )
+        
+        normal_button = make_button_style(
+            Colors.MainMenu.button,
+            Colors.MainMenu.button_hover,
+            45,
+            rounding = 20
+        )
+        
+        small_button = make_button_style(
+            Colors.MainMenu.small_button,
+            Colors.MainMenu.small_button_hover,
+            35,
+            rounding = 14
+        )
 
 class Other:
     transparent = "background-color: transparent;"
