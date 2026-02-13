@@ -1,8 +1,9 @@
 import av
+import os
 import math
 import aubio
-import soundfile
 import tempfile
+import soundfile
 
 import numpy as np
 
@@ -12,49 +13,66 @@ from loguru import logger
 class NoAudioStreams(Exception):
     pass
 
+class PermissionError(Exception):
+    pass
+
+class CorruptedFileError(Exception):
+    pass
+
 def ensure_wav(path):
-    if path.lower().endswith(".wav"):
-        return path
+    try:
+        input_container = av.open(path)
 
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    tmp_path = tmp_file.name
-    tmp_file.close()
+        if input_container.format.name == 'wav' and path.lower().endswith(".wav"):
+            input_container.close()
+            return path
 
-    input_container = av.open(path)
-        
-    if not input_container.streams.audio:
-        raise NoAudioStreams()
+        tmp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_path = tmp_file.name
+        tmp_file.close()
 
-    in_stream = input_container.streams.audio[0]
-    output_container = av.open(tmp_path, mode='w', format='wav')
-    
-    out_stream = output_container.add_stream('pcm_s16le', rate=in_stream.rate)
-    out_stream.layout = in_stream.layout
-    
-    resampler = av.AudioResampler(
-        format='s16', 
-        layout=in_stream.layout, 
-        rate=in_stream.rate
-    )
-    
-    for packet in input_container.demux(in_stream):
-        for frame in packet.decode():
-            resampled_frames = resampler.resample(frame)
-            
-            for resampled_frame in resampled_frames:
-                for out_packet in out_stream.encode(resampled_frame):
-                    output_container.mux(out_packet)
+        if not input_container.streams.audio:
+            raise NoAudioStreams()
 
-    for out_packet in out_stream.encode():
-        output_container.mux(out_packet)
-    
-    if input_container:
-        input_container.close()
-    
-    if output_container:
-        output_container.close()
+        in_stream = input_container.streams.audio[0]
+        output_container = av.open(tmp_path, mode='w', format='wav')
 
-    return tmp_path
+        out_stream = output_container.add_stream('pcm_s16le', rate=in_stream.rate)
+        out_stream.layout = in_stream.layout
+
+        resampler = av.AudioResampler(
+            format = 's16', 
+            layout = in_stream.layout, 
+            rate = in_stream.rate
+        )
+
+        for packet in input_container.demux(in_stream):
+            for frame in packet.decode():
+                resampled_frames = resampler.resample(frame)
+
+                for resampled_frame in resampled_frames:
+                    for out_packet in out_stream.encode(resampled_frame):
+                        output_container.mux(out_packet)
+
+        for out_packet in out_stream.encode():
+            output_container.mux(out_packet)
+
+        if input_container:
+            input_container.close()
+
+        if output_container:
+            output_container.close()
+
+        return tmp_path
+
+    except av.PermissionError:
+        raise PermissionError("Permission error while accessing the file. Please check if the file is open in another application.")
+
+    except av.InvalidDataError:
+        raise CorruptedFileError("The audio file is corrupted or in an unsupported format.")
+    
+    except av.FileNotFoundError:
+        raise FileNotFoundError("The specified audio file was not found.")
 
 def analyze_bpm_and_beats(
         audio_path: str,
@@ -63,7 +81,6 @@ def analyze_bpm_and_beats(
     ):
 
     try:
-        audio_path = ensure_wav(audio_path)
         s = aubio.source(audio_path, 0, hop_size)
     
     except Exception as e:
@@ -71,7 +88,6 @@ def analyze_bpm_and_beats(
 
     samplerate = s.samplerate or 44100
 
-    # Темпо-детектор
     o = aubio.tempo("default", win_s, hop_size, samplerate)
     o.set_silence(-40)
 
@@ -95,7 +111,7 @@ def analyze_bpm_and_beats(
 
         if read < hop_size:
             break
-
+    
     duration = float(total_frames) / float(samplerate) if samplerate else 0.0
     bpm = None
 
@@ -120,8 +136,11 @@ def analyze_bpm_and_beats(
 
     return bpm, beats
 
-def load_audio(path, sr = 44100, mono = True):
-    file_path = ensure_wav(path)
-    data, fs = soundfile.read(file_path, dtype='float32')
+def load_audio(path):
+    try:
+        data, fs = soundfile.read(path, dtype='float32')
+        
+        return data, fs
 
-    return data, fs
+    except soundfile.LibsndfileError:
+        raise CorruptedFileError("The audio file is corrupted or in an unsupported format.")
