@@ -5,7 +5,8 @@ from System import GlyphEffects
 
 from System.Constants import *
 
-# yes, this function is ai generated AND DONT EVEN TALK ABOUT THIS FUNCTION, IT MAKES ME RAGE AND TRIGGERS ME, DONT EVER FUCKING REMING ME ABOUT THIS SH*T F**K
+# yes, this function is ai generated AND DONT EVEN ASK ABOUT THIS FUNCTION, IT MAKES ME RAGE, IT TRIGGERS ME, DONT EVER FUCKING REMIND ME ABOUT THIS SH*T F**K MOTHERF**K
+
 def port_segments_func(old_segments, new_segments, active, dup_threshold_ratio=0.5):
     if not active:
         return []
@@ -286,9 +287,6 @@ maps = {
 }
 
 class Port:
-    def randomize(variants):
-        return random.choice(variants)
-    
     def process_dict_track(glyph, track):
         logger.info(f"Track is a dict: {track}")
         mode = track.get("mode")
@@ -296,7 +294,7 @@ class Port:
         if mode == "random":
             variants = track.get("variants")
 
-            target_track = Port.randomize(variants)
+            target_track = random.choice(variants)
         
         return target_track
 
