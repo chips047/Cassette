@@ -103,7 +103,7 @@ class MarqueeItem(QGraphicsObject):
         return color
 
     def bpm_tick(self):
-        if not self.player.is_playing or not self.isVisible():
+        if not self.player.is_playing or not self.isVisible() or self.player.get_current_audio_level() < 0.08:
             return self.bpm_animation_timer.start(FPS_30)
 
         speed = self.player.speed or 0.01
@@ -260,6 +260,16 @@ class GlyphItem(QGraphicsObject):
         self._drag_start_pos = QPointF()
         self.dirty_rect = self.boundingRect()
         
+        self.keyframe_line_padding = 12
+        self.keyframe_line_width = 4
+
+        # --- FADE KEYFRAME ---
+        self.fade_keyframe_enabled = False
+        # Список ключевых точек: (x, y), x и y в [0, 1]
+        self.fade_keyframes = [(0.0, 0.0), (1.0, 0.0)]
+        self._fade_dragging = False
+        self._fade_dragged_idx = None
+
         self.update_geometry()
         self.spawn_animation(animate_spawn)
     
@@ -485,7 +495,6 @@ class GlyphItem(QGraphicsObject):
             color = QColor("#000000")
 
         border_pen = QPen(color, self.border_width)
-        border_pen.setCosmetic(True)
         border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
 
         radius = 3 + max(0, min((width_px - 10) / 10 * 2.5, 2.5)) + max(0, min((width_px - 20) / 10 * 6, 6)) 
@@ -498,21 +507,54 @@ class GlyphItem(QGraphicsObject):
             radius, radius
         )
         
+        width_px -= 2 * self.keyframe_line_padding
+        height -= 2 * self.border_width
+
+        if self.fade_keyframe_enabled:
+            fade_pen = QPen(color, self.keyframe_line_width)
+            fade_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            fade_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            
+            painter.setPen(fade_pen)
+
+            fade_path = QPainterPath()
+            
+            for idx, (fx, fy) in enumerate(self.fade_keyframes):
+                px = fx * width_px + self.keyframe_line_padding
+                py = fy * height + self.border_width
+                
+                if idx == 0:
+                    fade_path.moveTo(px, py)
+                
+                else:
+                    fade_path.lineTo(px, py)
+            
+            painter.drawPath(fade_path)
+            painter.setPen(Qt.NoPen)
+            
+            for fx, fy in self.fade_keyframes[1:-1]:
+                px = fx * width_px + self.keyframe_line_padding
+                py = fy * height
+                
+                painter.setBrush(QBrush(color))
+                painter.drawEllipse(QPointF(px, py), 6, 6)
+
         debug_mode = False
+        
         if debug_mode:
             painter.save()
-
+            
             rect = self.boundingRect()
-
+            
             painter.setPen(QPen(QColor(255, 0, 0, 150), 1, Qt.PenStyle.DashLine))
             painter.setBrush(Qt.BrushStyle.NoBrush)
+            
             painter.drawRect(rect)
-
+            
             painter.setPen(QColor(0, 0, 255))
+            
             painter.drawLine(-5, 0, 5, 0)
             painter.drawLine(0, -5, 0, 5)
-
-            painter.restore()
 
         painter.restore()
     
@@ -554,7 +596,47 @@ class GlyphItem(QGraphicsObject):
 
     def mousePressEvent(self, event):
         self.hover_timer.stop()
-        
+
+        if self.fade_keyframe_enabled and event.button() == Qt.MouseButton.LeftButton and (event.modifiers() & Qt.AltModifier):
+            x = event.pos().x()
+            y = event.pos().y()
+            
+            width_px = self._ms_to_px(self.duration_ms) - self.keyframe_line_padding * 2
+            height = Styles.Metrics.Tracks.box_height
+            
+            min_dist = 12
+            idx = None
+            
+            for i, (fx, fy) in enumerate(self.fade_keyframes[1:-1], 1):
+                px = fx * width_px
+                py = fy * height
+                
+                dist = math.hypot(x - px, y - py)
+                
+                if dist < min_dist:
+                    min_dist = dist
+                    idx = i
+            
+            if idx is not None:
+                self._fade_dragging = True
+                self._fade_dragged_idx = idx
+                event.accept()
+                return
+            
+            fx = min(max(x / width_px, 0.01), 0.99)
+            fy = min(max(y / height, 0.0), 1.0)
+            
+            self.fade_keyframes.append((fx, fy))
+            self.fade_keyframes = sorted(self.fade_keyframes, key=lambda p: p[0])
+            
+            self._fade_dragging = True
+            self._fade_dragged_idx = self.fade_keyframes.index((fx, fy))
+            
+            self.update()
+            event.accept()
+            
+            return
+
         if event.button() != Qt.MouseButton.LeftButton:
             event.accept()
             return
@@ -590,11 +672,36 @@ class GlyphItem(QGraphicsObject):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
         self.glyph_controller.start_drag()
-        
         self._animate_press(event)
         event.accept()
 
     def mouseMoveEvent(self, event):
+        if self.fade_keyframe_enabled and self._fade_dragging and self._fade_dragged_idx is not None:
+            width_px = self._ms_to_px(self.duration_ms) - 2 * self.keyframe_line_padding
+            height = Styles.Metrics.Tracks.box_height
+
+            x = event.pos().x() - self.keyframe_line_padding
+            x = min(max(x, 0), width_px)
+            y = min(max(event.pos().y(), 0), height)
+
+            desired_x = x / width_px
+            idx = self._fade_dragged_idx
+            
+            left = self.fade_keyframes[idx - 1][0] + 0.01
+            right = self.fade_keyframes[idx + 1][0] - 0.01
+            
+            fx = min(max(desired_x, left), right)
+            fx = min(max(fx, 0.0), 1.0)
+            fy = min(max(y / height, 0.0), 1.0)
+
+            if 0 < idx < len(self.fade_keyframes) - 1:
+                self.fade_keyframes[idx] = (fx, fy)
+                self.update()
+            
+            event.accept()
+            
+            return
+
         if not self._interaction_mode:
             return super().mouseMoveEvent(event)
         
@@ -611,9 +718,19 @@ class GlyphItem(QGraphicsObject):
         )
 
     def mouseReleaseEvent(self, event):
+        if self.fade_keyframe_enabled and self._fade_dragging:
+            self._fade_dragging = False
+            self._fade_dragged_idx = None
+            
+            keyframes_str = ' '.join(f'{fx:.2f} {fy:.2f}' for fx, fy in self.fade_keyframes)
+            event.accept()
+            
+            return
+
         self.parent_view.mouse_controller.stop_auto_scroll_drag()
 
         self._interaction_mode = None
+        
         self.setCursor(Qt.CursorShape.ArrowCursor)
         self.ungrabMouse()
         
