@@ -1,14 +1,12 @@
-import json
 import zlib
 import math
 import base64
-import subprocess
-
 import shutil
-from mutagen.oggopus import OggOpus
-from System.Constants import *
 
-TIME_STEP_MS = 16.666
+from System.Constants import *
+from mutagen.oggopus import OggOpus
+
+TIME_STEP_MS = 16.666 # 60 FPS
 
 def glyphs_to_ogg(path_to_audio: str, destination: str, glyphs: dict, model_code: str):
     model = get_model(model_code)
@@ -109,6 +107,7 @@ def prepare_nglyph_data(model, author_data, custom1_data):
         "AUTHOR": [f"{','.join([str(e) for e in line])}," for line in author_data],
         "CUSTOM1": custom1_data
     }
+    
     return nglyph_data
 
 def get_audio_duration(path_to_audio: str):
