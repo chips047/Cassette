@@ -1,4 +1,5 @@
 import re
+import gc
 import math
 import random
 import string
@@ -14,13 +15,15 @@ from PyQt5.QtWidgets import *
 from OpenGL.GL import *
 from OpenGL.GL import shaders
 
-from . import Utils
-from . import Styles
-from . import Player
-from . import GlyphEffects
-from . import ExporterImporter
+from System import Utils
+from System import Styles
+from System import Player
+from System import GlyphEffects
+from System import ExporterImporter
 
-from .Constants import *
+from System.Interface import ThreeaD
+
+from System.Constants import *
 from loguru import logger
 
 def parse_svg_path_data(d_string: str) -> QPainterPath:
@@ -99,10 +102,10 @@ def get_rotation(width, height, base_angle=50, min_angle=10, max_ref=1600):
     )
 
 def get_optimal_tilt(width, height):
-    coeff_w = 1100 / width
-    coeff_h = 1100 / height
+    coeff_w = 900 / width
+    coeff_h = 900 / height
 
-    tilt = int((coeff_h + coeff_w) * 8)
+    tilt = int((coeff_h + coeff_w) * 7)
     return tilt
 
 class GlitchyButton(QPushButton):
@@ -1195,8 +1198,9 @@ class MiniWaveformPreview(QWidget):
         max_abs_val = max(np.max(np.abs(self._min_samples)), np.max(np.abs(self._max_samples)))
 
         self._waveform_max = max_abs_val / scale
-        if self._waveform_max == 0.0:
-            self._waveform_max = 1.0
+        
+        if self._waveform_max < 1e-6:
+            self._waveform_max = 1e-6
 
     def generate_pixmap(self):
         width = self.width() - 4
@@ -1899,43 +1903,40 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.adjustSize()
 
     def setup_animation_properties(self):
+        self.animation_engine = ThreeaD.AnimationEngine(120)
+        self.animation_engine.setParent(self)
+        
+        self.animation_engine.set_multiplier(CurrentSettings["animation_multiplier"])
+        
+        self.animation_engine.add_property("rotation_x", 0.0, ThreeaD.MixMode.ADD)
+        self.animation_engine.add_property("rotation_y", 0.0, ThreeaD.MixMode.ADD)
+        self.animation_engine.add_property("rotation_z", 0.0, ThreeaD.MixMode.ADD) #, damper_enabled = True, lerp_factor = 0.35)
+        
+        self.animation_engine.add_property("scale", 1.0, ThreeaD.MixMode.MULTIPLY)
+        
+        self.animation_engine.add_property("opacity_background", 1.0, ThreeaD.MixMode.MULTIPLY)
+        self.animation_engine.add_property("opacity_content", 1.0, ThreeaD.MixMode.MULTIPLY)
+        
+        self.animation_engine.updated.connect(self.apply_animations)
+        
+        self.scale = 1.0
+        
+        self.rotation_x = 0.0
+        self.rotation_y = 0.0
+        self.rotation_z = 0.0
+        
         self.current_tilt_x = 0.0
         self.current_tilt_y = 0.0
+        
         self.target_tilt_x = 0.0
         self.target_tilt_y = 0.0
-        self.open_tilt_x = 0.0
-        self.open_tilt_y = 0.0
-        self.close_tilt_x = 0.0
-        self.disturbe_tilt_x = 0.0
-        self.bpm_tilt_x = 0.0
         
-        self.background_opacity = 0.0
-        self.content_opacity = 0.0
-
+        self.opacity_content = 0.0
+        self.opacity_background = 0.0
+        
         self.tilt_smoothing = float(CurrentSettings["window_hover_smoothing"])
 
-        self.open_rotation = 0.0
-        self.exit_rotation = 0.0
-        self.disturbe_rotation = 0.0
-        self.random_anim_rotation = 0.0
-
-        self.entry_rotation_angle = 0
-        self.current_rotation = 0.0
-        self.entry_rotation_exit_angle = 0
-        
-        self.open_scale = 1.0
-        self.exit_scale = 1.0
-        self.bpm_scale = 1.0
-        self.disturbe_scale = 1.0
-        self.wobble_scale = 1.0
-        self.move_scale = 1.0
-
         self.bpm_wobble_start_size = 1.03
-        
-        self.prev_mvp = QMatrix4x4()
-        self.last_rx = 0.0
-        self.last_ry = 0.0
-        self.last_sc = 0.0
         
         self.content_opacity_effect = QGraphicsOpacityEffect(self.content_widget)
         self.content_opacity_effect.setOpacity(0.0)
@@ -1944,111 +1945,21 @@ class FloatingWindowGPU(QOpenGLWidget):
         # EE
         self.ee_exit_attempts = 0
 
-    # Animation Properties - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-    @pyqtProperty(float) # type: ignore
-    def contentOpacity(self): return self.content_opacity
-    
-    @contentOpacity.setter
-    def contentOpacity(self, value): self.content_opacity = value; self.content_opacity_effect.setOpacity(value)
-    
-    @pyqtProperty(float) # type: ignore
-    def backgroundOpacity(self): return self.background_opacity; self.update()
-    
-    @backgroundOpacity.setter
-    def backgroundOpacity(self, value): self.background_opacity = value; self.update()
-
-    @pyqtProperty(float) # type: ignore
-    def exitRotation(self): return self.exit_rotation
-
-    @exitRotation.setter
-    def exitRotation(self, value): self.exit_rotation = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def openTiltX(self): return self.open_tilt_x
-
-    @openTiltX.setter
-    def openTiltX(self, value): self.open_tilt_x = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def bpmTiltX(self): return self.bpm_tilt_x
-
-    @bpmTiltX.setter
-    def bpmTiltX(self, value): self.bpm_tilt_x = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def disturbeTiltX(self): return self.disturbe_tilt_x
-
-    @disturbeTiltX.setter
-    def disturbeTiltX(self, value): self.disturbe_tilt_x = value; self.update()
-
-    @pyqtProperty(float) # type: ignore
-    def openTiltY(self): return self.open_tilt_y
-
-    @openTiltY.setter
-    def openTiltY(self, value): self.open_tilt_y = value
-    
-    @pyqtProperty(float) # type: ignore
-    def closeTiltX(self): return self.close_tilt_x
-
-    @closeTiltX.setter
-    def closeTiltX(self, value): self.close_tilt_x = value
-
-    @pyqtProperty(float) # type: ignore
-    def openRotation(self): return self.open_rotation
-
-    @openRotation.setter
-    def openRotation(self, value): self.open_rotation = value
-    
-    @pyqtProperty(float) # type: ignore
-    def disturbeRotation(self): return self.disturbe_rotation
-
-    @disturbeRotation.setter
-    def disturbeRotation(self, value): self.disturbe_rotation = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def randomAnimRotation(self): return self.random_anim_rotation
-
-    @randomAnimRotation.setter
-    def randomAnimRotation(self, value): self.random_anim_rotation = value; self.update()
-
-    @pyqtProperty(float) # type: ignore
-    def exitScale(self): return self.exit_scale
-
-    @exitScale.setter
-    def exitScale(self, value): self.exit_scale = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def openScale(self): return self.open_scale
-
-    @openScale.setter
-    def openScale(self, value): self.open_scale = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def wobbleScale(self): return self.wobble_scale
-
-    @wobbleScale.setter
-    def wobbleScale(self, value): self.wobble_scale = value; self.update()
-    
-    @pyqtProperty(float) # type: ignore
-    def moveScale(self): return self.move_scale
-    
-    @moveScale.setter
-    def moveScale(self, value): self.move_scale = value; self.update()
-
-    @pyqtProperty(float) # type: ignore
-    def bpmScale(self): return self.bpm_scale
-
-    @bpmScale.setter
-    def bpmScale(self, value): self.bpm_scale = value; self.update()
-
-    @pyqtProperty(float) # type: ignore
-    def disturbeScale(self): return self.disturbe_scale
-
-    @disturbeScale.setter
-    def disturbeScale(self, value): self.disturbe_scale = value; self.update()
-
     # Animations - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def apply_animations(self):
+        self.scale = self.animation_engine.get_property_value("scale")
+        
+        self.rotation_x = self.animation_engine.get_property_value("rotation_x") + self.current_tilt_x
+        self.rotation_y = self.animation_engine.get_property_value("rotation_y") + self.current_tilt_y
+        self.rotation_z = self.animation_engine.get_property_value("rotation_z")
+        
+        self.opacity_content = self.animation_engine.get_property_value("opacity_content")
+        self.opacity_background = self.animation_engine.get_property_value("opacity_background")
+        
+        self.content_opacity_effect.setOpacity(self.opacity_content)
+        
+        self.update()
 
     def animate_resize(self, target_width, target_height):
         anim = QPropertyAnimation(self, b"geometry")
@@ -2065,331 +1976,263 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
         
         anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.start()
-
-        self.anim = anim
+        self.group_animate([anim])
 
     def animation_open_smooth(self, final_rect, size):
-        start_scale = get_scale(*size, 2.0, 1.1, 1200)
-
-        anim_tilt_x = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
                 (0.0, 30),
                 (1.0, 0)
-            ], b"openTiltX", 800, QEasingCurve.OutExpo
+            ], 800, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, start_scale),
+                (0.0, self.maximum_scale()),
                 (1.0, 1.0)
-            ], b"openScale", 650, QEasingCurve.OutExpo
+            ], 650, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_opacity_content = self.make_animation(
+        self.animation_engine.animate(
+            "opacity_content",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], b"contentOpacity", 400
+            ], 250
         )
-        
-        anim_opacity_background = self.make_animation(
+
+        self.animation_engine.animate(
+            "opacity_background",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], b"backgroundOpacity", 600
+            ], 200
         )
 
-        self.group_animate(
-            [
-                anim_tilt_x,
-                anim_opacity_content,
-                anim_scale,
-                anim_opacity_background
-            ]
-        )
-    
     def animation_close_smooth(self, size):
-        end_scale = get_scale(*size, 1.7)
-
-        anim_tilt_x = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
                 (0.0, 0),
                 (1.0, -30)
-            ], b"closeTiltX", 800, QEasingCurve.OutExpo
+            ], 500, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 1.0),
-                (1.0, end_scale)
-            ], b"exitScale", 800, QEasingCurve.OutExpo
+                (1.0, self.maximum_scale())
+            ], 500, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_background_opacity = self.make_animation(
+        self.animation_engine.animate(
+            "opacity_content",
             [
-                (0.0, self.background_opacity),
+                (0.0, 1.0),
                 (1.0, 0.0)
-            ], b"backgroundOpacity", 800
-        )
-        
-        anim_content_opacity = self.make_animation(
-            [
-                (0.0, self.content_opacity),
-                (1.0, 0.0)
-            ], b"contentOpacity", 400
+            ], 300
         )
 
-        self.group_animate(
+        self.animation_engine.animate(
+            "opacity_background",
             [
-                anim_tilt_x,
-                anim_scale,
-                anim_background_opacity,
-                anim_content_opacity
-            ], self._really_close
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 500, finished = self._really_close
         )
 
     def animation_open_bouncy(self, final_rect, size):
-        curve = QEasingCurve(QEasingCurve.OutElastic)
-        curve.setPeriod(0.27)
-        curve.setAmplitude(1.7)
-
-        scale_curve = QEasingCurve(QEasingCurve.OutCubic)
-        scale_curve.setAmplitude(2.0)
-        scale_curve.setOvershoot(0.0)
-        scale_curve.setPeriod(0.0)
-
-        start_pos_y = self.period_randomizer((-170, -130), (130, 170))
-        start_angle = get_rotation(*size)
-        start_scale = get_scale(*size, base_scale = 2.0)
+        start_angle = self.period_randomizer((-20, -10), (10, 20))
+        start_pos_y = self.period_randomizer((-130, -90), (90, 130))
 
         optimal_tilt = get_optimal_tilt(*size)
         optimal_tilt = -optimal_tilt if random.random() < 0.5 else optimal_tilt
-
-        if self.is_big():
-            start_angle = self.period_randomizer((-20, -10), (10, 20))
-            anim_geo_duration = 830
-            anim_rotation_duration = 1170
-        
-        else:
-            start_angle = self.period_randomizer((-30, -10), (15, 30))
-            anim_geo_duration = 750
-            anim_rotation_duration = 1050
         
         anim_position = self.make_animation(
             [
                 (0.0, final_rect.translated(0, start_pos_y).topLeft()),
                 (1.0, final_rect.topLeft())
-            ], b"pos", anim_geo_duration, QEasingCurve.OutElastic
+            ], b"pos", 700, QEasingCurve.OutElastic
         )
-
-        anim_scale = self.make_animation(
+        
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, start_scale),
+                (0.0, self.maximum_scale()),
                 (1.0, 1.0)
-            ], b"openScale", 1200, QEasingCurve.OutCubic
+            ], 700, ThreeaD.Easing.ease_out_cubic
         )
-
-        anim_tilt_x = self.make_animation(
-            [
-                (0.0, int(optimal_tilt)),
-                (1.0, 0)
-            ], b"openTiltX", 1000, QEasingCurve.OutElastic
-        )
-
-        anim_rotation = self.make_animation(
+        
+        self.animation_engine.animate(
+            "rotation_z",
             [
                 (0.0, start_angle),
                 (1.0, 0)
-            ], b"openRotation", anim_rotation_duration, curve
-        )
-
-        anim_content_opacity = self.make_animation(
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"contentOpacity", 600
+            ], 800, ThreeaD.Easing.very_bouncy
         )
         
-        anim_background_opacity = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"backgroundOpacity", 500
+                (0.0, int(optimal_tilt)),
+                (1.0, 0)
+            ], 1000, ThreeaD.Easing.bouncy
         )
+        
+        self.animation_engine.set_property_base_value("opacity_background", 1.0)
+        self.animation_engine.set_property_base_value("opacity_content", 1.0)
 
-        self.group_animate(
-            [
-                anim_position,
-                anim_scale,
-                anim_rotation,
-                anim_content_opacity,
-                anim_background_opacity,
-                anim_tilt_x
-            ]
-        )
+        self.group_animate([anim_position])
     
     def animation_close_bouncy(self, size):
-        self.target_tilt_y = random.randint(5, 15)
-
-        anim_rotation = self.make_animation(
-            [
-                (0.0, 0),
-                (1.0, get_rotation(*size, 11, 3))
-            ], b"exitRotation", 700
-        )
-
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 1.0),
-                (1.0, get_scale(*size, base_scale = 1.45))
-            ], b"exitScale", 400, QEasingCurve.InOutCubic
-        )
-
-        anim_content_opacity = self.make_animation(
-            [
-                (0.0, self.content_opacity),
-                (1.0, 0.0)
-            ], b"contentOpacity", 400
+                (1.0, self.maximum_scale())
+            ], 400, ThreeaD.Easing.ease_out_cubic
         )
         
-        anim_background_opacity = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_z",
             [
-                (0.0, self.background_opacity),
-                (1.0, 0.0)
-            ], b"backgroundOpacity", 600
+                (0.0, 0.0),
+                (1.0, get_rotation(*size, 11, 3))
+            ], 500, ThreeaD.Easing.ease_out_cubic
         )
 
-        self.group_animate(
+        self.animation_engine.animate(
+            "opacity_content",
             [
-                anim_rotation,
-                anim_scale,
-                anim_content_opacity,
-                anim_background_opacity
-            ], self._really_close
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 200
+        )
+
+        self.animation_engine.animate(
+            "opacity_background",
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 450, finished = self._really_close
         )
     
     def animation_open_roll(self, final_rect, size):
-        anim_tilt_x = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
                 (0.0, 150),
                 (1.0, 0)
-            ], b"openTiltX", 1000, QEasingCurve.OutExpo
+            ], 800, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], b"openScale", 800, QEasingCurve.OutExpo
+            ], 600, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_opacity_content = self.make_animation(
+        self.animation_engine.animate(
+            "opacity_content",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], b"contentOpacity", 400
+            ], 300
         )
-        
-        anim_opacity_background = self.make_animation(
+
+        self.animation_engine.animate(
+            "opacity_background",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], b"backgroundOpacity", 600
-        )
-
-        self.group_animate(
-            [
-                anim_tilt_x,
-                anim_opacity_background,
-                anim_opacity_content,
-                anim_scale
-            ]
+            ], 200
         )
     
     def animation_close_roll(self, size):
-        anim_tilt_x = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
                 (0.0, 0),
                 (1.0, 70)
-            ], b"closeTiltX", 800, QEasingCurve.OutExpo
+            ], 800, ThreeaD.Easing.ease_out_expo
         )
 
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 1.0),
                 (1.0, 0.0)
-            ], b"exitScale", 350, QEasingCurve.InCirc
-        )
-        
-        anim_opacity_content = self.make_animation(
-            [
-                (0.0, self.content_opacity),
-                (1.0, 0.0)
-            ], b"contentOpacity", 400
-        )
-        
-        anim_opacity_background = self.make_animation(
-            [
-                (0.0, self.background_opacity),
-                (1.0, 0.0)
-            ], b"backgroundOpacity", 700
+            ], 350, ThreeaD.Easing.ease_in_circ
         )
 
-        self.group_animate(
+        self.animation_engine.animate(
+            "opacity_content",
             [
-                anim_tilt_x,
-                anim_opacity_background,
-                anim_opacity_content,
-                anim_scale
-            ], self._really_close
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 400
+        )
+
+        self.animation_engine.animate(
+            "opacity_background",
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 700, finished = self._really_close
         )
     
     def animation_open_glitch(self, final_rect, size):
-        actions = [
-            (150, "openScale", random.uniform(0.1, 0.4)),
-            (270, "openScale", random.uniform(0.7, 0.85)),
-            (485, "openScale", 1.0),
-            
-            (150, "contentOpacity", random.uniform(0.2, 0.5)),
-            (270, "contentOpacity", random.uniform(0.5, 0.8)),
-            (485, "contentOpacity", 1.0),
-            
-            (150, "backgroundOpacity", random.uniform(0.2, 0.5)),
-            (270, "backgroundOpacity", random.uniform(0.5, 0.8)),
-            (485, "backgroundOpacity", 1.0),
-            
-            (150, "openRotation", random.randint(-30, 30)),
-            (270, "openRotation", random.randint(-10, 10)),
-            (485, "openRotation", 0.0)
-        ]
+        self.animation_engine.set_property_base_value("opacity_content", 0.0)
+        self.animation_engine.set_property_base_value("opacity_background", 0.0)
         
+        actions = [
+            (150, "scale", random.uniform(0.1, 0.4)),
+            (270, "scale", random.uniform(0.7, 0.85)),
+            (485, "scale", 1.0),
+            
+            (150, "opacity_content", random.uniform(0.2, 0.5)),
+            (270, "opacity_content", random.uniform(0.5, 0.8)),
+            (485, "opacity_content", 1.0),
+            
+            (150, "opacity_background", random.uniform(0.2, 0.5)),
+            (270, "opacity_background", random.uniform(0.5, 0.8)),
+            (485, "opacity_background", 1.0),
+            
+            (150, "rotation_z", random.randint(-30, 30)),
+            (270, "rotation_z", random.randint(-10, 10)),
+            (485, "rotation_z", 0.0)
+        ]
         
         self.plan_timers(actions)
     
     def animation_close_glitch(self, size):
         actions = [
-            (400, "exitScale", random.uniform(0.1, 0.4)),
-            (570, "openScale", 0.0),
+            (400, "scale", random.uniform(0.1, 0.4)),
+            (570, "scale", 0.0),
             
-            (400, "contentOpacity", random.uniform(0.2, 0.5)),
-            (570, "contentOpacity", 0.0),
+            (400, "opacity_content", random.uniform(0.2, 0.5)),
+            (570, "opacity_content", 0.0),
             
-            (400, "backgroundOpacity", random.uniform(0.2, 0.5)),
-            (570, "backgroundOpacity", 0.0),
+            (400, "opacity_background", random.uniform(0.2, 0.5)),
+            (570, "opacity_background", 0.0),
             
-            (400, "exitRotation", random.randint(-10, 10)),
-            (570, "exitRotation", random.randint(-40, 40)),
+            (400, "rotation_z", random.randint(-10, 10)),
+            (570, "rotation_z", random.randint(-40, 40)),
         ]
         
-        self.scale_animation = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 1.0),
                 (1.0, 0.8)
-            ], b"exitScale", 210
+            ], 210, ThreeaD.Easing.ease_out_cubic
         )
         
-        QTimer.singleShot(40, self.scale_animation.start)
         QTimer.singleShot(580, self._really_close)
         
         self.plan_timers(actions)
@@ -2407,151 +2250,131 @@ class FloatingWindowGPU(QOpenGLWidget):
         interval_ms = int(round(60000.0 / (self.bpm * speed)))
         QApplication.setCursorFlashTime(interval_ms)
 
-        self.bpm_scale_animation = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, float(1.0)),
-                (0.5, float(self.bpm_wobble_start_size + self.squish(audio_level))),
-                (1.0, float(1.0))
+                (0.0, 1.0),
+                (0.5, self.bpm_wobble_start_size + self.squish(audio_level)),
+                (1.0, 1.0)
             ],
-            b"bpmScale",
-            interval_ms
+            interval_ms, ThreeaD.Easing.ease_out_cubic
         )
 
-        self.bpm_scale_animation.start(QAbstractAnimation.DeleteWhenStopped)
         self.bpm_timer.start(interval_ms)
 
     def move_start_animation(self):
         if not CurrentSettings["floating_window_animations"]:
             return
         
-        self.anim_move_start_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, self.move_scale),
-                (1.0, self.move_scale + 0.03)
-            ], b"moveScale", 500, QEasingCurve.OutBack
+                (0.0, 1.0),
+                (1.0, 1.03)
+            ], 400, ThreeaD.Easing.ease_out_cubic
         )
-        
-        self.anim_move_start_scale.start()
     
     def move_end_animation(self):
         if not CurrentSettings["floating_window_animations"]:
             return
         
-        self.anim_move_end_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, self.move_scale),
-                (1.0, 1.0)
-            ], b"moveScale", 500, QEasingCurve.OutBack
+                (0.0, 1.0),
+                (1.0, 0.97)
+            ], 400, ThreeaD.Easing.ease_out_cubic
         )
-        
-        self.anim_move_end_scale.start()
 
     def wobble(self):
         if not CurrentSettings["floating_window_animations"]:
             return
 
-        self.anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 1.0),
                 (0.5, 1.05),
                 (1.0, 1.0)
-            ], b"wobbleScale", 500
+            ], 500, ThreeaD.Easing.ease_out_cubic
         )
 
-        self.anim_scale.start()
-    
     def animation_disturbe_bouncy(self):
         start_angle = random.choice([
             random.randint(-20, -10),
             random.randint(10, 20)
         ])
 
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, self.disturbe_scale),
-                (0.5, min(self.disturbe_scale + 0.2, 1.3)),
+                (0.0, 1.0),
+                (0.5, 1.3),
                 (1.0, 1.0)
-            ], b"disturbeScale", 500
+            ], 500, ThreeaD.Easing.ease_out_cubic
         )
-
-        anim_rotation = self.make_animation(
+        
+        self.animation_engine.animate(
+            "rotation_z",
             [
-                (0.0, self.disturbe_rotation),
-                (0.5, self.disturbe_rotation + start_angle),
-                (1.0, 0)
-            ], b"disturbeRotation", 1000, QEasingCurve.OutElastic
+                (0.0, 0.0),
+                (0.5, start_angle),
+                (1.0, 0.0)
+            ], 1000, ThreeaD.Easing.bouncy
         )
-
-        self.group_animate(
-            [
-                anim_scale,
-                anim_rotation
-            ]
-        )
-
-        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
 
     def animation_disturbe_roll(self):
-        anim_tilt_x = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
-                (0.0, self.disturbe_tilt_x),
-                (0.5, min(self.disturbe_tilt_x + 45, 90) if self.disturbe_tilt_x >= 0 else max(self.disturbe_tilt_x - 45, -90)),
-                (1.0, 0)
-            ], b"disturbeTiltX", 1100, QEasingCurve.OutElastic
+                (0.0, 0.0),
+                (0.5, 20),
+                (1.0, 0.0)
+            ], 1100, ThreeaD.Easing.bouncy
         )
 
-        anim_scale = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
-                (0.0, self.disturbe_scale),
-                (0.5, min(self.disturbe_scale + 0.1, 2.0)),
+                (0.0, 1.0),
+                (0.5, 1.1),
                 (1.0, 1.0)
-            ], b"disturbeScale", 1200, QEasingCurve.OutElastic
+            ], 1200, ThreeaD.Easing.bouncy
         )
-
-        self.group_animate(
-            [
-                anim_tilt_x,
-                anim_scale
-            ]
-        )
-
-        self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
     
     def animation_disturbe_glitch(self):
         actions = [
-            (5, "disturbeScale", random.uniform(1.02, 1.1)),
-            (80, "disturbeScale", 1.0),
+            (5, "scale", random.uniform(1.02, 1.1)),
+            (80, "scale", 1.0),
             
-            (5, "disturbeRotation", random.randint(-30, 30)),
-            (80, "disturbeRotation", 0)
+            (5, "rotation_z", random.randint(-30, 30)),
+            (80, "rotation_z", 0)
         ]
         
         self.plan_timers(actions)
     
     def animation_disturbe_smooth(self):
-        self.anim_tilt_x = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_x",
             [
-                (0.0, self.disturbe_tilt_x),
-                (0.5, min(self.disturbe_tilt_x + 20, 50)),
-                (1.0, 0)
-            ], b"disturbeTiltX", 600, QEasingCurve.OutExpo
+                (0.0, 0.0),
+                (0.5, 30),
+                (1.0, 0.0)
+            ], 600, ThreeaD.Easing.ease_out_expo
         )
-        
-        self.anim_tilt_x.start()
     
     def animation_random_rotate(self):
         if not CurrentSettings["floating_window_animations"]:
             return
         
-        self.anim_rotation = self.make_animation(
+        self.animation_engine.animate(
+            "rotation_z",
             [
                 (0.0, 0),
                 (0.5, self.period_randomizer((-6, -3), (3, 6))),
                 (1.0, 0)
-            ], b"randomAnimRotation", 350
+            ], 350, ThreeaD.Easing.ease_out_cubic
         )
-        
-        self.anim_rotation.start()
 
     def start_exit_animation(self):
         if not self.close_animation_enabled:
@@ -2604,35 +2427,14 @@ class FloatingWindowGPU(QOpenGLWidget):
         }.get(self.animation_style)(final_rect, size)
 
     # Basic Physics - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
+    
     def update_physics(self):
-        scale = (
-            self.exit_scale * self.bpm_scale *
-            self.disturbe_scale * self.wobble_scale *
-            self.open_scale * self.move_scale
-        )
+        q_tilt = QQuaternion.fromEulerAngles(self.rotation_x, self.rotation_y, self.rotation_z)
 
-        rotation_x = (
-            self.current_tilt_x + self.open_tilt_x +
-            self.bpm_tilt_x + self.close_tilt_x +
-            self.disturbe_tilt_x
-        )
-        
-        rotation_y = self.current_tilt_y + self.open_tilt_y
-
-        rotation_z = (
-            self.open_rotation + self.exit_rotation + 
-            self.random_anim_rotation + self.disturbe_rotation
-        )
-        
-        current_state = {
-            'rx': rotation_x, 
-            'ry': rotation_y, 
-            'rz': rotation_z,
-            'sc': scale
+        return {
+            'rotation': q_tilt,
+            'sc': self.scale
         }
-        
-        return current_state
 
     def tilt_rotation_update(self):
         global_pos = QCursor.pos()
@@ -2654,13 +2456,6 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         self.current_tilt_x += (self.target_tilt_x - self.current_tilt_x) * self.tilt_smoothing
         self.current_tilt_y += (self.target_tilt_y - self.current_tilt_y) * self.tilt_smoothing
-        
-        if (
-                abs(self.current_tilt_x - self.target_tilt_x) > 0.001 or 
-                abs(self.current_tilt_y - self.target_tilt_y) > 0.001
-            ):
-            
-            self.update()
     
     # Render - - - - - - - - - - - - - - - - - - - - - - - -
     
@@ -2716,15 +2511,15 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         if cw < 1 or ch < 1: return
 
-        mvp_final = self.calculate_matrix(curr['rx'], curr['ry'], curr["rz"], curr['sc'], cw, ch)
+        mvp_final = self.calculate_matrix(curr['rotation'], curr['sc'], cw, ch)
 
         glUniform2f(glGetUniformLocation(self.shader_program, "u_size"), cw, ch)
         glUniform1f(glGetUniformLocation(self.shader_program, "u_radius"), 16.0)
         glUniform1f(glGetUniformLocation(self.shader_program, "u_borderThicknessPixels"), 2.0)
         glUniform4f(glGetUniformLocation(self.shader_program, "u_rectColor"), 0.17, 0.17, 0.17, 1.0)
         glUniform4f(glGetUniformLocation(self.shader_program, "u_borderColor"), 0.25, 0.25, 0.25, 1.0)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_rectAlpha"), self.background_opacity)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_borderAlpha"), self.background_opacity)
+        glUniform1f(glGetUniformLocation(self.shader_program, "u_rectAlpha"), self.opacity_background)
+        glUniform1f(glGetUniformLocation(self.shader_program, "u_borderAlpha"), self.opacity_background)
         glUniform1f(glGetUniformLocation(self.shader_program, "u_globalAlpha"), 1.0)
 
         loc_mvp = glGetUniformLocation(self.shader_program, "u_curr_mvp")
@@ -2734,7 +2529,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
     
-    def calculate_matrix(self, rot_x, rot_y, rot_z, scale, content_w, content_h):
+    def calculate_matrix(self, rotation, scale, content_w, content_h):
         mvp = QMatrix4x4()
 
         fov = 45.0
@@ -2749,11 +2544,9 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         pixel_unit = visible_height_at_z / self.height()
 
-        mvp.rotate(rot_x, 1.0, 0.0, 0.0)
-        mvp.rotate(rot_y, 0.0, 1.0, 0.0)
-        mvp.rotate(-rot_z, 0.0, 0.0, 1.0)
+        mvp.rotate(rotation)
+        
         mvp.scale(scale)
-
         mvp.scale((content_w * pixel_unit) / 2.0, (content_h * pixel_unit) / 2.0)
 
         return mvp
@@ -2761,7 +2554,15 @@ class FloatingWindowGPU(QOpenGLWidget):
     # Events - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     def closeEvent(self, event):
+        print(f"--- GC ---")
+        referrers = gc.get_referrers(self)
+        print(f"Link Number: {len(referrers)}")
+
+        for i, ref in enumerate(referrers):
+            print(f"Link {i}: {type(ref)} -> {ref}")
+        
         if self.allow_exit:
+            print("Allowed")
             super().closeEvent(event)
         
         else:
@@ -2770,23 +2571,30 @@ class FloatingWindowGPU(QOpenGLWidget):
             if random.random() < 0.5:
                 if self.ee_exit_attempts == 50:
                     Utils.ui_sound("CostOptimizer/WAYD")
+                    
+                    if self.title_label:
+                        self.title_label.setText("What are you doing?")
                 
                 if self.ee_exit_attempts == 70:
                     Utils.ui_sound("CostOptimizer/HCYLWY")
+                    
+                    if self.title_label:
+                        self.title_label.setText("???")
                 
                 if self.ee_exit_attempts > 70:
                     self.chaos_mode()
                 
                 if self.ee_exit_attempts == 100:
-                    Utils.ui_sound("CostOptimizer/ONYD")
-                    
-                    self.title_label.setText("Dividing by zero: 3")
-                    
-                    QTimer.singleShot(1000, lambda: self.title_label.setText("Dividing by zero: 2"))
-                    QTimer.singleShot(2000, lambda: self.title_label.setText("Dividing by zero: 1"))
-                    QTimer.singleShot(2500, lambda: self.title_label.setText("LMAO"))
-                    QTimer.singleShot(2100, lambda: Utils.ui_sound("NOK/Charging"))
-                    QTimer.singleShot(3000, lambda: 1 / 0)
+                    if self.title_label:
+                        Utils.ui_sound("CostOptimizer/ONYD")
+
+                        self.title_label.setText("Dividing by zero: 3")
+
+                        QTimer.singleShot(1000, lambda: self.title_label.setText("Dividing by zero: 2"))
+                        QTimer.singleShot(2000, lambda: self.title_label.setText("Dividing by zero: 1"))
+                        QTimer.singleShot(2500, lambda: self.title_label.setText("LMAO"))
+                        QTimer.singleShot(2100, lambda: Utils.ui_sound("NOK/Charging"))
+                        QTimer.singleShot(3000, lambda: 1 / 0)
             
             event.ignore()
             self.start_disturbe_animation()
@@ -2836,17 +2644,16 @@ class FloatingWindowGPU(QOpenGLWidget):
         for widget in widgets:
             dx = random.randint(-10, 10)
             dy = random.randint(-10, 10)
+            dw = random.randint(-10, 10)
 
             widget.move(widget.x() + dx, widget.y() + dy)
-
-            dw = random.randint(-10, 10)
             widget.resize(widget.width() + dw, widget.height() + dw)
     
     def plan_timers(self, actions: list[tuple]):
         for delay, attr, value in actions:
             QTimer.singleShot(
                 delay,
-                lambda a = attr, v = value: setattr(self, a, v)
+                lambda a = attr, v = value: self.animation_engine.set_property_base_value(a, v)
             )
 
     def on_ok(self):
@@ -3043,7 +2850,25 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         self.anim_group.start(QAbstractAnimation.DeleteWhenStopped)
     
+    def maximum_scale(self):
+        real_width = self.geometry().width()
+        real_height = self.geometry().height()
+        
+        width = self.content_widget.width()
+        height = self.content_widget.height()
+        
+        c1 = max(width, height)
+        c2 = max(real_width, real_height)
+        
+        coeff = c1 / c2
+        
+        return 1.0 + (1.0 - coeff)
+
     def _really_close(self):
+        self.animation_engine.clear()
+        self.animation_engine.updated.disconnect()
+        self.animation_engine = None
+        
         if CurrentSettings["floating_window_animations"]:
             if self.bpm:
                 self.bpm_timer.stop()
@@ -3680,32 +3505,7 @@ class ScheduledSegmentedBar(QWidget, ScheduledLogicMixin):
         painter.drawRoundedRect(self.rect(), r, r)
 
 class GlyphVisualizer(FloatingWindowGPU):
-    def __init__(self, model, player = None, bpm = None):
-        self.map_data = ModelVisualizerMaps[model]
-        self.map_w, self.map_h = self.map_data["size"]
-        
-        self.visual_scale = 1.0
-        self.target_scale = 1.0
-        self.scale_smoothing = 0.15
-        
-        self.resize_timer = QTimer()
-        self.resize_timer.setSingleShot(True)
-        self.resize_timer.setInterval(200)
-        self.resize_timer.timeout.connect(self._sync_size_delayed)
-
-        self.glyphs_gpu = []
-        self._scratch_levels = np.zeros(128, dtype=np.float32)
-
-        self.timer = QTimer()
-        self.elapsed = QElapsedTimer()
-        
-        self.timer.setInterval(16) 
-        self.timer.timeout.connect(self._process_schedule)
-        
-        self.offset_ms = 0
-        self.virtual_time = 0
-        self.last_process_time = 0
-
+    def __init__(self, parent, model, player = None, bpm = None):
         super().__init__(
             None,
             player = player,
@@ -3716,6 +3516,33 @@ class GlyphVisualizer(FloatingWindowGPU):
             close_animation_enabled = False
         )
         
+        self.parent = parent
+        
+        self.map_data = ModelVisualizerMaps[model]
+        self.map_w, self.map_h = self.map_data["size"]
+        
+        self.visual_scale = 1.0
+        self.target_scale = 1.0
+        self.scale_smoothing = 0.15
+        
+        self.resize_timer = QTimer(self)
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.setInterval(200)
+        self.resize_timer.timeout.connect(self._sync_size_delayed)
+
+        self.glyphs_gpu = []
+        self._scratch_levels = np.zeros(128, dtype=np.float32)
+
+        self.timer = QTimer(self)
+        self.elapsed = QElapsedTimer()
+        
+        self.timer.setInterval(FPS_60)
+        self.timer.timeout.connect(self._process_schedule)
+        
+        self.offset_ms = 0
+        self.virtual_time = 0
+        self.last_process_time = 0
+        
         self.scale_in()
         self._init_geometry()
         self._sync_size_delayed()
@@ -3724,31 +3551,31 @@ class GlyphVisualizer(FloatingWindowGPU):
         self.setWindowFlags(self.windowFlags() | Qt.WindowDoesNotAcceptFocus)
 
     def scale_in(self):
-        scale_animation = self.make_animation(
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], b"openScale", 1000, QEasingCurve.OutQuart
-        )
-        opacity_animation = self.make_animation(
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"backgroundOpacity", 200
+            ], 1000, ThreeaD.Easing.ease_out_quart
         )
         
-        self.group_animate([scale_animation, opacity_animation])
+        self.animation_engine.animate(
+            "opacity_background",
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ], 175
+        )
     
-    def scale_out(self, cleanup = True):
-        self.scale_animation = self.make_animation(
+    def scale_out(self, cleanup):
+        self.animation_engine.animate(
+            "scale",
             [
                 (0.0, 1.0),
                 (1.0, 0.0)
-            ], b"exitScale", 500, QEasingCurve.InQuart, self._really_close if cleanup else None
+            ], 500, ThreeaD.Easing.ease_in_quart, self._really_close if cleanup else None
         )
-        
-        self.scale_animation.start()
-    
+
     def _init_geometry(self):
         for gid, data in self.map_data["glyphs"].items():
             glyph_gpu_data = self._process_single_glyph(gid, data)
@@ -3868,7 +3695,7 @@ class GlyphVisualizer(FloatingWindowGPU):
         glUseProgram(self.prog)
 
         total_scale = p['sc'] * self.visual_scale
-        mvp = self.calculate_matrix(p['rx'], p['ry'], p['rz'], total_scale, 2.0, 2.0)
+        mvp = self.calculate_matrix(p['rotation'], total_scale, 2.0, 2.0)
 
         glUniformMatrix4fv(self.loc_mvp, 1, GL_FALSE, mvp.data())
 
