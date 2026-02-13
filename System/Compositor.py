@@ -842,11 +842,11 @@ class ScrollableContent(QGraphicsView):
         self.horizontalScrollBar().valueChanged.connect(self.mouse_controller._force_mouse_update)
         
         self.glyph_visualizer = UI.GlyphVisualizer(
+            self,
             self.composition.model,
             self.playback_manager,
             self.composition.bpm
         )
-        self.glyph_visualizer.setParent(None)
         
         self.glyph_controller.elements_changed.connect(self.main_window_ref.on_elements_changed)
         
@@ -1050,7 +1050,10 @@ class ScrollableContent(QGraphicsView):
                 self.playback_manager.data.astype(np.float32)
             )
         )
-
+        
+        if self.global_waveform_max < 1e-6:
+            self.global_waveform_max = 1e-6
+    
     def scale_view(self, delta, force_update=False):
         current_ms = self.get_playhead_position_ms()
 
