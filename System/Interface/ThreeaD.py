@@ -73,6 +73,26 @@ class Easing:
     def ease_in_quart(t):
         t = max(0.0, min(1.0, t))
         return t ** 4
+    
+    @staticmethod
+    def ease_out_bounce(t):
+        n1 = 7.5625
+        d1 = 2.75
+    
+        if t < 1 / d1:
+            return n1 * t * t
+        
+        elif t < 2 / d1:
+            t -= 1.5 / d1
+            return n1 * t * t + 0.75
+        
+        elif t < 2.5 / d1:
+            t -= 2.25 / d1
+            return n1 * t * t + 0.9375
+        
+        else:
+            t -= 2.625 / d1
+            return n1 * t * t + 0.984375
 
 class MixMode(Enum):
     ADD = 0
@@ -209,8 +229,6 @@ class AnimationEngine(QObject):
     updated = pyqtSignal()
 
     def __init__(self, fps = 120):
-        print("FPS:", fps)
-        
         super().__init__()
         self.properties: dict[str, PropertyNode] = {}
         
@@ -226,7 +244,7 @@ class AnimationEngine(QObject):
         self.duration_multiplier = 1.0
 
     def set_multiplier(self, value = 1.0):
-        self.duration_multiplier = 1.0
+        self.duration_multiplier = value
 
     def set_fps(self, fps):
         self.timer.setInterval(1000 // fps)
@@ -250,11 +268,11 @@ class AnimationEngine(QObject):
         
         return self.properties[name].value()
 
-    def animate(self, name: str, keyframes: list, duration: int, easing: Easing = Easing.linear, finished = None):
+    def animate(self, name: str, keyframes: list, duration: int, easing: Easing = Easing.linear, finished = None, do_not_multiply_duration = False):
         if name not in self.properties:
             return logger.error(f"Property {name} not found in ThreeaD Engine.")
 
-        anim = AnimationInstance(self, keyframes, duration * self.duration_multiplier, easing, finished)
+        anim = AnimationInstance(self, keyframes, duration if do_not_multiply_duration else duration * self.duration_multiplier, easing, finished)
         self.properties[name].add_animation(anim)
 
     def _tick(self):
