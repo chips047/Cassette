@@ -320,7 +320,7 @@ class AudioSetupDialog(UI.FloatingWindowGPU):
         super().__init__(
             "Audio",
             player = self.player,
-            max_tilt_angle = 8,
+            max_tilt_angle = 14,
             enable_audioplayer_effects = False
         )
         
