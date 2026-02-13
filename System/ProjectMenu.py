@@ -1,7 +1,7 @@
-import mimetypes
 import os
 import json
 import shutil
+import mimetypes
 import webbrowser
 
 from PyQt5.QtGui import *
@@ -22,9 +22,10 @@ def get_projects_info(songs_folder):
     projects = {}
     
     os.makedirs(songs_folder, exist_ok=True)
-
+    
     for project_name in os.listdir(songs_folder):
         project_path = os.path.join(songs_folder, project_name)
+        
         if not os.path.isdir(project_path):
             continue
 
@@ -67,8 +68,16 @@ def get_projects_info(songs_folder):
 class TrackItemWidget(QWidget):
     edit_clicked = pyqtSignal(str)
     
-    def __init__(self, project_id, title, artist, duration, progress_text, parent=None, main_menu=None):
-        super().__init__(parent)
+    def __init__(
+            self,
+            project_id,
+            title,
+            artist,
+            duration,
+            main_menu = None
+        ):
+        
+        super().__init__(main_menu)
         self.setMinimumWidth(300)
         self.setFixedHeight(150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -76,12 +85,10 @@ class TrackItemWidget(QWidget):
         self.project_id = project_id
         self.main_menu = main_menu
 
-        bg_color = Styles.Colors.secondary_background
-
         self.bg_frame = QFrame(self)
         self.bg_frame.setStyleSheet(f"""
             QFrame {{
-                background-color: {bg_color};
+                background-color: {Styles.Colors.secondary_background};
                 border-radius: 30px;
             }}
         """)
@@ -121,24 +128,21 @@ class TrackItemWidget(QWidget):
         icons_layout = QHBoxLayout()
         icons_layout.setSpacing(5)
         
-        btn_delete = QPushButton(QIcon("System/Icons/Delete.png"), "")
-        btn_edit = QPushButton(QIcon("System/Icons/Edit.png"), "")
-        btn_export = QPushButton(QIcon("System/Icons/Save.png"), "")
+        icons_data = [
+            ("Delete.png", self.on_delete_clicked),
+            ("Edit.png",   self.on_edit_clicked),
+            ("Save.png",   self.on_export_clicked)
+        ]
 
-        for btn in [btn_delete, btn_edit, btn_export]:
-            btn.setFixedHeight(35)
-            btn.setFixedWidth(66)
+        for icon_name, slot in icons_data:
+            btn = QPushButton(QIcon(f"System/Icons/{icon_name}"), "")
+            btn.setFixedSize(66, 35)
             btn.setIconSize(QSize(28, 28))
             btn.setCursor(Qt.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton { background-color: #3a3a3a; border-radius: 14px; }
-                QPushButton:hover { background-color: #4a4a4a; }
-            """)
+            btn.setStyleSheet(Styles.Buttons.MainMenu.small_button)
+
+            btn.clicked.connect(slot)
             icons_layout.addWidget(btn)
-        
-        btn_edit.clicked.connect(self.on_edit_clicked)
-        btn_delete.clicked.connect(self.on_delete_clicked)
-        btn_export.clicked.connect(self.on_export_clicked)
 
         bottom_layout.addLayout(icons_layout)
         bottom_layout.addStretch()
@@ -258,7 +262,7 @@ class FadeOverlay(QWidget):
         painter.setBrush(QBrush(grad))
         painter.drawRect(self.rect())
     
-    @pyqtProperty(float)
+    @pyqtProperty(float) # type: ignore
     def opacity(self):
         return self._opacity
 
@@ -286,6 +290,7 @@ class MainMenu(QWidget):
         self.setAcceptDrops(True)
         
         layout = QVBoxLayout(self)
+        
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.container)
     
@@ -300,36 +305,6 @@ class MainMenu(QWidget):
         self.tracks_widget = self.create_tracks_grid()
         self.tracks_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         self.tracks_layout.addWidget(self.tracks_widget, alignment=Qt.AlignTop)
-    
-    def on_edit_project(self, project_id):
-        composition = ProjectSaver.Composition(
-            id = project_id
-        )
-
-        self.composition_created.emit(composition)
-
-    def on_new_composition(self):
-        options = QFileDialog.Options()
-        options |= QFileDialog.Option.ReadOnly
-        file_path = None
-    
-        dialog = QFileDialog(
-            self,
-            "Open Audio File",
-            "",
-            "Audio Files (*.wav *.mp3 *.ogg *.flac *.opus *.mp4 *.mkv *.mov);;All Files (*)"
-        )
-        
-        dialog.setOptions(options)
-
-        if dialog.exec_() == QFileDialog.Accepted:
-            file_path = dialog.selectedFiles()[0]
-        
-        if not file_path:
-            return
-        
-        QApplication.processEvents() # to fix center issues
-        self._process_new_composition(file_path)
 
     def _process_new_composition(self, file_path):
         dialog = AudioSetupDialog(file_path)
@@ -345,9 +320,6 @@ class MainMenu(QWidget):
         )
         
         self.composition_created.emit(composition)
-
-    def go_to_glyphtones(self):
-        webbrowser.open("https://glyphtones.firu.dev/")
 
     def setup_ui(self):
         container_layout = QVBoxLayout(self.container)
@@ -375,6 +347,7 @@ class MainMenu(QWidget):
 
         button_container = QFrame()
         button_container.setStyleSheet(card_style)
+        
         button_layout = QVBoxLayout(button_container)
         button_layout.setContentsMargins(5, 5, 5, 5)
         
@@ -415,22 +388,10 @@ class MainMenu(QWidget):
         self.scroll_area.setWidget(tracks_container)
         container_layout.addWidget(self.scroll_area)
     
-    def on_settings(self):
-        settings_dialog = UI.Settings()
-        settings_dialog.init_settings(SettingsDict)
-        settings_dialog.exec_()
-    
-    def on_import(self):
-        test = UI.ErrorWindow("Wait.", "This function is in development.", "I don't care")
-        test.exec_()
-    
-    def on_about(self):
-        dialog = UI.About()
-        dialog.exec_()
-
     def create_button_panel(self):
         panel = QWidget()
         layout = QHBoxLayout(panel)
+        
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
         
@@ -439,52 +400,24 @@ class MainMenu(QWidget):
         buttons_data = [
             ("New composition",  True,  "on_new_composition"),
             ("Import",           False, "on_import"),
-            ("Go to glyphtones", False, "go_to_glyphtones"),
+            ("Go to glyphtones", False, "on_glyphtones"),
             ("Settings",         False, "on_settings"),
             (version,            False, "on_about")
         ]
 
-        accent_style = f"""
-            QPushButton {{
-                background-color: {Styles.Colors.nothing_accent};
-                color: white;
-                border: none;
-                padding: 8px 15px;
-                height: 30px;
-                border-radius: 20px;
-            }}
-            QPushButton:hover {{
-                background-color: {Styles.Colors.nothing_accent_hover};
-            }}
-        """
-
-        default_style = """
-            QPushButton {
-                background-color: #333;
-                color: #ccc;
-                border: none;
-                padding: 8px 15px;
-                min-height: 30px;
-                border-radius: 20px;
-            }
-            QPushButton:hover {
-                background-color: #444;
-            }
-        """
-
         for text, is_accent, slot_name in buttons_data:
             btn = QPushButton(text)
+            
             btn.setFont(Utils.NType(13))
             btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(Styles.Buttons.MainMenu.accent_button if is_accent else Styles.Buttons.MainMenu.normal_button)
 
-            btn.setStyleSheet(accent_style if is_accent else default_style)
-
-            if hasattr(self, slot_name):
-                btn.clicked.connect(getattr(self, slot_name))
+            btn.clicked.connect(getattr(self, slot_name))
 
             layout.addWidget(btn)
         
         panel.setStyleSheet("background-color: transparent;")
+        
         return panel
 
     def create_tracks_grid(self):
@@ -494,8 +427,9 @@ class MainMenu(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         tracks_data = get_projects_info(Utils.get_songs_path(""))
+        
         tracks_data = [
-            (project_id, data["title"], data["artist"], "- " + data["model"], f"{data['save']['progress']}% done.")
+            (project_id, data["title"], data["artist"], "- " + data["model"])
             for project_id, data in tracks_data.items()
         ]
         
@@ -513,7 +447,6 @@ class MainMenu(QWidget):
         event.acceptProposedAction()
 
     def dropEvent(self, event):
-        print(event.mimeData().urls())
         for url in event.mimeData().urls():
             file = url.toLocalFile()
             mime, encoding = mimetypes.guess_type(file)
@@ -527,3 +460,49 @@ class MainMenu(QWidget):
     def showEvent(self, event):
         self.refresh_tracks()
         super().showEvent(event)
+    
+    def on_settings(self):
+        settings_dialog = UI.Settings()
+        settings_dialog.init_settings(SettingsDict)
+        settings_dialog.exec_()
+    
+    def on_import(self):
+        test = UI.ErrorWindow("Wait.", "This function is in development.", "I don't care")
+        test.exec_()
+    
+    def on_about(self):
+        dialog = UI.About()
+        dialog.exec_()
+    
+    def on_glyphtones(self):
+        webbrowser.open("https://glyphtones.firu.dev/")
+    
+    def on_edit_project(self, project_id):
+        composition = ProjectSaver.Composition(
+            id = project_id
+        )
+
+        self.composition_created.emit(composition)
+
+    def on_new_composition(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.Option.ReadOnly
+        file_path = None
+    
+        dialog = QFileDialog(
+            self,
+            "Open Audio File",
+            "",
+            "Audio Files (*.wav *.mp3 *.ogg *.flac *.opus *.mp4 *.mkv *.mov);;All Files (*)"
+        )
+        
+        dialog.setOptions(options)
+
+        if dialog.exec_() == QFileDialog.Accepted:
+            file_path = dialog.selectedFiles()[0]
+        
+        if not file_path:
+            return
+        
+        QApplication.processEvents() # to fix center issues
+        self._process_new_composition(file_path)
