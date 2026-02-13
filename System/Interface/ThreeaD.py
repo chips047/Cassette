@@ -219,6 +219,10 @@ class AnimationEngine(QObject):
         self.timer.timeout.connect(self._tick)
         self.timer.start()
         
+        self.elapsed_timer = QElapsedTimer()
+        self.elapsed_timer.start()
+        self.last_time = 0
+        
         self.duration_multiplier = 1.0
 
     def set_multiplier(self, value = 1.0):
@@ -254,7 +258,12 @@ class AnimationEngine(QObject):
         self.properties[name].add_animation(anim)
 
     def _tick(self):
-        dt = self.timer.interval()
+        current_time = self.elapsed_timer.elapsed()
+        dt = current_time - self.last_time
+        self.last_time = current_time
+
+        if dt > 100: 
+            dt = 16 
         
         for prop in list(self.properties.values()):
             prop.update(dt)
