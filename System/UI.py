@@ -1785,7 +1785,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             bpm: int = None,
             player = None,
             
-            max_tilt_angle = 12,
+            max_tilt_angle = 20,
             animation_style = "bouncy",
             enable_audioplayer_effects: bool = True,
             enable_tilt: bool = True,
@@ -1912,7 +1912,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.animation_engine = ThreeaD.AnimationEngine(120)
         self.animation_engine.setParent(self)
         
-        self.animation_engine.set_multiplier(CurrentSettings["animation_multiplier"])
+        self.animation_engine.set_multiplier(float(CurrentSettings["animation_multiplier"]))
         
         self.animation_engine.add_property("rotation_x", 0.0, ThreeaD.MixMode.ADD)
         self.animation_engine.add_property("rotation_y", 0.0, ThreeaD.MixMode.ADD)
@@ -1922,6 +1922,10 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         self.animation_engine.add_property("opacity_background", 1.0, ThreeaD.MixMode.MULTIPLY)
         self.animation_engine.add_property("opacity_content", 1.0, ThreeaD.MixMode.MULTIPLY)
+        
+        self.animation_engine.add_property("x_offset", 0.0, ThreeaD.MixMode.ADD)
+        self.animation_engine.add_property("y_offset", 0.0, ThreeaD.MixMode.ADD)
+        self.animation_engine.add_property("z_offset", 0.0, ThreeaD.MixMode.ADD)
         
         self.animation_engine.updated.connect(self.apply_animations)
         
@@ -1939,6 +1943,10 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         self.opacity_content = 0.0
         self.opacity_background = 0.0
+        
+        self.x_offset = 0.0
+        self.y_offset = 0.0
+        self.z_offset = 0.0
         
         self.tilt_smoothing = float(CurrentSettings["window_hover_smoothing"])
 
@@ -1959,6 +1967,10 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.rotation_x = self.animation_engine.get_property_value("rotation_x") + self.current_tilt_x
         self.rotation_y = self.animation_engine.get_property_value("rotation_y") + self.current_tilt_y
         self.rotation_z = self.animation_engine.get_property_value("rotation_z")
+        
+        self.x_offset = self.animation_engine.get_property_value("x_offset")
+        self.y_offset = self.animation_engine.get_property_value("y_offset")
+        self.z_offset = self.animation_engine.get_property_value("z_offset")
         
         self.opacity_content = self.animation_engine.get_property_value("opacity_content")
         self.opacity_background = self.animation_engine.get_property_value("opacity_background")
@@ -1986,7 +1998,39 @@ class FloatingWindowGPU(QOpenGLWidget):
 
     def animation_open_classic(self, final_rect, size):
         self.animation_engine.animate(
-            ""
+            "y_offset",
+            [
+                (0.0, -0.2),
+                (1.0, 0.0)
+            ], 400, ThreeaD.Easing.bouncy
+        )
+        
+        self.animation_engine.set_property_base_value("opacity_content", 1.0)
+        self.animation_engine.set_property_base_value("opacity_background", 1.0)
+
+    def animation_close_classic(self, size):
+        self.animation_engine.animate(
+            "y_offset",
+            [
+                (0.0, 0.0),
+                (1.0, 0.1)
+            ], 300, ThreeaD.Easing.ease_out_cubic
+        )
+        
+        self.animation_engine.animate(
+            "opacity_content",
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 100
+        )
+
+        self.animation_engine.animate(
+            "opacity_background",
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ], 100, finished = self._really_close
         )
 
     def animation_open_smooth(self, final_rect, size):
@@ -2056,49 +2100,33 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def animation_open_bouncy(self, final_rect, size):
-        start_angle = self.period_randomizer((-35, -20), (20, 35))
-        start_pos_y = self.period_randomizer((-130, -90), (90, 130))
+        start_angle = self.period_randomizer((-45, -15), (15, 45))
 
         optimal_tilt = get_optimal_tilt(*size)
         optimal_tilt = -optimal_tilt if random.random() < 0.5 else optimal_tilt
         
-        anim_position = self.make_animation(
-            [
-                (0.0, final_rect.translated(0, start_pos_y).topLeft()),
-                (1.0, final_rect.topLeft())
-            ], b"pos", 700, QEasingCurve.OutElastic
-        )
-        
         self.animation_engine.animate(
-            "scale",
+            "y_offset",
             [
-                (0.0, self.maximum_scale()),
-                (1.0, 1.0)
-            ], 700, ThreeaD.Easing.ease_out_cubic
+                (0.0, -0.4),
+                (1.0, 0.0)
+            ], 950, ThreeaD.Easing.bouncy
         )
-        
+
         self.animation_engine.animate(
             "rotation_z",
             [
                 (0.0, start_angle),
                 (1.0, 0)
-            ], 800, ThreeaD.Easing.very_bouncy
+            ], 900, ThreeaD.Easing.very_bouncy
         )
-        
-        self.animation_engine.animate(
-            "rotation_x",
-            [
-                (0.0, int(optimal_tilt)),
-                (1.0, 0)
-            ], 1000, ThreeaD.Easing.bouncy
-        )
-        
+
         self.animation_engine.animate(
             "opacity_background",
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], 200
+            ], 350, ThreeaD.Easing.ease_out_expo
         )
         
         self.animation_engine.animate(
@@ -2106,10 +2134,8 @@ class FloatingWindowGPU(QOpenGLWidget):
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], 250
+            ], 350, ThreeaD.Easing.ease_out_expo
         )
-
-        self.group_animate([anim_position])
     
     def animation_close_bouncy(self, size):
         self.animation_engine.animate(
@@ -2254,7 +2280,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             [
                 (0.0, 1.0),
                 (1.0, 0.8)
-            ], 210, ThreeaD.Easing.ease_out_cubic
+            ], 210, ThreeaD.Easing.ease_out_cubic, do_not_multiply_duration = True
         )
         
         QTimer.singleShot(580, self._really_close)
@@ -2281,7 +2307,7 @@ class FloatingWindowGPU(QOpenGLWidget):
                 (0.5, self.bpm_wobble_start_size + self.squish(audio_level)),
                 (1.0, 1.0)
             ],
-            interval_ms, ThreeaD.Easing.ease_out_cubic
+            interval_ms, ThreeaD.Easing.ease_out_cubic, do_not_multiply_duration = True
         )
 
         self.bpm_timer.start(interval_ms)
@@ -2366,6 +2392,27 @@ class FloatingWindowGPU(QOpenGLWidget):
             ], 1200, ThreeaD.Easing.bouncy
         )
     
+    def animation_disturbe_classic(self):
+        angle = self.period_randomizer((-30, -15), (15, 30))
+        
+        self.animation_engine.animate(
+            "scale",
+            [
+                (0.0, 1.0),
+                (0.5, 1.05),
+                (1.0, 1.0)
+            ], 320
+        )
+        
+        self.animation_engine.animate(
+            "rotation_z",
+            [
+                (0.0, 0.0),
+                (0.5, angle),
+                (1.0, 0.0)
+            ], 900, ThreeaD.Easing.very_bouncy
+        )
+    
     def animation_disturbe_glitch(self):
         actions = [
             (5, "scale", random.uniform(1.02, 1.1)),
@@ -2413,7 +2460,8 @@ class FloatingWindowGPU(QOpenGLWidget):
             "bouncy": self.animation_close_bouncy,
             "smooth": self.animation_close_smooth,
             "roll": self.animation_close_roll,
-            "glitch": self.animation_close_glitch
+            "glitch": self.animation_close_glitch,
+            "classic": self.animation_close_classic
         }.get(self.animation_style)(size)
     
     def start_disturbe_animation(self):
@@ -2426,7 +2474,8 @@ class FloatingWindowGPU(QOpenGLWidget):
             "bouncy": self.animation_disturbe_bouncy,
             "smooth": self.animation_disturbe_smooth,
             "roll": self.animation_disturbe_roll,
-            "glitch": self.animation_disturbe_glitch
+            "glitch": self.animation_disturbe_glitch,
+            "classic": self.animation_disturbe_classic
         }.get(self.animation_style)()
     
     def start_open_animation(self):
@@ -2447,7 +2496,8 @@ class FloatingWindowGPU(QOpenGLWidget):
             "bouncy": self.animation_open_bouncy,
             "smooth": self.animation_open_smooth,
             "roll": self.animation_open_roll,
-            "glitch": self.animation_open_glitch
+            "glitch": self.animation_open_glitch,
+            "classic": self.animation_open_classic
         }.get(self.animation_style)(final_rect, size)
 
     # Basic Physics - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -2568,23 +2618,29 @@ class FloatingWindowGPU(QOpenGLWidget):
         glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
     
-    def calculate_matrix(self, rotation, scale, content_w, content_h):
+    def calculate_matrix(self, rotation, scale, content_w = None, content_h = None):
+        if not content_w:
+            content_w = self.content_widget.width()
+        
+        if not content_h:
+            content_h = self.content_widget.height()
+        
         mvp = QMatrix4x4()
 
         fov = 45.0
-        aspect = self.width() / self.height()
         z_dist = 3.0
+        aspect = self.width() / self.height()
 
         mvp.perspective(fov, aspect, 0.1, 100.0)
-
         mvp.translate(0.0, 0.0, -z_dist)
 
         visible_height_at_z = 2.0 * math.tan(math.radians(fov / 2.0)) * z_dist
-
         pixel_unit = visible_height_at_z / self.height()
 
+        print(self.x_offset, self.y_offset, self.z_offset)
+        mvp.translate(self.x_offset, self.y_offset, self.z_offset)
+
         mvp.rotate(rotation)
-        
         mvp.scale(scale)
         mvp.scale((content_w * pixel_unit) / 2.0, (content_h * pixel_unit) / 2.0)
 
@@ -2821,7 +2877,8 @@ class FloatingWindowGPU(QOpenGLWidget):
                 "bouncy": "BouncyPack/Open",
                 "smooth": "SmoothPack/Open",
                 "roll": "SmoothPack/Open",
-                "glitch": "GlitchPack/Open"
+                "glitch": "GlitchPack/Open",
+                "classic": "ClassicPack/Open"
             }.get(self.animation_style)
         )
     
@@ -2836,7 +2893,8 @@ class FloatingWindowGPU(QOpenGLWidget):
                 "bouncy": "BouncyPack/Close",
                 "smooth": "SmoothPack/Close",
                 "roll": "SmoothPack/Close",
-                "glitch": "GlitchPack/Close"
+                "glitch": "GlitchPack/Close",
+                "classic": "ClassicPack/Close"
             }.get(self.animation_style)
         )
     
@@ -2851,7 +2909,8 @@ class FloatingWindowGPU(QOpenGLWidget):
                 "bouncy": "BouncyPack/Disturbe",
                 "smooth": "SmoothPack/Disturbe",
                 "roll": "SmoothPack/Disturbe",
-                "glitch": f"GlitchPack/Disturbe{random.randint(1, 3)}"
+                "glitch": f"GlitchPack/Disturbe{random.randint(1, 3)}",
+                "classic": "ClassicPack/Disturbe"
             }.get(self.animation_style)
         )
     

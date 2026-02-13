@@ -524,7 +524,8 @@ SettingsDict = {
                 "Smooth": "smooth",
                 "Bouncy": "bouncy",
                 "Roll": "roll",
-                "Glitch": "glitch"
+                "Glitch": "glitch",
+                "Classic": "classic"
             },
             "default": "Bouncy"
         },
