@@ -54,6 +54,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     processing_exception = True
     
     try:
+        logger.error(str('\n'.join(traceback.format_exception(exc_type, exc_value, exc_traceback))))
         UI.ErrorWindow(f"Panic: {exc_value}", str('\n'.join(traceback.format_exception(exc_type, exc_value, exc_traceback))) + "\nCassette will now close.", "No way").exec_()
     
     except Exception as e:
@@ -408,6 +409,12 @@ class ApplicationWindow(QMainWindow):
             self.compositor_widget.content_widget.composition.syncer.exit_app()
 
         if Player.player.is_playing:
+            if self.compositor_widget.content_widget.global_waveform_max == 1e-6:
+                self._exit_effects()
+                QTimer.singleShot(1800, QApplication.instance().quit)
+                
+                return
+            
             Player.player.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
 
             logger.debug("Window hidden, app will close in 3 seconds...")
