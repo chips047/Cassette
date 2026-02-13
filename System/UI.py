@@ -1,5 +1,6 @@
 import re
 import gc
+import time
 import math
 import random
 import string
@@ -1771,6 +1772,8 @@ class NavButton(QPushButton):
             self.setStyleSheet(self.inactive_style)
 
 class FloatingWindowGPU(QOpenGLWidget):
+    _shared_shader_program = None
+    
     def __init__(
             self,
             title: str,
@@ -1793,6 +1796,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             start_position: QPoint = None
         ):
         
+        time_start = time.time()
         super().__init__(parent)
 
         self.bpm = bpm
@@ -1836,11 +1840,13 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         if self.open_animation_enabled:
             QTimer.singleShot(0, self.start_open_animation)
+        
+        logger.debug(f"{time.time() - time_start} FWGPU Init")
 
     # Setup - - - - - - - - - - - - - - - - - - - - - - - -
 
     def apply_attributes(self, dialog, stays_on_top):
-        flags = self.windowFlags() | Qt.FramelessWindowHint
+        flags = self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
 
         if dialog:
             flags |= Qt.Dialog
@@ -1978,6 +1984,11 @@ class FloatingWindowGPU(QOpenGLWidget):
         anim.setEasingCurve(QEasingCurve.OutCubic)
         self.group_animate([anim])
 
+    def animation_open_classic(self, final_rect, size):
+        self.animation_engine.animate(
+            ""
+        )
+
     def animation_open_smooth(self, final_rect, size):
         self.animation_engine.animate(
             "rotation_x",
@@ -2045,7 +2056,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def animation_open_bouncy(self, final_rect, size):
-        start_angle = self.period_randomizer((-20, -10), (10, 20))
+        start_angle = self.period_randomizer((-35, -20), (20, 35))
         start_pos_y = self.period_randomizer((-130, -90), (90, 130))
 
         optimal_tilt = get_optimal_tilt(*size)
@@ -2082,8 +2093,21 @@ class FloatingWindowGPU(QOpenGLWidget):
             ], 1000, ThreeaD.Easing.bouncy
         )
         
-        self.animation_engine.set_property_base_value("opacity_background", 1.0)
-        self.animation_engine.set_property_base_value("opacity_content", 1.0)
+        self.animation_engine.animate(
+            "opacity_background",
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ], 200
+        )
+        
+        self.animation_engine.animate(
+            "opacity_content",
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ], 250
+        )
 
         self.group_animate([anim_position])
     
@@ -2460,6 +2484,8 @@ class FloatingWindowGPU(QOpenGLWidget):
     # Render - - - - - - - - - - - - - - - - - - - - - - - -
     
     def initializeGL(self):
+        time_start = time.time()
+        
         logger.debug("Initializing OpenGL context for FloatingWindow.")
         
         glEnable(GL_BLEND)
@@ -2468,9 +2494,10 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         logger.warning("Compiling shaders for FloatingWindow.")
 
-        vs = shaders.compileShader(FLOATING_WINDOW_VS, GL_VERTEX_SHADER)
-        fs = shaders.compileShader(FLOATING_WINDOW_FS, GL_FRAGMENT_SHADER)
-        self.shader_program = shaders.compileProgram(vs, fs, validate = False)
+        if not self._shared_shader_program:
+            vs = shaders.compileShader(FLOATING_WINDOW_VS, GL_VERTEX_SHADER)
+            fs = shaders.compileShader(FLOATING_WINDOW_FS, GL_FRAGMENT_SHADER)
+            self._shared_shader_program = shaders.compileProgram(vs, fs, validate = False)
 
         vertices = np.array([
             1.0,   1.0, 0.0, 1.0, 1.0,
@@ -2497,11 +2524,23 @@ class FloatingWindowGPU(QOpenGLWidget):
         glEnableVertexAttribArray(1)
         
         glBindVertexArray(0)
+        
+        self.location_size = glGetUniformLocation(self._shared_shader_program, "u_size")
+        self.location_radius = glGetUniformLocation(self._shared_shader_program, "u_radius")
+        self.location_border_px = glGetUniformLocation(self._shared_shader_program, "u_borderThicknessPixels")
+        self.location_rect_color = glGetUniformLocation(self._shared_shader_program, "u_rectColor")
+        self.location_border_color = glGetUniformLocation(self._shared_shader_program, "u_borderColor")
+        self.location_rect_alpha = glGetUniformLocation(self._shared_shader_program, "u_rectAlpha")
+        self.location_border_alpha = glGetUniformLocation(self._shared_shader_program, "u_borderAlpha")
+        self.location_global_alpha = glGetUniformLocation(self._shared_shader_program, "u_globalAlpha")
+        
+        logger.debug(f"{time.time() - time_start} GL Init")
     
     def paintGL(self):
         curr = self.update_physics()
+        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glUseProgram(self.shader_program)
+        glUseProgram(self._shared_shader_program)
 
         glEnable(GL_BLEND)
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
@@ -2513,16 +2552,16 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         mvp_final = self.calculate_matrix(curr['rotation'], curr['sc'], cw, ch)
 
-        glUniform2f(glGetUniformLocation(self.shader_program, "u_size"), cw, ch)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_radius"), 16.0)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_borderThicknessPixels"), 2.0)
-        glUniform4f(glGetUniformLocation(self.shader_program, "u_rectColor"), 0.17, 0.17, 0.17, 1.0)
-        glUniform4f(glGetUniformLocation(self.shader_program, "u_borderColor"), 0.25, 0.25, 0.25, 1.0)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_rectAlpha"), self.opacity_background)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_borderAlpha"), self.opacity_background)
-        glUniform1f(glGetUniformLocation(self.shader_program, "u_globalAlpha"), 1.0)
+        glUniform2f(self.location_size, cw, ch)
+        glUniform1f(self.location_radius, 16.0)
+        glUniform1f(self.location_border_px, 2.0)
+        glUniform4f(self.location_rect_color, 0.17, 0.17, 0.17, 1.0)
+        glUniform4f(self.location_border_color, 0.25, 0.25, 0.25, 1.0)
+        glUniform1f(self.location_rect_alpha, self.opacity_background)
+        glUniform1f(self.location_border_alpha, self.opacity_background)
+        glUniform1f(self.location_global_alpha, 1.0)
 
-        loc_mvp = glGetUniformLocation(self.shader_program, "u_curr_mvp")
+        loc_mvp = glGetUniformLocation(self._shared_shader_program, "u_curr_mvp")
         glUniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp_final.data())
 
         glBindVertexArray(self.VAO)
