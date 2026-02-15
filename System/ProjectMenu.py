@@ -429,7 +429,7 @@ class MainMenu(QWidget):
         tracks_data = get_projects_info(Utils.get_songs_path(""))
         
         tracks_data = [
-            (project_id, data["title"], data["artist"], "- " + data["model"])
+            (project_id, data["title"], data["artist"], f"- {data['model'] or ''}")
             for project_id, data in tracks_data.items()
         ]
         

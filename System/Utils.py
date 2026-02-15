@@ -16,7 +16,7 @@ import numpy as np
 
 from System.Constants import *
 
-def get_fox_image(url="https://randomfox.ca/floof/"):
+def get_fox_image(url = "https://randomfox.ca/floof/"):
     try:
         resp = requests.get(url, timeout = 2)
         resp.raise_for_status()
@@ -211,16 +211,19 @@ def auto_cast(value: str):
 
     if v.lower() in {"true", "yes", "1"}:
         return True
+    
     if v.lower() in {"false", "no", "0"}:
         return False
 
     try:
         return int(v)
+    
     except ValueError:
         pass
 
     try:
         return float(v)
+    
     except ValueError:
         pass
 
