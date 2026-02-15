@@ -122,7 +122,7 @@ class SyncedDict(dict):
         self.composition.cached_effects.pop(str(key), None)
         self._remove_glyph_from_visualizator(key)
         
-        super().__delitem__(key)
+        self.pop(key, None)
         self._glyph_id_to_track.pop(key, None)
         
         self._sync_callback(self)
@@ -132,8 +132,8 @@ class SyncedDict(dict):
         for key in keys:
             self.composition.cached_effects.pop(str(key), None)
             self._remove_glyph_from_visualizator(key)
-                
-            super().__delitem__(key)
+            
+            super().pop(key, None)
             self._glyph_id_to_track.pop(key, None)
         
         self._sync_callback(self)
