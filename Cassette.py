@@ -418,12 +418,17 @@ class ApplicationWindow(QMainWindow):
             Player.player.tape(end_speed = 0.0, duration = 3.0, cleanup_on_finish = True)
 
             logger.debug("Window hidden, app will close in 3 seconds...")
-            QTimer.singleShot(1700, self._exit_effects)
-            QTimer.singleShot(3200, QApplication.instance().quit)
+            
+            close_visualizer_timeout = CurrentSettings["animation_multiplier"] * 1700
+
+            QTimer.singleShot(close_visualizer_timeout, self._exit_effects)
+            QTimer.singleShot(1500 + close_visualizer_timeout, QApplication.instance().quit)
         
         else:
+            close_visualizer_duration = CurrentSettings["animation_multiplier"] * 1800
+            
             self._exit_effects()
-            QTimer.singleShot(1800, QApplication.instance().quit)
+            QTimer.singleShot(close_visualizer_duration, QApplication.instance().quit)
 
 def main():
     start = time.perf_counter()
@@ -453,7 +458,7 @@ def main():
     end = time.perf_counter()
     
     logger.debug(f"QApplication initialized. Time taken: {end - start:.2f} seconds")
-
+    
     start = time.perf_counter()
     if os.path.exists("System/Fonts/NDot57.otf"):
         QFontDatabase.addApplicationFont("System/Fonts/NDot57.otf")
