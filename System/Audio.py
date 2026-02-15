@@ -107,7 +107,7 @@ def analyze_bpm_and_beats(
             except Exception:
                 last_s = float(total_frames) / float(samplerate)
             
-            beats.append(round(last_s, 6))
+            beats.append(round(last_s, 3))
 
         if read < hop_size:
             break
