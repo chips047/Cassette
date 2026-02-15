@@ -1778,7 +1778,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             self,
             title: str,
             parent = None,
-            margin = 200,
+            margin = None,
             dialog = True,
             stays_on_top = True,
             
@@ -1801,7 +1801,6 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         self.bpm = bpm
         self.player = player
-        self.margin = margin
         self.enable_tilt = enable_tilt
         self.max_tilt_angle = max_tilt_angle
         
@@ -1822,6 +1821,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         
         self.enable_transition_audio_effects = enable_audioplayer_effects
         
+        self.calculate_margin(margin)
         self.apply_attributes(dialog, stays_on_top)
         self.setup_layout(title)
         self.setup_animation_properties()
@@ -1844,6 +1844,21 @@ class FloatingWindowGPU(QOpenGLWidget):
         logger.debug(f"{time.time() - time_start} FWGPU Init")
 
     # Setup - - - - - - - - - - - - - - - - - - - - - - - -
+
+    def calculate_margin(self, margin):
+        if margin:
+            self.margin_x = margin
+            self.margin_y = margin
+        
+            return
+
+        margin = 300
+        screen = self.screen()
+
+        self.margin_x = min(margin, screen.geometry().width())
+        self.margin_y = min(margin, screen.geometry().height())
+
+        logger.debug(f"Margin X: {self.margin_x}, margin Y: {self.margin_y}, screen: {screen.geometry()}")
 
     def apply_attributes(self, dialog, stays_on_top):
         flags = self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
@@ -1884,7 +1899,7 @@ class FloatingWindowGPU(QOpenGLWidget):
 
     def setup_layout(self, title):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(self.margin, self.margin, self.margin, self.margin)
+        main_layout.setContentsMargins(self.margin_x, self.margin_y, self.margin_x, self.margin_y)
         main_layout.setSpacing(0)
         
         self.content_widget = QWidget(self)
@@ -1988,13 +2003,13 @@ class FloatingWindowGPU(QOpenGLWidget):
             QRect(
                 self.x(),
                 self.y(),
-                target_width + self.margin,
-                target_height + self.margin
+                target_width + self.margin_x,
+                target_height + self.margin_y
             )
         )
         
         anim.setEasingCurve(QEasingCurve.OutCubic)
-        self.group_animate([anim])
+        self.group_animate([anim], do_not_multiply_duration = True)
 
     def animation_open_classic(self, final_rect, size):
         self.animation_engine.animate(
@@ -2002,7 +2017,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             [
                 (0.0, -0.2),
                 (1.0, 0.0)
-            ], 400, ThreeaD.Easing.bouncy
+            ], 500, ThreeaD.Easing.bouncy
         )
         
         self.animation_engine.set_property_base_value("opacity_content", 1.0)
@@ -2100,15 +2115,25 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def animation_open_bouncy(self, final_rect, size):
-        start_angle = self.period_randomizer((-45, -15), (15, 45))
+        start_angle = self.period_randomizer((-55, -20), (20, 55))
+
+        start_offset_x, start_offset_y = self.get_optimal_offset(*size)
 
         optimal_tilt = get_optimal_tilt(*size)
         optimal_tilt = -optimal_tilt if random.random() < 0.5 else optimal_tilt
         
         self.animation_engine.animate(
+            "x_offset",
+            [
+                (0.0, start_offset_x),
+                (1.0, 0.0)
+            ], 950, ThreeaD.Easing.bouncy
+        )
+
+        self.animation_engine.animate(
             "y_offset",
             [
-                (0.0, -0.4),
+                (0.0, start_offset_y),
                 (1.0, 0.0)
             ], 950, ThreeaD.Easing.bouncy
         )
@@ -2118,7 +2143,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             [
                 (0.0, start_angle),
                 (1.0, 0)
-            ], 900, ThreeaD.Easing.very_bouncy
+            ], 700, ThreeaD.Easing.very_bouncy
         )
 
         self.animation_engine.animate(
@@ -2126,7 +2151,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], 350, ThreeaD.Easing.ease_out_expo
+            ], 600, ThreeaD.Easing.ease_out_expo
         )
         
         self.animation_engine.animate(
@@ -2134,7 +2159,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], 350, ThreeaD.Easing.ease_out_expo
+            ], 800, ThreeaD.Easing.ease_out_expo
         )
     
     def animation_close_bouncy(self, size):
@@ -2637,10 +2662,8 @@ class FloatingWindowGPU(QOpenGLWidget):
         visible_height_at_z = 2.0 * math.tan(math.radians(fov / 2.0)) * z_dist
         pixel_unit = visible_height_at_z / self.height()
 
-        print(self.x_offset, self.y_offset, self.z_offset)
-        mvp.translate(self.x_offset, self.y_offset, self.z_offset)
-
         mvp.rotate(rotation)
+        mvp.translate(self.x_offset, self.y_offset, self.z_offset)
         mvp.scale(scale)
         mvp.scale((content_w * pixel_unit) / 2.0, (content_h * pixel_unit) / 2.0)
 
@@ -2733,6 +2756,22 @@ class FloatingWindowGPU(QOpenGLWidget):
         self._drag_pos = None
     
     # Utils - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+    def get_optimal_offset(self, width, height, limit = 500):
+        scale_x = limit / max(width, limit)
+        scale_y = limit / max(height, limit)
+
+        start_offset_x = self.period_randomizer(
+            (-0.35 * scale_x, -0.2 * scale_x), 
+            (0.2 * scale_x, 0.35 * scale_x)
+        )
+
+        start_offset_y = self.period_randomizer(
+            (-0.5 * scale_y, -0.2 * scale_y), 
+            (0.2 * scale_y, 0.5 * scale_y)
+        )
+
+        return start_offset_x, start_offset_y
+    
     def chaos_mode(self):
         widgets = self.content_widget.findChildren(QWidget)
 
@@ -2805,12 +2844,6 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.bpm_timer.setInterval(60000 // self.bpm)
         self.bpm_timer.start()
     
-    def is_big(self):
-        if self.width() - self.margin * 2 > 500 or self.height() - self.margin * 2 > 500:
-            return True
-        
-        return False
-    
     def set_bpm_start_size(self, start_coeff):
         self.bpm_wobble_start_size = start_coeff
     
@@ -2826,14 +2859,19 @@ class FloatingWindowGPU(QOpenGLWidget):
         return anim
 
     def period_randomizer(self, *periods):
+        function = random.randint
+
+        if isinstance(periods[0][0], float):
+            function = random.uniform
+
         period = random.choice(periods)
-        return random.randint(*period)
+        return function(*period)
 
     def center_window(self):
         if self.start_position:
             final_rect = QRect(
-                self.start_position.x() - self.margin,
-                self.start_position.y() - self.margin,
+                self.start_position.x() - self.margin_x,
+                self.start_position.y() - self.margin_y,
                 self.width(),
                 self.height()
             )
@@ -2927,11 +2965,14 @@ class FloatingWindowGPU(QOpenGLWidget):
         geometry = self.content_widget.geometry()
         return geometry.width(), geometry.height()
     
-    def group_animate(self, animations, finished = None, valueChanged = None, multiplier = 1.0):
+    def group_animate(self, animations, finished = None, valueChanged = None, multiplier = 1.0, do_not_multiply_duration = False):
         self.anim_group = QParallelAnimationGroup(self)
 
-        if multiplier == 1.0:
+        if multiplier == 1.0 and not do_not_multiply_duration:
             multiplier = float(CurrentSettings["animation_multiplier"])
+        
+        else:
+            multiplier = 1.0
 
         if multiplier != 1.0:
             for animation in animations:
@@ -3654,7 +3695,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], 1000, ThreeaD.Easing.ease_out_quart
+            ], 1000, ThreeaD.Easing.ease_out_quart, do_not_multiply_duration = True
         )
         
         self.animation_engine.animate(
@@ -3662,7 +3703,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             [
                 (0.0, 0.0),
                 (1.0, 1.0)
-            ], 175
+            ], 175, do_not_multiply_duration = True
         )
     
     def scale_out(self, cleanup):
@@ -3671,7 +3712,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             [
                 (0.0, 1.0),
                 (1.0, 0.0)
-            ], 500, ThreeaD.Easing.ease_in_quart, self._really_close if cleanup else None
+            ], 500, ThreeaD.Easing.ease_in_quart, self._really_close if cleanup else None, True
         )
 
     def _init_geometry(self):
@@ -3696,15 +3737,17 @@ class GlyphVisualizer(FloatingWindowGPU):
             counts.append(num_verts)
             cur_offset += num_verts
 
+        num_segs = data.get("segments", 1)
+    
         return {
             "id": gid,
             "vbo_data": np.array(verts, dtype=np.float32),
             "starts": np.array(starts, dtype=np.int32),
             "counts": np.array(counts, dtype=np.int32),
             "num_segs": num_segs,
+            "all_segments_idx": np.arange(num_segs, dtype=np.int32), 
             "levels": np.zeros(128, dtype=np.float32),
-            "schedule": [],
-            "schedule_active": [] 
+            "schedule": []
         }
 
     def _generate_segment_points(self, path, s, num_segs, pts_per_seg, px, py):
@@ -3814,12 +3857,7 @@ class GlyphVisualizer(FloatingWindowGPU):
 
     def set_schedule(self, schedule_dict):
         for g in self.glyphs_gpu:
-            raw_schedule = list(schedule_dict.get(g["id"], {}).values())
-            
-            for item in raw_schedule:
-                item["_targets"] = item.get("segments") or list(range(g["num_segs"]))
-            
-            g["schedule"] = raw_schedule
+            g["schedule"] = list(schedule_dict.get(g["id"], {}).values())
 
     def play_all(self, ms_start=0):
         self.offset_ms = ms_start
@@ -3868,11 +3906,9 @@ class GlyphVisualizer(FloatingWindowGPU):
                     continue
                 
                 bright = self._calculate_brightness(item, now)
-
-                targets = np.array(item["_targets"])
-                valid_targets = targets[targets < 128]
-
-                scratch[valid_targets] = np.maximum(scratch[valid_targets], bright)
+                targets = item.get("segments", g["all_segments_idx"])
+                
+                scratch[targets] = np.maximum(scratch[targets], bright)
 
             if not np.array_equal(g["levels"], scratch):
                 np.copyto(g["levels"], scratch)
@@ -3899,6 +3935,7 @@ class GlyphVisualizer(FloatingWindowGPU):
     def exit(self, cleanup = True):
         self.timer.stop()
         self.resize_timer.stop()
+
         self.scale_out(cleanup)
 
 class TestWindow(FloatingWindowGPU):
