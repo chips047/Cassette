@@ -951,6 +951,8 @@ class ScrollableContent(QGraphicsView):
         # References
         self.main_window_ref = parent
         self.composition = None
+
+        self.global_waveform_max = 1e-6
         
         self.scene = QGraphicsScene(self)
         self.setScene(self.scene)
@@ -989,6 +991,7 @@ class ScrollableContent(QGraphicsView):
         self._track_label_font = Utils.NType(15)
         self._ruler_font = Utils.NType(10)
 
+        # UI
         self.playback_manager = parent.playback_manager
 
         self.playhead_timer = QTimer(self)
@@ -1319,14 +1322,14 @@ class ScrollableContent(QGraphicsView):
     def prepare_audio(self):
         self.update()
 
-        self.global_waveform_max = np.max(
-            np.abs(
-                self.playback_manager.data.astype(np.float32)
-            )
+        self.global_waveform_max = max(
+            np.max(
+                np.abs(
+                    self.playback_manager.data.astype(np.float32)
+                )
+            ),
+            1e-6
         )
-        
-        if self.global_waveform_max < 1e-6:
-            self.global_waveform_max = 1e-6
     
     def scale_view(self, delta, force_update=False):
         current_ms = self.get_playhead_position_ms()

@@ -419,13 +419,13 @@ class ApplicationWindow(QMainWindow):
 
             logger.debug("Window hidden, app will close in 3 seconds...")
             
-            close_visualizer_timeout = CurrentSettings["animation_multiplier"] * 1700
+            close_visualizer_timeout = int(CurrentSettings["animation_multiplier"] * 1700)
 
             QTimer.singleShot(close_visualizer_timeout, self._exit_effects)
             QTimer.singleShot(1500 + close_visualizer_timeout, QApplication.instance().quit)
         
         else:
-            close_visualizer_duration = CurrentSettings["animation_multiplier"] * 1800
+            close_visualizer_duration = int(CurrentSettings["animation_multiplier"] * 1800)
             
             self._exit_effects()
             QTimer.singleShot(close_visualizer_duration, QApplication.instance().quit)
