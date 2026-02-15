@@ -21,6 +21,153 @@ from System import Utils
 
 from System.Interface import CompositorUI
 
+class UndoRedoAction:
+    def undo(self): pass
+    def redo(self): pass
+
+class ActionModify(UndoRedoAction):
+    def __init__(self, controller, before_state, after_state):
+        self.controller = controller
+        self.composition = controller.composition
+        self.before_state = before_state 
+        self.after_state = after_state
+
+    def get_description(self, is_undo = True):
+        before = self.before_state or {}
+        after = self.after_state or {}
+
+        glyph_ids = list(before.keys()) + [glyph_id for glyph_id in after.keys() if glyph_id not in before]
+        
+        if not glyph_ids:
+            return "nothing"
+
+        target_glyph_id = None
+        
+        for glyph_id in glyph_ids:
+            before_glyph = before.get(glyph_id, {})
+            after_glyph = after.get(glyph_id, {})
+            
+            if before_glyph != after_glyph:
+                target_glyph_id = glyph_id
+                break
+
+        if target_glyph_id is None:
+            target_glyph_id = glyph_ids[0]
+
+        before_glyph = before.get(target_glyph_id, {}) or {}
+        after_glyph = after.get(target_glyph_id, {}) or {}
+
+        def segments_label(glyph):
+            value = glyph.get('segments')
+            
+            if value:
+                return ", ".join(map(str, value))
+            
+            return "all"
+
+        def effect_label(glyph):
+            value = glyph.get('effect')
+            
+            if not value:
+                return "no effect"
+            
+            return f"{value['name']} effect"
+
+        def duration_label(glyph):
+            value = glyph.get('duration')
+            return f"{value}ms"
+
+        def brightness_label(glyph):
+            value = glyph.get('brightness', 0)
+            return f"{value}%"
+
+        def start_label(glyph):
+            value = glyph.get('start')
+            return f"{value}ms"
+
+        if ('segments' in before_glyph or 'segments' in after_glyph) and before_glyph.get('segments') != after_glyph.get('segments'):
+            before_label = segments_label(before_glyph)
+            after_label = segments_label(after_glyph)
+            return f"setting segments from {before_label} to {after_label}"
+
+        if ('effect' in before_glyph or 'effect' in after_glyph) and before_glyph.get('effect') != after_glyph.get('effect'):
+            before_label = effect_label(before_glyph)
+            after_label = effect_label(after_glyph)
+            return f"setting effect from {before_label} to {after_label}"
+
+        if ('duration' in before_glyph or 'duration' in after_glyph) and before_glyph.get('duration') != after_glyph.get('duration'):
+            before_label = duration_label(before_glyph)
+            after_label = duration_label(after_glyph)
+            return f"setting duration from {before_label} to {after_label}"
+
+        if ('brightness' in before_glyph or 'brightness' in after_glyph) and before_glyph.get('brightness') != after_glyph.get('brightness'):
+            before_label = brightness_label(before_glyph)
+            after_label = brightness_label(after_glyph)
+            return f"setting brightness from {before_label} to {after_label}"
+
+        if ('start' in before_glyph or 'start' in after_glyph) and before_glyph.get('start') != after_glyph.get('start'):
+            before_label = start_label(before_glyph)
+            after_label = start_label(after_glyph)
+            return f"move from {before_label} to {after_label}"
+
+        return "nothing"
+
+    def undo(self):
+        self.composition.update_bunch_of_glyphs(self.before_state)
+        self.controller._sync_ui_with_data(self.before_state)
+
+    def redo(self):
+        self.composition.update_bunch_of_glyphs(self.after_state)
+        self.controller._sync_ui_with_data(self.after_state)
+
+class ActionAdd(UndoRedoAction):
+    def __init__(self, controller, added_glyphs):
+        self.controller = controller
+        self.composition = controller.composition
+        self.added_glyphs = copy.deepcopy(added_glyphs)
+
+    def get_description(self, _):
+        count = len(self.added_glyphs)
+        text = f"addition of {count} glyph{'s' if count > 1 else ''}"
+
+        return text
+
+    def undo(self):
+        self.composition.delete_bunch_of_glyphs(list(self.added_glyphs.keys()))
+        self.controller._remove_items_by_ids(self.added_glyphs.keys())
+
+    def redo(self):
+        self.composition.update_bunch_of_glyphs(copy.deepcopy(self.added_glyphs))
+        
+        for gid, data in self.added_glyphs.items():
+            self.controller._create_glyph_item(gid, copy.deepcopy(data), reset_selection=False)
+        
+        self.controller.elements_changed.emit()
+
+class ActionDelete(UndoRedoAction):
+    def __init__(self, controller, deleted_glyphs):
+        self.controller = controller
+        self.composition = controller.composition
+        self.deleted_glyphs = copy.deepcopy(deleted_glyphs)
+    
+    def get_description(self, _):
+        count = len(self.deleted_glyphs)
+        text = f"deletion of {count} glyph{'s' if count > 1 else ''}"
+
+        return text
+
+    def undo(self):
+        self.composition.update_bunch_of_glyphs(copy.deepcopy(self.deleted_glyphs))
+        
+        for gid, data in self.deleted_glyphs.items():
+            self.controller._create_glyph_item(gid, copy.deepcopy(data), reset_selection = False)
+        
+        self.controller.elements_changed.emit()
+
+    def redo(self):
+        self.composition.delete_bunch_of_glyphs(list(self.deleted_glyphs.keys()))
+        self.controller._remove_items_by_ids(self.deleted_glyphs.keys())
+
 class KeyboardController(QObject):
     def __init__(self, conductor, playback_manager):
         super().__init__()
@@ -38,6 +185,10 @@ class KeyboardController(QObject):
             shortcut.activated.connect(action)
             self.shortcuts.append(shortcut)
 
+        bind(Qt.CTRL + Qt.Key_Z, self.glyph_controller.undo)
+        bind(Qt.CTRL + Qt.SHIFT + Qt.Key_Z, self.glyph_controller.redo)
+        bind(Qt.CTRL + Qt.Key_Y, self.glyph_controller.redo)
+
         bind(Qt.Key_Space, self._handle_playback_toggle)
         bind(Qt.Key_Left, lambda: self._handle_manual_scroll(-self.move_increment))
         bind(Qt.Key_Right, lambda: self._handle_manual_scroll(self.move_increment))
@@ -54,7 +205,7 @@ class KeyboardController(QObject):
         bind(Qt.Key_D, self._open_duration_editor)
 
         for key, track_id in self.glyph_controller.track_map.items():
-            bind(key, lambda t=track_id: self.glyph_controller.spawn_glyph_on_track(t))
+            bind(key, lambda t = track_id: self.glyph_controller.spawn_glyph_on_track(t))
 
     def _handle_playback_toggle(self):
         current_ms = self.conductor.get_playhead_ms()
@@ -158,7 +309,7 @@ class GlyphController(QObject):
         self.conductor = conductor
         self.composition = composition
         
-        self.glyph_items: list[CompositorUI.GlyphItem] = []
+        self.glyph_items: dict[int, CompositorUI.GlyphItem] = {}
         self.copied_data = []
         
         self._drag_session = {}
@@ -183,6 +334,102 @@ class GlyphController(QObject):
             Qt.Key.Key_0: "10",
             Qt.Key.Key_Minus: "11"
         }
+        
+        self.undo_stack = []
+        self.redo_stack = []
+        
+        self._is_processing = False
+        
+        self.max_history = 50
+        self._temp_before_state = {}
+    
+    def update_bunch_of_glyphs(self, value, key):
+        selected_items = self.conductor.scene.selectedItems()
+        if not selected_items:
+            return
+
+        before_state = {}
+        after_state = {}
+
+        for item in selected_items:
+            gid = item.glyph_id
+            
+            original_data = self.composition.get_glyph(gid)
+            if not original_data: continue
+
+            before_state[gid] = copy.deepcopy(original_data)
+
+            new_data = copy.deepcopy(original_data)
+            new_data[key] = value
+            after_state[gid] = new_data
+
+        self._sync_ui_with_data(after_state)
+
+        self.push_action(ActionModify(self, before_state, after_state))
+        self.composition.update_bunch_of_glyphs(after_state)
+
+    def push_action(self, action: UndoRedoAction):
+        self.undo_stack.append(action)
+        self.redo_stack.clear()
+        
+        if len(self.undo_stack) > self.max_history:
+            self.undo_stack.pop(0)
+
+    def undo(self):
+        if self._is_processing or not self.undo_stack:
+            return
+        
+        self._is_processing = True
+        
+        try:
+            action = self.undo_stack.pop()
+            action.undo()
+            self.redo_stack.append(action)
+            self.elements_changed.emit()
+
+            detail = action.get_description(True)
+            self._update_popup(f"Undo {detail}", plan_hide = True)
+        
+        finally:
+            self._is_processing = False
+
+    def redo(self):
+        if not self.redo_stack or self._is_processing:
+            return
+        
+        self._is_processing = True
+        
+        try:
+            action = self.redo_stack.pop()
+            action.redo()
+            self.undo_stack.append(action)
+
+            detail = action.get_description(False)
+            self._update_popup(f"Redo {detail}", plan_hide = True)
+        
+        finally:
+            self._is_processing = False
+
+    def _sync_ui_with_data(self, data_batch: dict):
+        for gid, data in data_batch.items():
+            item = self.glyph_items.get(gid)
+            
+            if item:
+                item.update_geometry(
+                    start_ms=data.get('start'), 
+                    duration_ms=data.get('duration')
+                )
+        
+        self.elements_changed.emit()
+
+    def _remove_items_by_ids(self, ids_to_remove):
+        for gid in ids_to_remove:
+            item = self.glyph_items.pop(gid, None)
+            
+            if item:
+                item.remove_glyph()
+        
+        self.elements_changed.emit()
     
     def cleanup_tooltip(self):
         if self._popup:
@@ -191,7 +438,7 @@ class GlyphController(QObject):
     def hide_tooltip(self):
         if self._drag_session:
             return
-            
+        
         if self._popup:
             self._popup.hide()
     
@@ -216,36 +463,56 @@ class GlyphController(QObject):
         self._update_popup(info, item)
     
     def update_glyphs(self):
-        for glyph in self.glyph_items:
+        for glyph in self.glyph_items.values():
             glyph.update_geometry()
     
     def clear_glyphs(self):
-        for item in self.glyph_items:
+        for item in self.glyph_items.values():
             item.remove_glyph()
         
         self.glyph_items.clear()
         self.elements_changed.emit()
 
     def delete_glyphs(self):
-        deleted_ids = []
-        items = self.conductor.scene.selectedItems()
+        if self._is_processing:
+            return
         
+        items = self.conductor.scene.selectedItems()
         if not items:
             return
 
-        for item in items:
-            if item not in self.glyph_items:
-                continue
-            
-            deleted_ids.append(item.glyph_id)
-            self.glyph_items.remove(item)
-            item.remove_glyph()
-
-        if deleted_ids:
-            self.composition.delete_bunch_of_glyphs(deleted_ids)
+        self._is_processing = True
         
-        self.elements_changed.emit()
+        try:
+            deleted_ids = []
+            deleted_state = {}
 
+            for item in items:
+                gid = item.glyph_id
+                
+                if gid in self.composition.glyphs:
+                    deleted_ids.append(gid)
+                    deleted_state[gid] = copy.deepcopy(self.composition.glyphs[gid])
+
+            if not deleted_ids:
+                return
+
+            action = ActionDelete(self, deleted_state)
+
+            for gid in deleted_ids:
+                item = self.glyph_items.pop(gid, None)
+                
+                if item:
+                    item.remove_glyph()
+
+            self.composition.delete_bunch_of_glyphs(deleted_ids)
+            
+            self.push_action(action)
+            self.elements_changed.emit()
+            
+        finally:
+            self._is_processing = False
+    
     def spawn_glyph_on_track(self, track_index):
         audio_duration = Player.player.duration_ms
         current_ms = self.conductor.get_playhead_ms()
@@ -268,6 +535,7 @@ class GlyphController(QObject):
 
         self._create_glyph_item(new_id, new_data)
         self.elements_changed.emit()
+        self.push_action(ActionAdd(self, {new_id: new_data}))
         
         return True
     
@@ -329,7 +597,7 @@ class GlyphController(QObject):
             animate_spawn
         )
 
-        self.glyph_items.append(item)
+        self.glyph_items[glyph_id] = item
         self.conductor.scene.addItem(item)
 
         if reset_selection:
@@ -340,16 +608,19 @@ class GlyphController(QObject):
     
     def start_drag(self):
         self._drag_session = {}
+        self._temp_before_state = {}
         selected_items = self.conductor.scene.selectedItems()
         
         for item in selected_items:
-            if item not in self.glyph_items:
+            if item not in self.glyph_items.values():
                 continue
             
             self._drag_session[item] = {
                 'start': item.start_ms,
                 'duration': item.duration_ms
             }
+            
+            self._temp_before_state[item.glyph_id] = copy.deepcopy(self.composition.get_glyph(item.glyph_id))
 
     def update_drag_state(self, delta_ms: float, mode: str, active_item_ref):
         popup_text = ""
@@ -405,23 +676,26 @@ class GlyphController(QObject):
             self._update_popup(popup_text, active_item_ref)
 
     def end_drag(self):
+        if not self._drag_session:
+            return
+
         updated_data_batch = {}
         
         for item in self._drag_session.keys():
-            glyph_obj = self.composition.get_glyph(item.glyph_id)
-            
-            if glyph_obj:
-                glyph_obj['start'] = item.start_ms
-                glyph_obj['duration'] = item.duration_ms
-                updated_data_batch[item.glyph_id] = glyph_obj
+            glyph_data = copy.deepcopy(self._temp_before_state[item.glyph_id])
+            glyph_data['start'] = item.start_ms
+            glyph_data['duration'] = item.duration_ms
+            updated_data_batch[item.glyph_id] = glyph_data
 
         if updated_data_batch:
             self.composition.update_bunch_of_glyphs(updated_data_batch)
+            self.push_action(ActionModify(self, self._temp_before_state, updated_data_batch))
 
         self._drag_session = {}
-    
+        self._temp_before_state = {}
+
     def move_selection(self, delta_ms: float):
-        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items]
+        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items.values()]
         if not selected_items: return
 
         self.updates = {}
@@ -436,9 +710,9 @@ class GlyphController(QObject):
     
     def finish_edit_operation(self):
         self.composition.update_bunch_of_glyphs(self.updates)
-    
+
     def resize_selection(self, delta_ms: float, from_left: bool = False):
-        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items]
+        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items.values()]
         if not selected_items: return
 
         self.updates = {}
@@ -1180,21 +1454,8 @@ class ScrollableContent(QGraphicsView):
             return
 
         user_input = dialog.result_text
-        updated = {}
         
-        selected_items = self.scene.selectedItems()
-        
-        for item in selected_items:
-            element_id = item.glyph_id
-            glyph = self.composition.get_glyph(element_id)
-            glyph_copy = copy.deepcopy(glyph)
-            
-            glyph_copy[key] = user_input
-            updated[element_id] = glyph_copy
-            
-            item.update_geometry(duration_ms = glyph_copy["duration"])
-        
-        self.composition.update_bunch_of_glyphs(updated)
+        self.glyph_controller.update_bunch_of_glyphs(user_input, key)
 
     def brightness_control_popup(self):
         self.control_popup("Brightness", "Percent", "brightness", max_val = 100)
@@ -1211,11 +1472,15 @@ class ScrollableContent(QGraphicsView):
     
     def segment_control_popup(self):
         selected_items = self.scene.selectedItems()
+        if not selected_items:
+            return
 
-        first_item = selected_items[0]
-        first_id = first_item.glyph_id
-        first_glyph = self.composition.get_glyph(first_id)
+        selected_ids = [item.glyph_id for item in selected_items]
+        orig_glyphs = {gid: self.composition.get_glyph(gid) for gid in selected_ids}
 
+        first_id = selected_ids[0]
+        first_glyph = orig_glyphs[first_id]
+        
         popup = UI.SegmentEditor(
             "Segments",
             self.composition.bpm,
@@ -1231,44 +1496,47 @@ class ScrollableContent(QGraphicsView):
         turned_on = [i for i, s in enumerate(segments) if s]
         all_turned_on = all(segments)
 
-        updated_glyphs = {}
+        before_state = {gid: copy.deepcopy(orig_glyphs[gid]) for gid in selected_ids}
+        after_state = {}
 
-        for item in selected_items:
-            element_id = item.glyph_id
-            glyph = self.composition.get_glyph(element_id)
+        for gid in selected_ids:
+            new_glyph = copy.deepcopy(orig_glyphs[gid])
             
             if all_turned_on:
-                glyph.pop("segments", None)
+                new_glyph.pop("segments", None)
             
             else:
-                glyph["segments"] = turned_on
+                new_glyph["segments"] = turned_on
             
-            updated_glyphs[element_id] = glyph
+            after_state[gid] = new_glyph
 
-        effect_name = first_glyph.get("effect", {}).get("name")
-        effect_config = GlyphEffects.EffectsConfig.get(effect_name, {})
-        
-        if not effect_name:
-            return self.composition.update_bunch_of_glyphs(updated_glyphs)
-        
-        if not effect_config["supports_segmentation"]:
+        first_effect = first_glyph.get("effect", {})
+        effect_name = first_effect.get("name")
+
+        effect_config = GlyphEffects.EffectsConfig.get(effect_name, {}) if effect_name else {}
+
+        if effect_name and not effect_config.get("supports_segmentation", True):
             UI.ErrorWindow(
                 "Effect has been reset",
                 "Heads up: custom segmentation doesn't work with applied effect, so we reset the effect."
             ).exec_()
 
-            for item in selected_items:
-                element_id = item.glyph_id
-                
-                if element_id in updated_glyphs:
-                    updated_glyphs[element_id].pop("effect", None)
-                
-                else:
-                    glyph = self.composition.get_glyph(element_id)
-                    glyph.pop("effect", None)
-                    updated_glyphs[element_id] = glyph
+            for gid in selected_ids:
+                after_state[gid].pop("effect", None)
 
-        self.composition.update_bunch_of_glyphs(updated_glyphs)
+        modified_before = {}
+        modified_after = {}
+
+        for gid in selected_ids:
+            if before_state[gid] != after_state[gid]:
+                modified_before[gid] = before_state[gid]
+                modified_after[gid] = after_state[gid]
+
+        if not modified_after:
+            return
+
+        self.composition.update_bunch_of_glyphs(modified_after)
+        self.glyph_controller.push_action(ActionModify(self.glyph_controller, modified_before, modified_after))
 
     def contextMenuEvent(self, event: QContextMenuEvent):
         try:
@@ -1279,7 +1547,7 @@ class ScrollableContent(QGraphicsView):
             if not item_under_mouse:
                 return
 
-            if item_under_mouse not in self.glyph_controller.glyph_items:
+            if item_under_mouse not in self.glyph_controller.glyph_items.values():
                 return
             
             if not item_under_mouse.isSelected():
@@ -1300,11 +1568,20 @@ class ScrollableContent(QGraphicsView):
             self.update()
 
             def on_apply_requested_factory(name, settings):
+                before_state = {}
+                after_state = {}
+
                 for sel_id in selected_element_ids:
                     element = self.composition.get_glyph(sel_id)
+
                     if element:
+                        before_state[sel_id] = copy.deepcopy(element)
                         result = GlyphEffects.effectCallback(name, settings, element)
-                        self.composition.replace_glyph(sel_id, result)
+                        after_state[sel_id] = result
+                
+                if after_state:
+                    self.composition.update_bunch_of_glyphs(after_state)
+                    self.glyph_controller.push_action(ActionModify(self.glyph_controller, before_state, after_state))
 
             has_non_segmented = [
                 not is_segmented(self.composition.get_glyph(sel_id)["track"], self.composition.model)
@@ -1529,5 +1806,5 @@ class CompositorWidget(QWidget):
         self.content_widget.composition.set_default_effect(effect_value)
     
     def on_elements_changed(self):
-        items = self.content_widget.glyph_controller.glyph_items
+        items = self.content_widget.glyph_controller.glyph_items.items()
         self.export_button.setEnabled(len(items) > 0)

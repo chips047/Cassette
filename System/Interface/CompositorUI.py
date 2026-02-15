@@ -263,9 +263,7 @@ class GlyphItem(QGraphicsObject):
         self.keyframe_line_padding = 12
         self.keyframe_line_width = 4
 
-        # --- FADE KEYFRAME ---
         self.fade_keyframe_enabled = False
-        # Список ключевых точек: (x, y), x и y в [0, 1]
         self.fade_keyframes = [(0.0, 0.0), (1.0, 0.0)]
         self._fade_dragging = False
         self._fade_dragged_idx = None
