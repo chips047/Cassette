@@ -29,10 +29,10 @@ class ActionModify(UndoRedoAction):
     def __init__(self, controller, before_state, after_state):
         self.controller = controller
         self.composition = controller.composition
-        self.before_state = before_state 
+        self.before_state = before_state
         self.after_state = after_state
 
-    def get_description(self, is_undo = True):
+    def get_description(self):
         before = self.before_state or {}
         after = self.after_state or {}
 
@@ -126,7 +126,7 @@ class ActionAdd(UndoRedoAction):
         self.composition = controller.composition
         self.added_glyphs = copy.deepcopy(added_glyphs)
 
-    def get_description(self, _):
+    def get_description(self):
         count = len(self.added_glyphs)
         text = f"addition of {count} glyph{'s' if count > 1 else ''}"
 
@@ -150,7 +150,7 @@ class ActionDelete(UndoRedoAction):
         self.composition = controller.composition
         self.deleted_glyphs = copy.deepcopy(deleted_glyphs)
     
-    def get_description(self, _):
+    def get_description(self):
         count = len(self.deleted_glyphs)
         text = f"deletion of {count} glyph{'s' if count > 1 else ''}"
 
@@ -234,7 +234,7 @@ class KeyboardController(QObject):
 
     def _ensure_selection(self):
         if not self.conductor.scene.selectedItems():
-            self.glyph_controller._update_popup("No glyph selected!", plan_hide = True)
+            self.glyph_controller._update_popup("No glyphs selected.", plan_hide = True)
             return False
         
         return True
@@ -340,7 +340,7 @@ class GlyphController(QObject):
         
         self._is_processing = False
         
-        self.max_history = 50
+        self.max_history = 75
         self._temp_before_state = {}
     
     def update_bunch_of_glyphs(self, value, key):
@@ -376,7 +376,11 @@ class GlyphController(QObject):
             self.undo_stack.pop(0)
 
     def undo(self):
-        if self._is_processing or not self.undo_stack:
+        if not self.undo_stack:
+            self._update_popup("Nothing to undo.", plan_hide = True)
+            return
+        
+        if self._is_processing:
             return
         
         self._is_processing = True
@@ -387,14 +391,18 @@ class GlyphController(QObject):
             self.redo_stack.append(action)
             self.elements_changed.emit()
 
-            detail = action.get_description(True)
+            detail = action.get_description()
             self._update_popup(f"Undo {detail}", plan_hide = True)
         
         finally:
             self._is_processing = False
 
     def redo(self):
-        if not self.redo_stack or self._is_processing:
+        if not self.redo_stack:
+            self._update_popup("Nothing to redo.", plan_hide = True)
+            return
+        
+        if self._is_processing:
             return
         
         self._is_processing = True
@@ -404,7 +412,7 @@ class GlyphController(QObject):
             action.redo()
             self.undo_stack.append(action)
 
-            detail = action.get_description(False)
+            detail = action.get_description()
             self._update_popup(f"Redo {detail}", plan_hide = True)
         
         finally:
@@ -416,8 +424,8 @@ class GlyphController(QObject):
             
             if item:
                 item.update_geometry(
-                    start_ms=data.get('start'), 
-                    duration_ms=data.get('duration')
+                    start_ms = data.get('start'), 
+                    duration_ms = data.get('duration')
                 )
         
         self.elements_changed.emit()
