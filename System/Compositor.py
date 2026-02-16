@@ -8,7 +8,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from System import Player as Player
+from System import Player
 from System import Styles
 from System import GlyphEffects
 from System import ProjectSaver
