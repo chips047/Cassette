@@ -446,6 +446,24 @@ DEFAULT_BRIGHTNESS = 100
 SettingsDict = {
     "Performance": [
         {
+            "type": "selector",
+            "title": "FUCKING BLOCKSIZE",
+            "key": "blocksize",
+            "map": {
+                "256": 256,
+                "512": 512,
+                "1024": 1024
+            },
+            "default": "256"
+        },
+        {
+            "type": "checkbox",
+            "title": "Low Delay mOdeAh",
+            "key": "low_mode",
+            "description": "hi aleks",
+            "default": True
+        },
+        {
             "type": "checkbox",
             "title": "CPU Antialiasing",
             "key": "antialiasing",
