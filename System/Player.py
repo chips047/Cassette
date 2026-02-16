@@ -1,3 +1,4 @@
+import sys
 import time
 import math
 import traceback
@@ -133,8 +134,8 @@ class PlaybackManager(QObject):
         self.stream = sd.OutputStream(
             channels = self.data.shape[1],
             samplerate = self.fs,
-            blocksize = CurrentSettings["blocksize"],
-            latency = "low" if CurrentSettings["low_mode"] else "high",
+            blocksize = 256 if not sys.platform == "linux" else 512,
+            latency = "low",
             callback = self.audio_callback
         )
         
