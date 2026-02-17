@@ -234,7 +234,7 @@ class KeyboardController(QObject):
 
     def _ensure_selection(self):
         if not self.conductor.scene.selectedItems():
-            self.glyph_controller._update_popup("No glyphs selected.", plan_hide = True)
+            self.conductor.tooltip.show_tooltip_at("No glyphs selected.", plan_hide = True)
             return False
         
         return True
@@ -315,12 +315,6 @@ class GlyphController(QObject):
         self._drag_session = {}
         self.updates = {}
         
-        self._popup = UI.ValuePopup()
-        
-        self.manual_hide_timer = QTimer()
-        self.manual_hide_timer.setSingleShot(True)
-        self.manual_hide_timer.timeout.connect(self.hide_tooltip)
-        
         self.track_map = {
             Qt.Key.Key_1: "1",
             Qt.Key.Key_2: "2",
@@ -377,7 +371,7 @@ class GlyphController(QObject):
 
     def undo(self):
         if not self.undo_stack:
-            self._update_popup("Nothing to undo.", plan_hide = True)
+            self.conductor.tooltip.show_tooltip_at("Nothing to undo.", plan_hide = True)
             return
         
         if self._is_processing:
@@ -392,14 +386,14 @@ class GlyphController(QObject):
             self.elements_changed.emit()
 
             detail = action.get_description()
-            self._update_popup(f"Undo {detail}", plan_hide = True)
+            self.conductor.tooltip.show_tooltip_at(f"Undo {detail}", plan_hide = True)
         
         finally:
             self._is_processing = False
 
     def redo(self):
         if not self.redo_stack:
-            self._update_popup("Nothing to redo.", plan_hide = True)
+            self.conductor.tooltip.show_tooltip_at("Nothing to redo.", plan_hide = True)
             return
         
         if self._is_processing:
@@ -413,7 +407,7 @@ class GlyphController(QObject):
             self.undo_stack.append(action)
 
             detail = action.get_description()
-            self._update_popup(f"Redo {detail}", plan_hide = True)
+            self.conductor.tooltip.show_tooltip_at(f"Redo {detail}", plan_hide = True)
         
         finally:
             self._is_processing = False
@@ -438,37 +432,6 @@ class GlyphController(QObject):
                 item.remove_glyph()
         
         self.elements_changed.emit()
-    
-    def cleanup_tooltip(self):
-        if self._popup:
-            self._popup.cleanup()
-    
-    def hide_tooltip(self):
-        if self._drag_session:
-            return
-        
-        if self._popup:
-            self._popup.hide()
-    
-    def show_hover_tooltip(self, item):
-        if self._drag_session:
-            return
-
-        glyph = self.composition.get_glyph(item.glyph_id)
-        if not glyph:
-            return
-
-        effect = glyph.get("effect")
-        effect_name = f"Effect: {effect['name']}" if effect else "No effect"
-
-        info = (
-            f"Start: {glyph.get('start')} ms\n"
-            f"Duration: {glyph.get('duration')} ms\n"
-            f"Brightness: {glyph.get('brightness')}\n"
-            f"{effect_name}"
-        )
-
-        self._update_popup(info, item)
     
     def update_glyphs(self):
         for glyph in self.glyph_items.values():
@@ -681,7 +644,7 @@ class GlyphController(QObject):
                     popup_text = f"{item.duration_ms:.0f} ms"
         
         if popup_text:
-            self._update_popup(popup_text, active_item_ref)
+            self.conductor.tooltip.show_tooltip_at(popup_text, active_item_ref)
 
     def end_drag(self):
         if not self._drag_session:
@@ -715,13 +678,12 @@ class GlyphController(QObject):
             self.updates[item.glyph_id] = {'start': int(new_start)}
             
             item.update_geometry(start_ms = new_start)
-    
-    def finish_edit_operation(self):
-        self.composition.update_bunch_of_glyphs(self.updates)
 
     def resize_selection(self, delta_ms: float, from_left: bool = False):
-        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items.values()]
-        if not selected_items: return
+        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items]
+        
+        if not selected_items:
+            return
 
         self.updates = {}
         
@@ -741,36 +703,67 @@ class GlyphController(QObject):
                 new_duration = max(10, item.duration_ms + delta_ms)
                 self.updates[item.glyph_id] = {'duration': int(new_duration)}
                 item.update_geometry(duration_ms = new_duration)
-    
-    def _update_popup(self, text, target_item = None, plan_hide = False):
-        if not target_item and self.conductor.scene.selectedItems():
-            target_item = self.conductor.scene.selectedItems()[0]
-        
-        global_pos = self._get_global_pos(target_item)
-        self._popup.show_text(text, global_pos)
-        
-        if plan_hide:
-            if self.manual_hide_timer.isActive():
-                self.manual_hide_timer.stop()
-            
-            self.manual_hide_timer.start(1000)
 
-    def _get_global_pos(self, target_item):
+class Tooltip(UI.ValuePopup):
+    def __init__(self, conductor):
+        super().__init__()
+        
+        self.conductor = conductor
+        self._drag_session = {}
+
+        self.is_forced = False
+
+    def show_tooltip_at(self, text, target_item = None, plan_hide = False):
+        self.is_forced = plan_hide
+
+        global_pos = self._calculate_position(target_item)
+        self.show_text(text, global_pos, plan_hide)
+
+    def _calculate_position(self, target_item = None):
+        viewport = self.conductor.viewport()
+        
         if not target_item:
-            return self.conductor.mapToGlobal(self.conductor.viewport().rect().center())
-        
-        rect = target_item.boundingRect()
+            selected = self.conductor.scene.selectedItems()
+            target_item = selected[0] if selected else None
 
-        scene_pos = target_item.mapToScene(QPointF(rect.center().x(), rect.bottom()))
+        if not target_item:
+            center = viewport.rect().center()
+            return self.conductor.mapToGlobal(center)
+
+        rect = target_item.boundingRect()
+        anchor_point = QPointF(rect.center().x(), rect.bottom())
+        
+        scene_pos = target_item.mapToScene(anchor_point)
         view_pos = self.conductor.mapFromScene(scene_pos)
 
-        viewport = self.conductor.viewport()
-
-        vx = min(view_pos.x(), viewport.width())
-        vx = max(0, vx)
+        vx = max(0, min(view_pos.x(), viewport.width()))
         vy = view_pos.y()
 
         return viewport.mapToGlobal(QPoint(int(vx), int(vy)))
+
+    def hide_tooltip(self):
+        if not self.is_forced:
+            self.hide()
+
+    def show_hover_tooltip(self, item):
+        if self._drag_session:
+            return
+
+        glyph = self.conductor.composition.get_glyph(item.glyph_id)
+        if not glyph:
+            return
+
+        effect = glyph.get("effect")
+        effect_name = f"Effect: {effect['name']}" if effect else "No effect"
+
+        lines = [
+            f"Start: {glyph.get('start', 0)} ms",
+            f"Duration: {glyph.get('duration', 0)} ms",
+            f"Brightness: {glyph.get('brightness', 1.0)}",
+            effect_name
+        ]
+        
+        self.show_tooltip_at("\n".join(lines), item)
 
 class AutoScroller:
     def __init__(self, conductor):
@@ -1000,6 +993,7 @@ class ScrollableContent(QGraphicsView):
         self._ruler_font = Utils.NType(10)
 
         # UI
+        self.setup_ui()
         self.playback_manager = parent.playback_manager
 
         self.playhead_timer = QTimer(self)
@@ -1024,6 +1018,9 @@ class ScrollableContent(QGraphicsView):
         QShortcut(QKeySequence("Ctrl+="), self).activated.connect(self.on_scale_plus)
         QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(self.on_scale_minus)
     
+    def setup_ui(self):
+        self.tooltip = Tooltip(self)
+
     def _on_frame_swapped(self):
         self._frame_count += 1
         elapsed = self._fps_timer.elapsed()
@@ -1162,7 +1159,6 @@ class ScrollableContent(QGraphicsView):
         self.set_playhead_position_px(0)
         self.horizontalScrollBar().setValue(0)
 
-        self.glyph_controller.cleanup_tooltip()
         self.glyph_visualizer.exit()
         
         self.glyph_controller.elements_changed.disconnect()
@@ -1603,13 +1599,18 @@ class ScrollableContent(QGraphicsView):
                 is_segmented(self.composition.get_glyph(sel_id)["track"], self.composition.model)
                 for sel_id in selected_element_ids
             ]
-            
-            can_show_segment_editor = (len(has_segmented) == 1 and all(has_segmented))
 
             has_segments = any(
                 GlyphEffects.is_segment_edited(self.composition.get_glyph(sel_id))
                 for sel_id in selected_element_ids
             )
+
+            same_track = all(
+                selected_items[0].track == element.track for element in selected_items
+            )
+
+            print(same_track, "same?")
+            can_show_segment_editor = (all(has_segmented) and same_track)
 
             if any(has_non_segmented):
                 effects = GlyphEffects.only_non_segmented()
