@@ -134,7 +134,7 @@ class PlaybackManager(QObject):
         self.stream = sd.OutputStream(
             channels = self.data.shape[1],
             samplerate = self.fs,
-            blocksize = 256 if not sys.platform == "linux" else 512,
+            blocksize = 256 if not sys.platform == "linux" else 1024,
             latency = "low",
             callback = self.audio_callback
         )
