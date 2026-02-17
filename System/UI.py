@@ -264,7 +264,7 @@ class Selector(QWidget):
         if button_number > 0:
             tone = ((id + 1) / button_number) ** 0.5
             Utils.ui_sound("Toggle", tone)
-            
+        
         self.selection_changed.emit(id, text)
 
     def currentIndex(self) -> int:
@@ -982,38 +982,39 @@ class ValuePopup(QWidget):
         self.setup_animations()
 
     def setup_animations(self):
-        self.INTERPOLATION_FACTOR = 0.15
-        self._target_pos = None
-        self._target_size = None
+        self.animation_engine = ThreeaD.AnimationEngine()
+        self.animation_engine.updated.connect(self._update_position_and_size)
+
+        self.animation_engine.add_property("opacity", 1.0, ThreeaD.MixMode.NOMIX)
         
+        self.animation_engine.add_property("position_x", 0.0, ThreeaD.MixMode.NOMIX)
+        self.animation_engine.add_property("position_y", 0.0, ThreeaD.MixMode.NOMIX)
+
+        self.animation_engine.add_property("width", 0.0, ThreeaD.MixMode.NOMIX)
+        self.animation_engine.add_property("height", 0.0, ThreeaD.MixMode.NOMIX)
+
         self.opacity_effect = QGraphicsOpacityEffect(self)
-        self.opacity_effect.setOpacity(1.0)
         self.setGraphicsEffect(self.opacity_effect)
-        
-        self.fade_in_animation = Utils.Animations.make_animation(
-            self.opacity_effect,
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ], b"opacity", 350
-        )
-        
-        self.fade_out_animation = Utils.Animations.make_animation(
-            self.opacity_effect,
-            [
-                (0.0, 1.0),
-                (1.0, 0.0)
-            ], b"opacity", 350,
-            finished = self.on_hide_finished
-        )
-        
-        self.update_timer = QTimer(self)
-        self.update_timer.timeout.connect(self._update_position_and_size)
-        self.update_timer.setInterval(FPS_60)
+
+        self.manual_hide_timer = QTimer()
+        self.manual_hide_timer.setSingleShot(True)
+        self.manual_hide_timer.setInterval(1000)
+        self.manual_hide_timer.timeout.connect(self.hide)
+
+        self.target_width = 0
+        self.target_height = 0
 
     def on_hide_finished(self):
-        self.update_timer.stop()
+        self.animation_engine.pause()
         super().hide()
+
+    def show(self):
+        self.animation_engine.resume()
+        self.fade_in()
+        super().show()
+
+    def hide(self):
+        self.fade_out()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -1029,80 +1030,98 @@ class ValuePopup(QWidget):
     def _layout_for_text(self, text: str):
         self.label.setText(text)
         self.label.adjustSize()
-        
+
         label_target_size = self.label.size()
-        full_width = label_target_size.width() + self.padding * 2
-        full_height = label_target_size.height() + self.padding * 2
+
+        self.target_width = label_target_size.width() + self.padding * 2
+        self.target_height = label_target_size.height() + self.padding * 2
         
-        self._target_size = QSize(full_width, full_height)
+        self.animation_engine.set_target_value(
+            "width",
+            self.target_width, 500,
+            ThreeaD.Easing.ease_out_cubic
+        )
+
+        self.animation_engine.set_target_value(
+            "height",
+            self.target_height, 500,
+            ThreeaD.Easing.ease_out_cubic
+        )
 
     def _compute_top_left(self, pos: QPoint):
-        w = self.width()
+        w = self.target_width
 
         desired_x = pos.x() - w // 2
         desired_y = pos.y() + 5
 
-        return QPoint(desired_x, desired_y)
+        return desired_x, desired_y
 
     def _update_position_and_size(self):
-        current_pos = self.pos()
-        current_size = self.size()
-        
-        delta_x = self._target_pos.x() - current_pos.x()
-        delta_y = self._target_pos.y() - current_pos.y()
-        delta_w = self._target_size.width() - current_size.width()
-        delta_h = self._target_size.height() - current_size.height()
-        
-        if (
-            abs(delta_x) < 0.5
-            and abs(delta_y) < 0.5
-            and abs(delta_w) < 0.5
-            and abs(delta_h) < 0.5
-        ):
+        x = int(self.animation_engine.get_property_value("position_x"))
+        y = int(self.animation_engine.get_property_value("position_y"))
+
+        w = int(self.animation_engine.get_property_value("width"))
+        h = int(self.animation_engine.get_property_value("height"))
+
+        opacity = self.animation_engine.get_property_value("opacity")
+
+        self.opacity_effect.setOpacity(opacity)
+        self.setGeometry(x, y, w, h)
+
+    def show_text(self, text: str, pos: QPoint, auto_hide: bool = False):
+        if auto_hide:
+            if self.manual_hide_timer.isActive():
+                self.manual_hide_timer.stop()
             
-            self.move(self._target_pos)
-            self.resize(self._target_size)
+            self.manual_hide_timer.start()
 
-        new_x = round(current_pos.x() + delta_x * self.INTERPOLATION_FACTOR)
-        new_y = round(current_pos.y() + delta_y * self.INTERPOLATION_FACTOR)
-        
-        new_w = round(current_size.width() + delta_w * self.INTERPOLATION_FACTOR)
-        new_h = round(current_size.height() + delta_h * self.INTERPOLATION_FACTOR)
-        
-        self.move(new_x, new_y)
-        self.resize(new_w, new_h)
+        self._layout_for_text(text)
 
-    def show_text(self, text: str, pos: QPoint):
-        self.fade_out_animation.stop()
-        self.opacity_effect.setOpacity(1.0)
-        
-        if self.label.text() != text:
-            self._layout_for_text(text)
+        x, y = self._compute_top_left(pos)
 
-        self._target_pos = self._compute_top_left(pos)
+        self.animation_engine.set_target_value(
+            "position_x",
+            x, 350,
+            ThreeaD.Easing.ease_out_cubic
+        )
+
+        self.animation_engine.set_target_value(
+            "position_y",
+            y, 350,
+            ThreeaD.Easing.ease_out_cubic
+        )
 
         if not self.isVisible():
             self.show()
-            self.update_timer.start()
-            self.fade_in_animation.start()
     
-    def hide(self):
-        if self.fade_out_animation.state() == QPropertyAnimation.Running:
-            return
-        
-        self.fade_in_animation.stop()
-        self.fade_out_animation.start()
+    def fade_in(self):
+        start_value = self.animation_engine.get_property_value("opacity")
+
+        self.animation_engine.animate(
+            "opacity",
+            [
+                (0.0, start_value),
+                (1.0, 1.0)
+            ], 300, ThreeaD.Easing.ease_out_cubic
+        )
+    
+    def fade_out(self):
+        start_value = self.animation_engine.get_property_value("opacity")
+
+        self.animation_engine.animate(
+            "opacity",
+            [
+                (0.0, start_value),
+                (1.0, 0.0)
+            ], 300, ThreeaD.Easing.ease_out_cubic, self.on_hide_finished
+        )
     
     def cleanup(self):
         self.update_timer.stop()
         self.update_timer.timeout.disconnect(self._update_position_and_size)
         self.update_timer.deleteLater()
 
-        self.fade_in_animation.stop()
-        self.fade_out_animation.stop()
-        self.fade_in_animation.deleteLater()
-        self.fade_out_animation.deleteLater()
-
+        self.animation_engine.clear()
         self.setGraphicsEffect(None)
 
         self.label.deleteLater()
@@ -2743,6 +2762,8 @@ class FloatingWindowGPU(QOpenGLWidget):
             
             else:
                 self._drag_pos = None
+        
+        self.window().windowHandle().startSystemMove()
     
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.LeftButton and self._drag_pos:
