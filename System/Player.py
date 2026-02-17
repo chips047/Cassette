@@ -437,7 +437,7 @@ class PlaybackManager(QObject):
             
             if self.position >= ctx["max_idx"]:
                 self.is_playing = False
-                QMetaObject.invokeMethod(self, "stop", Qt.QueuedConnection)
+                self.stop()
 
     def get_current_audio_level(self):
         with self.lock:
