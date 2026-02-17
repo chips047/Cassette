@@ -97,6 +97,7 @@ class Easing:
 class MixMode(Enum):
     ADD = 0
     MULTIPLY = 1
+    NOMIX = 2
 
 class AnimationInstance(QObject):
     updated = pyqtSignal()
@@ -157,7 +158,7 @@ class AnimationInstance(QObject):
             return k2[1]
 
         local_t = (eased_t - k1[0]) / segment_duration
-        
+
         return k1[1] + (k2[1] - k1[1]) * local_t
 
 class PropertyNode(QObject):
@@ -168,13 +169,29 @@ class PropertyNode(QObject):
         
         self.mode = mode
         self.animations = []
-        
         self.damper_enabled = damper
         self.lerp_factor = lerp_factor
-        
         self.base_value = base_value
         self._cached_value = base_value
         self._target_value = base_value
+
+        self._is_targeting = False
+        self._t_start_val = base_value
+        self._t_end_val = base_value
+        self._t_duration = 0
+        self._t_elapsed = 0
+        self._t_easing = Easing.linear
+
+    def set_target(self, value: float, duration: int, easing_func):
+        self._t_start_val = self._cached_value 
+        self._t_end_val = value
+        self._t_duration = duration
+        self._t_elapsed = 0
+        self._t_easing = easing_func
+        self._is_targeting = True
+        
+        if self.mode == MixMode.NOMIX:
+            self.animations.clear()
 
     def update(self, dt_ms):
         still_running = []
@@ -187,20 +204,37 @@ class PropertyNode(QObject):
                 
                 if self.mode == MixMode.MULTIPLY: self.base_value *= final_val
                 elif self.mode == MixMode.ADD: self.base_value += final_val
-                
+                elif self.mode == MixMode.NOMIX: self.base_value = final_val
+
                 continue
             
             still_running.append(anim)
         
         self.animations = still_running
-        
+
         target = self.base_value
         
-        for anim in self.animations:
-            val = anim.get_value()
-            if self.mode == MixMode.MULTIPLY: target *= val
-            elif self.mode == MixMode.ADD: target += val
+        if self._is_targeting:
+            self._t_elapsed += dt_ms
+            progress = min(1.0, self._t_elapsed / self._t_duration) if self._t_duration > 0 else 1.0
+            
+            eased_progress = self._t_easing(progress)
+            target = self._t_start_val + (self._t_end_val - self._t_start_val) * eased_progress
+            
+            if progress >= 1.0:
+                self._is_targeting = False
+                self.base_value = self._t_end_val
         
+        if self.mode != MixMode.NOMIX:
+            for anim in self.animations:
+                val = anim.get_value()
+                if self.mode == MixMode.MULTIPLY: target *= val
+                elif self.mode == MixMode.ADD: target += val
+        
+        else:
+            if self.animations:
+                target = self.animations[-1].get_value()
+
         self._target_value = target
 
         if self.damper_enabled:
@@ -210,10 +244,13 @@ class PropertyNode(QObject):
         else:
             self._cached_value = self._target_value
 
-        if abs(self._cached_value - self._target_value) > 0.0001 or self.animations:
+        if abs(self._cached_value - self._target_value) > 0.0001 or self.animations or self._is_targeting:
             self.updated.emit()
 
     def add_animation(self, anim: AnimationInstance):
+        if self.mode == MixMode.NOMIX:
+            self.animations.clear()
+        
         self.animations.append(anim)
 
     def value(self):
@@ -253,6 +290,13 @@ class AnimationEngine(QObject):
 
     def set_property_base_value(self, name, value):
         self.properties[name].base_value = value
+    
+    def set_target_value(self, name: str, value: float, duration: int = 500, easing = Easing.smooth):
+        if name not in self.properties:
+            return logger.error(f"Property {name} not found.")
+        
+        final_duration = duration * self.duration_multiplier
+        self.properties[name].set_target(value, final_duration, easing)
 
     def add_property(self, name: str, base_value: float, mode: MixMode, on_update = None, damper_enabled = False, lerp_factor: float = 0.1):
         node = PropertyNode(self, base_value, mode, damper_enabled, lerp_factor)
@@ -288,6 +332,12 @@ class AnimationEngine(QObject):
         
         self.updated.emit()
     
+    def pause(self):
+        self.timer.stop()
+    
+    def resume(self):
+        self.timer.start()
+
     def clear(self):
         self.timer.timeout.disconnect()
         self.timer.stop()
