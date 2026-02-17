@@ -272,7 +272,7 @@ class GlyphItem(QGraphicsObject):
         self.spawn_animation(animate_spawn)
     
     def _on_hover_timeout(self):
-        self.glyph_controller.show_hover_tooltip(self)
+        self.parent_view.tooltip.show_hover_tooltip(self)
     
     def hoverEnterEvent(self, event):
         if not self.glyph_controller._drag_session:
@@ -282,7 +282,7 @@ class GlyphItem(QGraphicsObject):
 
     def hoverLeaveEvent(self, event):
         self.hover_timer.stop()
-        self.glyph_controller.hide_tooltip()
+        self.parent_view.tooltip.hide_tooltip()
         super().hoverLeaveEvent(event)
     
     def update_geometry(self, start_ms: int = None, duration_ms: int = None):
