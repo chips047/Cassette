@@ -2747,10 +2747,9 @@ class FloatingWindowGPU(QOpenGLWidget):
             if label_rect.contains(local_pos):
                 self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
                 self.move_start_animation()
+                QTimer.singleShot(0, self.window().windowHandle().startSystemMove)
+
                 event.accept()
-            
-            else:
-                self._drag_pos = None
 
         else:
             rect = self.content_widget.geometry()
@@ -2758,12 +2757,9 @@ class FloatingWindowGPU(QOpenGLWidget):
             if rect.contains(event.pos()):
                 self._drag_pos = event.globalPos() - self.frameGeometry().topLeft()
                 self.move_start_animation()
+                QTimer.singleShot(0, self.window().windowHandle().startSystemMove)
+
                 event.accept()
-            
-            else:
-                self._drag_pos = None
-        
-        self.window().windowHandle().startSystemMove()
     
     def mouseMoveEvent(self, event):
         if event.buttons() == Qt.LeftButton and self._drag_pos:
