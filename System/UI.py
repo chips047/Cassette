@@ -3671,6 +3671,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             player = player,
             bpm = bpm,
             margin = 50,
+            max_tilt_angle = 9,
             
             open_animation_enabled = False,
             close_animation_enabled = False
