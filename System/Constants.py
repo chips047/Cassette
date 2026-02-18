@@ -136,7 +136,7 @@ ModelVisualizerMaps = {
             },
             
             "3": {
-                "svg": "M2.91,7.12 L35.89,40.28",
+                "svg": "M35.89,40.28 L2.91,7.12",
                 "position": (20, 178),
                 "segments": 5
             }
@@ -149,7 +149,7 @@ ModelVisualizerMaps = {
     "PHONE2A": {
         "glyphs": {
             "1": {
-                "svg": "M65.68,5.18 C40.50,10.20 12.45,28.38 -5.69,72.38",
+                "svg": "M-5.69,72.38 C12.45,28.38 40.50,10.20 65.68,5.18",
                 "position": (20, 20),
                 "segments": 24
             },
@@ -185,7 +185,7 @@ ModelVisualizerMaps = {
             },
             "4": {
                 "svg": "M4,4 C38,1 71,15 94,40",
-                "position": (75, 90)
+                "position": (80, 90)
             },
             "5": {
                 "svg": "M49,-4.25 C31.5,3.25 16.5,15.75 4,32",
@@ -201,19 +201,20 @@ ModelVisualizerMaps = {
             },
             "8": {
                 "svg": "M3,32 C20.5,23.25 38,10.75 49.25,-4.25",
-                "position": (117, 262)
+                "position": (120, 262)
             },
             "9": {
                 "svg": "M3.5,4 V35",
-                "position": (168, 195)
+                "position": (169, 195)
             },
             "10": {
                 "svg": "M4,3 V43",
-                "position": (90, 320)
+                "position": (86, 320),
+                "segments": 8
             },
             "11": {
                 "svg": "M3.99,3.11 L3.99,10.95",
-                "position": (90, 371)
+                "position": (86, 371)
             }
         },
         
@@ -425,7 +426,7 @@ PHONE2_11COL_GLYPH_INDEX_TO_ARRAY_INDEXES_33COL = [[0], [1], [2], list(range(3, 
 PHONE2_33_COL_GLYPH_ZONE_INDEX_TO_ARRAY_INDEXES_33COL = [[i] for i in range(24)] + [[32], [31], [30], [29], [28], [27], [26], [25], [24]]
 PHONE2A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(3)]
 PHONE2A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_26COL = [list(range(0, 24)), [24], [25]]
-PHONE2A_26COL_GLYPH_INDEX_TO_ARRAY_INDEXES_26COL = [[23 - i] for i in range(24)] + [[24], [25]]
+PHONE2A_26COL_GLYPH_INDEX_TO_ARRAY_INDEXES_26COL = [[i] for i in range(24)] + [[24], [25]]
 PHONE3A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(3)]
 PHONE3A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL = [list(range(0, 20)), list(range(20, 31)), list(range(31, 36))]
 PHONE3A_36COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL = [[i] for i in range(36)]
