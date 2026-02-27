@@ -8,13 +8,12 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from System import UI
-from System import Utils
-from System import Styles
-from System import ProjectSaver
+from System.Interface import Windows
+from System.Components import ProjectSaver
 
-from System.Constants import *
-from System.AudioSetupper import AudioSetupDialog
+from System.Common import Utils
+from System.Common import Styles
+from System.Common.Constants import *
 
 from loguru import logger
 
@@ -135,7 +134,7 @@ class TrackItemWidget(QWidget):
         ]
 
         for icon_name, slot in icons_data:
-            btn = QPushButton(QIcon(f"System/Icons/{icon_name}"), "")
+            btn = QPushButton(QIcon(f"System/Assets/Icons/ProjectMenu/{icon_name}"), "")
             btn.setFixedSize(66, 35)
             btn.setIconSize(QSize(28, 28))
             btn.setCursor(Qt.PointingHandCursor)
@@ -154,7 +153,7 @@ class TrackItemWidget(QWidget):
         self.edit_clicked.emit(self.project_id)
     
     def on_delete_clicked(self):
-        dialog = UI.DialogWindow("Remove?")
+        dialog = Windows.DialogWindow("Remove?")
         
         if dialog.exec_():
             shutil.rmtree(Utils.get_songs_path(str(self.project_id)), ignore_errors = True)
@@ -163,7 +162,7 @@ class TrackItemWidget(QWidget):
     def on_export_clicked(self):
         composition = ProjectSaver.MinimalComposition(self.project_id)
         
-        UI.ExportDialogWindow(
+        Windows.ExportDialogWindow(
             "Export?",
             composition
         ).exec_()
@@ -307,7 +306,7 @@ class MainMenu(QWidget):
         self.tracks_layout.addWidget(self.tracks_widget, alignment=Qt.AlignTop)
 
     def _process_new_composition(self, file_path):
-        dialog = AudioSetupDialog(file_path)
+        dialog = Windows.AudioSetupDialog(file_path)
         
         if not dialog.exec_():
             return
@@ -411,7 +410,7 @@ class MainMenu(QWidget):
             btn.setFont(Utils.NType(13))
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(Styles.Buttons.MainMenu.accent_button if is_accent else Styles.Buttons.MainMenu.normal_button)
-
+            btn.setFixedHeight(50)
             btn.clicked.connect(getattr(self, slot_name))
 
             layout.addWidget(btn)
@@ -462,16 +461,16 @@ class MainMenu(QWidget):
         super().showEvent(event)
     
     def on_settings(self):
-        settings_dialog = UI.Settings()
+        settings_dialog = Windows.Settings()
         settings_dialog.init_settings(SettingsDict)
         settings_dialog.exec_()
     
     def on_import(self):
-        test = UI.ErrorWindow("Wait.", "This function is in development.", "I don't care")
+        test = Windows.WalterWindow()
         test.exec_()
     
     def on_about(self):
-        dialog = UI.About()
+        dialog = Windows.About()
         dialog.exec_()
     
     def on_glyphtones(self):

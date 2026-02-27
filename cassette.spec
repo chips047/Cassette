@@ -6,13 +6,13 @@ block_cipher = None
 is_darwin = sys.platform == 'darwin'
 
 if sys.platform == 'win32':
-    icon_file = 'System/Icons/Icon256.ico'
+    icon_file = 'System/Assets/Icons/Cassette/AppIcon.ico'
 
 elif is_darwin:
-    icon_file = 'System/Icons/Icon256.icns'
+    icon_file = 'System/Assets/Icons/Cassette/AppIcon.icns'
 
 else:
-    icon_file = 'System/Icons/Icon256.png'
+    icon_file = 'System/Assets/Icons/Cassette/AppIcon/Icon256.png'
 
 a = Analysis(
     ['Cassette.py'],

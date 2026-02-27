@@ -8,18 +8,23 @@ from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from System import Player
-from System import Styles
-from System import GlyphEffects
-from System import ProjectSaver
+from System.Common import Styles
 
-from System.Constants import *
+from System.Components import Player
+from System.Components import GlyphEffects
+from System.Components import ProjectSaver
+
 from loguru import logger
 
-from System import UI
-from System import Utils
+from System.Common import Utils
+from System.Common.Constants import *
 
-from System.Interface import CompositorUI
+from System.Interface import Menu
+from System.Interface import Inputs
+from System.Interface import Widgets
+from System.Interface import Basic
+from System.Interface import Windows
+from System.Interface import Widgets
 
 class UndoRedoAction:
     def undo(self): pass
@@ -61,7 +66,7 @@ class ActionModify(UndoRedoAction):
             value = glyph.get('segments')
             
             if value:
-                return ", ".join(map(str, value))
+                return ", ".join(map(lambda x: str(x + 1), value))
             
             return "all"
 
@@ -88,6 +93,7 @@ class ActionModify(UndoRedoAction):
         if ('segments' in before_glyph or 'segments' in after_glyph) and before_glyph.get('segments') != after_glyph.get('segments'):
             before_label = segments_label(before_glyph)
             after_label = segments_label(after_glyph)
+
             return f"setting segments from {before_label} to {after_label}"
 
         if ('effect' in before_glyph or 'effect' in after_glyph) and before_glyph.get('effect') != after_glyph.get('effect'):
@@ -184,6 +190,8 @@ class KeyboardController(QObject):
             shortcut = QShortcut(QKeySequence(key), self.conductor)
             shortcut.activated.connect(action)
             self.shortcuts.append(shortcut)
+
+        bind(Qt.CTRL + Qt.SHIFT + Qt.Key_T, self.conductor.main_window_ref.open_playground_window)
 
         bind(Qt.CTRL + Qt.Key_Z, self.glyph_controller.undo)
         bind(Qt.CTRL + Qt.SHIFT + Qt.Key_Z, self.glyph_controller.redo)
@@ -309,7 +317,7 @@ class GlyphController(QObject):
         self.conductor = conductor
         self.composition = composition
         
-        self.glyph_items: dict[int, CompositorUI.GlyphItem] = {}
+        self.glyph_items: dict[int, Widgets.GlyphItem] = {}
         self.copied_data = []
         
         self._drag_session = {}
@@ -486,7 +494,7 @@ class GlyphController(QObject):
     
     def spawn_glyph_on_track(self, track_index):
         audio_duration = Player.player.duration_ms
-        current_ms = self.conductor.get_playhead_ms()
+        current_ms = int(self.conductor.get_playhead_ms())
         default_duration = self.composition.duration_ms
 
         remaining_time = max(0, audio_duration - current_ms)
@@ -512,7 +520,7 @@ class GlyphController(QObject):
     
     def copy_glyphs(self):
         self.copied_data = []
-        selected = [item for item in self.conductor.scene.selectedItems() if isinstance(item, CompositorUI.GlyphItem)]
+        selected = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items.values()]
 
         for item in selected:
             glyph_data = self.composition.get_glyph(item.glyph_id)
@@ -529,27 +537,38 @@ class GlyphController(QObject):
         self.delete_glyphs()
     
     def paste_glyphs(self):
-        if not self.copied_data:
+        if not self.copied_data or self._is_processing:
             return
 
-        current_ms = self.conductor.get_playhead_ms()
-        copied_start_ms = min(data['start'] for data in self.copied_data)
-        time_offset = int(current_ms - copied_start_ms)
-        audio_ms = self.conductor.playback_manager.duration_ms
+        self._is_processing = True
         
-        self.conductor.scene.clearSelection()
+        try:
+            current_ms = self.conductor.get_playhead_ms()
+            copied_start_ms = min(data['start'] for data in self.copied_data)
+            time_offset = int(current_ms - copied_start_ms)
+            audio_ms = self.conductor.playback_manager.duration_ms
+            
+            self.conductor.scene.clearSelection()
+            
+            new_added_glyphs = {}
 
-        for glyph_data in self.copied_data:
-            new_id, new_data = self.composition.copy_glyph(
-                glyph_data,
-                time_offset,
-                audio_ms
-            )
+            for glyph_data in self.copied_data:
+                new_id, new_data = self.composition.copy_glyph(
+                    glyph_data, 
+                    time_offset, 
+                    audio_ms
+                )
 
-            if new_id is not None:
-                self._create_glyph_item(new_id, new_data, reset_selection=False)
+                if new_id is not None:
+                    self._create_glyph_item(new_id, new_data, reset_selection=False)
+                    new_added_glyphs[new_id] = new_data
 
-        self.elements_changed.emit()
+            if new_added_glyphs:
+                self.push_action(ActionAdd(self, new_added_glyphs))
+                self.elements_changed.emit()
+        
+        finally:
+            self._is_processing = False
     
     def _create_glyph_item(
         self,
@@ -560,11 +579,10 @@ class GlyphController(QObject):
         animate_spawn = True
     ) -> None:
     
-        item = CompositorUI.GlyphItem(
+        item = Widgets.GlyphItem(
             glyph_id,
             data,
             self.conductor,
-            self.composition,
             animate_spawn
         )
 
@@ -666,7 +684,7 @@ class GlyphController(QObject):
         self._temp_before_state = {}
 
     def move_selection(self, delta_ms: float):
-        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items.values()]
+        selected_items: list[Widgets.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items.values()]
         if not selected_items: return
 
         self.updates = {}
@@ -680,7 +698,7 @@ class GlyphController(QObject):
             item.update_geometry(start_ms = new_start)
 
     def resize_selection(self, delta_ms: float, from_left: bool = False):
-        selected_items: list[CompositorUI.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items]
+        selected_items: list[Widgets.GlyphItem] = [item for item in self.conductor.scene.selectedItems() if item in self.glyph_items]
         
         if not selected_items:
             return
@@ -704,7 +722,7 @@ class GlyphController(QObject):
                 self.updates[item.glyph_id] = {'duration': int(new_duration)}
                 item.update_geometry(duration_ms = new_duration)
 
-class Tooltip(UI.ValuePopup):
+class Tooltip(Widgets.ValuePopup):
     def __init__(self, conductor):
         super().__init__()
         
@@ -1000,8 +1018,8 @@ class ScrollableContent(QGraphicsView):
         self.playhead_timer.setInterval(FPS_120)
         self.playhead_timer.timeout.connect(self._on_playback_position_updated)
         
-        self.playhead = CompositorUI.PlayheadItem(self)
-        self.playhead_hover = CompositorUI.PlayheadItem(
+        self.playhead = Widgets.PlayheadItem(self)
+        self.playhead_hover = Widgets.PlayheadItem(
             self,
             Styles.Metrics.Tracks.ruler_height + Styles.Metrics.Waveform.height
         )
@@ -1011,7 +1029,7 @@ class ScrollableContent(QGraphicsView):
         
         self.playhead_hover.hide()
         
-        self.marquee_item = CompositorUI.MarqueeItem(self.composition, self.playback_manager)
+        self.marquee_item = Widgets.MarqueeItem(self.composition, self.playback_manager)
         self.scene.addItem(self.marquee_item)
 
         # Shortcuts
@@ -1112,6 +1130,7 @@ class ScrollableContent(QGraphicsView):
         self.playback_manager.playback_state_changed.connect(self._on_playback_state_changed)
 
         self.composition = composition
+        self.playback_manager.speed_changed.connect(self.composition.syncer.set_speed)
         self.composition.syncer.error_occurred.connect(self.show_error_dialog)
 
         self.track_names = [f"{i + 1}" for i in range(composition.track_number)]
@@ -1123,7 +1142,7 @@ class ScrollableContent(QGraphicsView):
         
         self.horizontalScrollBar().valueChanged.connect(self.mouse_controller._force_mouse_update)
         
-        self.glyph_visualizer = UI.GlyphVisualizer(
+        self.glyph_visualizer = Windows.GlyphVisualizer(
             self,
             self.composition.model,
             self.playback_manager,
@@ -1141,7 +1160,7 @@ class ScrollableContent(QGraphicsView):
         self.update()
         
         self.glyph_visualizer.show()
-    
+
     def unload_composition(self):
         logger.warning("Unloading composition and clearing state")
         
@@ -1153,6 +1172,7 @@ class ScrollableContent(QGraphicsView):
             self.composition = None
         
         self.playback_manager.playback_state_changed.disconnect()
+        self.playback_manager.speed_changed.disconnect()
         
         logger.warning("Syncer stoppped")
         
@@ -1363,9 +1383,6 @@ class ScrollableContent(QGraphicsView):
         self.scale_view(-100)
     
     def generate_tile(self, tile_index):
-        logger.warning(f"Tile {tile_index} is being created...")
-        start = time.time()
-
         data = self.playback_manager.data
         total_px = self.total_content_width
         spp_overall = len(data) / float(total_px)
@@ -1456,11 +1473,11 @@ class ScrollableContent(QGraphicsView):
         return pixmap
 
     def control_popup(self, title, label, key, min_val = 1, max_val = None):
-        dialog = UI.DialogInputWindow(title, label, min_val, max_val, bpm = self.composition.bpm, player = self.playback_manager)
+        dialog = Windows.DialogInputWindow(title, label, min_val, max_val, bpm = self.composition.bpm, player = self.playback_manager)
         if not dialog.exec_():
             return
-
-        user_input = dialog.result_text
+        
+        user_input = dialog.get_text()
         
         self.glyph_controller.update_bunch_of_glyphs(user_input, key)
 
@@ -1488,18 +1505,19 @@ class ScrollableContent(QGraphicsView):
         first_id = selected_ids[0]
         first_glyph = orig_glyphs[first_id]
         
-        popup = UI.SegmentEditor(
+        popup = Windows.SegmentEditor(
             "Segments",
-            self.composition.bpm,
-            self.playback_manager,
             get_segments(self.composition.model, first_glyph["track"]),
             first_glyph.get("segments"),
+            
+            self.composition.bpm,
+            self.playback_manager
         )
 
         if not popup.exec_():
             return
 
-        segments = popup.saved_segments
+        segments = popup.segments()
         turned_on = [i for i, s in enumerate(segments) if s]
         all_turned_on = all(segments)
 
@@ -1523,7 +1541,7 @@ class ScrollableContent(QGraphicsView):
         effect_config = GlyphEffects.EffectsConfig.get(effect_name, {}) if effect_name else {}
 
         if effect_name and not effect_config.get("supports_segmentation", True):
-            UI.ErrorWindow(
+            Windows.ErrorWindow(
                 "Effect has been reset",
                 "Heads up: custom segmentation doesn't work with applied effect, so we reset the effect."
             ).exec_()
@@ -1623,7 +1641,7 @@ class ScrollableContent(QGraphicsView):
 
             effect_entries = []
             for effect_name, config in effects.items():
-                preview_widget = UI.EffectPreviewWidget(effect_name, config, clicked_element)
+                preview_widget = Menu.EffectPreviewWidget(effect_name, config, clicked_element)
                 preview_widget.apply_requested.connect(
                     lambda name = effect_name, s =
                     config: on_apply_requested_factory(name, s)
@@ -1646,7 +1664,7 @@ class ScrollableContent(QGraphicsView):
             if can_show_segment_editor:
                 entries.append(("Segments...", lambda: QTimer.singleShot(0, self.segment_control_popup)))
 
-            menu = UI.ContextMenu(entries)
+            menu = Menu.ContextMenu(entries)
             menu.aboutToHide.connect(lambda: Utils.ui_sound("MenuClose"))
             
             menu.exec_and_cleanup(event.globalPos())
@@ -1655,13 +1673,13 @@ class ScrollableContent(QGraphicsView):
             logger.error(f"Context menu error: {e}")
             logger.error(traceback.format_exc())
             
-            UI.ErrorWindow(
+            Windows.ErrorWindow(
                 "Context Menu Error",
                 "An unexpected error occurred while opening the context menu."
             ).exec_()
 
     def show_error_dialog(self, title, message):
-        error_dialog = UI.ErrorWindow(title, message, "Oh nah", self.composition.bpm, self.playback_manager)
+        error_dialog = Windows.ErrorWindow(title, message, "Oh nah", self.composition.bpm, self.playback_manager)
         error_dialog.exec_()
 
     def get_playhead_ms(self):
@@ -1675,10 +1693,7 @@ class ScrollableContent(QGraphicsView):
 
     def check_tutorial(self):
         if not CurrentSettings.get("tutorial_shown"):
-            if not self.composition.full_song_path:
-                return
-
-            self.tutorial_window = UI.Tutorial(
+            self.tutorial_window = Windows.Tutorial(
                 self.composition.bpm,
                 self.composition.full_song_path
             )
@@ -1717,14 +1732,14 @@ class CompositorWidget(QWidget):
         self.top_control_bar_layout.setContentsMargins(0, 0, 0, 0)
         self.top_control_bar_layout.setSpacing(10)
         
-        self.eject_button =        UI.Button("Eject")
-        self.export_button =       UI.NothingButton("Export")
+        self.eject_button =        Basic.Button("Eject")
+        self.export_button =       Basic.NothingButton("Export")
         self.top_status_label =    QLabel(STATUS_BAR_DEFAULT)
-        self.mini_preview_widget = UI.MiniWaveformPreview()
-        self.glyph_dur_control =   UI.DraggableValueControl(QIcon("System/Icons/Duration.png"), "duration", 100, 5, 5000, 5, "ms")
-        self.brightness_control =  UI.DraggableValueControl(QIcon("System/Icons/Brightness.png"), "brightness", 100, 5, 100, 5, "%")
-        self.playspeed_button =    UI.CycleButton(QIcon("System/Icons/Speed.png"), "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
-        self.default_effect =      UI.CycleButton(QIcon("System/Icons/Effect.png"), "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
+        self.mini_preview_widget = Widgets.MiniWaveformPreview()
+        self.glyph_dur_control =   Inputs.DraggableValueControl(QIcon("System/Assets/Icons/Compositor/Duration.png"), "duration", 100, 5, 5000, 5, "ms")
+        self.brightness_control =  Inputs.DraggableValueControl(QIcon("System/Assets/Icons/Compositor/Brightness.png"), "brightness", 100, 5, 100, 5, "%")
+        self.playspeed_button =    Inputs.CycleButton(QIcon("System/Assets/Icons/Compositor/Speed.png"), "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)])
+        self.default_effect =      Inputs.CycleButton(QIcon("System/Assets/Icons/Compositor/Effect.png"), "effect", [("None", "None"), ("Fade out", "Fade out"), ("Fade in", "Fade in"), ("Fade in out", "Fade in + out")])
         
         # Other Settings
         self.top_status_label.setFont(Utils.NDot(14))
@@ -1800,8 +1815,10 @@ class CompositorWidget(QWidget):
         self.on_elements_changed()
         self.window().activateWindow()
 
+        self.content_widget.check_tutorial()
+
     def export_ringtone(self):
-        UI.ExportDialogWindow(
+        Windows.ExportDialogWindow(
             "Export?",
             self.content_widget.composition,
             self.content_widget.composition.bpm,
@@ -1820,3 +1837,6 @@ class CompositorWidget(QWidget):
     def on_elements_changed(self):
         items = self.content_widget.glyph_controller.glyph_items.items()
         self.export_button.setEnabled(len(items) > 0)
+    
+    def open_playground_window(self):
+        Windows.Playground().exec_()

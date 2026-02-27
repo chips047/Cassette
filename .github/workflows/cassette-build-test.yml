@@ -101,7 +101,7 @@ jobs:
             source venv/bin/activate
           fi
 
-          ICON_PATH="System/Icons/Icon256.${{ matrix.icon_ext }}"
+          ICON_PATH="System/Assets/Icons/Cassette/AppIcon.${{ matrix.icon_ext }}"
           ICON_ARG=""
           if [ -f "$ICON_PATH" ]; then
             ICON_ARG="--icon=$ICON_PATH"

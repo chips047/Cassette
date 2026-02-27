@@ -1,4 +1,3 @@
-import sys
 import math
 
 from enum import Enum
@@ -247,11 +246,25 @@ class PropertyNode(QObject):
         if abs(self._cached_value - self._target_value) > 0.0001 or self.animations or self._is_targeting:
             self.updated.emit()
 
-    def add_animation(self, anim: AnimationInstance):
+    def add_animation(self, anim: AnimationInstance, snap_to_start: bool = True):
         if self.mode == MixMode.NOMIX:
             self.animations.clear()
-        
+
         self.animations.append(anim)
+
+        if snap_to_start and anim.keyframes:
+            first_frame_val = anim.keyframes[0][1]
+
+            if self.mode == MixMode.MULTIPLY:
+                self._cached_value = self.base_value * first_frame_val
+            
+            elif self.mode == MixMode.ADD:
+                self._cached_value = self.base_value + first_frame_val
+            
+            elif self.mode == MixMode.NOMIX:
+                self._cached_value = first_frame_val
+
+            self.updated.emit()
 
     def value(self):
         return self._cached_value
@@ -312,12 +325,12 @@ class AnimationEngine(QObject):
         
         return self.properties[name].value()
 
-    def animate(self, name: str, keyframes: list, duration: int, easing: Easing = Easing.linear, finished = None, do_not_multiply_duration = False):
+    def animate(self, name: str, keyframes: list, duration: int, easing: Easing = Easing.linear, finished = None, do_not_multiply_duration = False, snap_to_start = False):
         if name not in self.properties:
             return logger.error(f"Property {name} not found in ThreeaD Engine.")
 
         anim = AnimationInstance(self, keyframes, duration if do_not_multiply_duration else duration * self.duration_multiplier, easing, finished)
-        self.properties[name].add_animation(anim)
+        self.properties[name].add_animation(anim, snap_to_start)
 
     def _tick(self):
         current_time = self.elapsed_timer.elapsed()
@@ -333,12 +346,16 @@ class AnimationEngine(QObject):
         self.updated.emit()
     
     def pause(self):
+        logger.debug("Animation Engine has been paused.")
         self.timer.stop()
     
     def resume(self):
+        logger.debug("Animation Engine has been resumed.")
         self.timer.start()
 
     def clear(self):
+        logger.debug("Clearing Animation Engine...")
+
         self.timer.timeout.disconnect()
         self.timer.stop()
         
