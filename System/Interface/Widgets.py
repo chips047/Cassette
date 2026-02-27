@@ -438,14 +438,6 @@ class MiniWaveformPreview(QWidget):
     def _regen_pixmap(self) -> None:
         self.pixmap = self.generate_pixmap()
 
-from typing import List, Dict, Iterable, Optional
-from PyQt5.QtWidgets import QWidget
-from PyQt5.QtCore import QTimer, QElapsedTimer, Qt
-from PyQt5.QtGui import QPainter, QColor, QLinearGradient
-
-FPS_60 = 60
-
-
 class ScheduledSegmentedBar(QWidget):
     def __init__(
         self,
@@ -460,10 +452,10 @@ class ScheduledSegmentedBar(QWidget):
         self.number_of_segments: int = max(1, number_of_segments)
         self._loop: bool = bool(loop)
 
-        self._schedule: List[Dict] = []
+        self._schedule = []
         self.duration_ms: int = 0
         self.start_offset: int = 0
-        self.levels: List[float] = [0.0] * self.number_of_segments
+        self.levels = [0.0] * self.number_of_segments
 
         self.setFixedHeight(base_thickness)
         self._color_off: QColor = QColor("#404040")
@@ -477,6 +469,8 @@ class ScheduledSegmentedBar(QWidget):
         self.elapsed_timer = QElapsedTimer()
 
         self.setAttribute(Qt.WA_OpaquePaintEvent)
+
+        self.setStyleSheet("background-color: transparent;")
 
     def set_schedule(self, schedule):
         self._schedule = schedule or []
