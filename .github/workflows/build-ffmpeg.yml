@@ -73,7 +73,7 @@ jobs:
       - name: Download and Extract Source (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
-        run: curl -L https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 | tar xj
+        run: curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 | tar xj && mv ffmpeg-7.1 ffmpeg
 
       - name: Build
         if: runner.os != 'Windows'
@@ -117,7 +117,7 @@ jobs:
             --enable-ffprobe \
             --disable-autodetect \
             --enable-avcodec \
-            --enable-avdevice \
+            --disable-iamf \
             --enable-avformat \
             --enable-avfilter \
             --enable-swresample \
