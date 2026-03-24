@@ -135,7 +135,6 @@ jobs:
             --disable-debug \
             --disable-doc
           make -j$(nproc)
-          strip ffmpeg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
