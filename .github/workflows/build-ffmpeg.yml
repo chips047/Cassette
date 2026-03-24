@@ -117,6 +117,7 @@ jobs:
             --enable-ffprobe \
             --disable-autodetect \
             --enable-avcodec \
+            --enable-avdevice \
             --enable-avformat \
             --enable-avfilter \
             --enable-swresample \
