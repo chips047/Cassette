@@ -114,6 +114,7 @@ jobs:
             ${{ matrix.extra_flags }} \
             --disable-all \
             --enable-ffmpeg \
+            --enable-ffprobe \
             --disable-autodetect \
             --enable-avcodec \
             --enable-avformat \
@@ -133,9 +134,12 @@ jobs:
             --disable-debug \
             --disable-doc
           make -j$(nproc)
+          strip ffmpeg
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ffmpeg/
+          path: |
+            ffmpeg/ffmpeg${{ runner.os == 'Windows' && '.exe' || '' }}
+            ffmpeg/ffprobe${{ runner.os == 'Windows' && '.exe' || '' }}
