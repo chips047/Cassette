@@ -1,0 +1,89 @@
+name: Build Cross - Platform FFmpeg
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            artifact_name: linux-x64
+            static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
+          
+          - os: windows-latest
+            artifact_name: windows-x64
+            static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
+          
+          - os: macos-15-intel
+            artifact_name: macos-intel
+            static_flags: ""
+          
+          - os: macos-latest
+            artifact_name: macos-silicon
+            static_flags: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: base-devel mingw-w64-x86_64-toolchain mingw-w64-x86_64-yasm mingw-w64-x86_64-nasm mingw-w64-x86_64-lame mingw-w64-x86_64-libvorbis mingw-w64-x86_64-opus wget tar
+
+      - name: Install Dependencies Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential yasm nasm libmp3lame-dev libvorbis-dev libopus-dev wget tar
+
+      - name: Install Dependencies macOS
+        if: runner.os == 'macOS'
+        run: brew install yasm nasm lame libvorbis opus wget
+
+      - name: Download Source
+        shell: bash
+        run: |
+          wget https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
+          tar xjf ffmpeg-snapshot.tar.bz2
+
+      - name: Build
+        shell: bash
+        run: |
+          cd ffmpeg
+          ./configure \
+            ${{ matrix.static_flags }} \
+            --disable-all \
+            --disable-autodetect \
+            --enable-avcodec \
+            --enable-avformat \
+            --enable-avfilter \
+            --enable-swresample \
+            --enable-decoder=aac,ac3,mp3,pcm_s16le,flac,vorbis,opus \
+            --enable-demuxer=mov,matroska,mp3,wav,flac,ogg,opus \
+            --enable-encoder=libmp3lame,pcm_s16le,flac,libvorbis,libopus \
+            --enable-muxer=mp3,wav,flac,ogg,opus \
+            --enable-parser=aac,ac3,mpegaudio,flac,vorbis,opus \
+            --enable-protocol=file \
+            --enable-filter=aresample \
+            --enable-libmp3lame \
+            --enable-libvorbis \
+            --enable-libopus \
+            --enable-small \
+            --disable-debug \
+            --disable-doc
+          make -j4
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ffmpeg/ffmpeg${{ runner.os == 'Windows' && '.exe' || '' }}
