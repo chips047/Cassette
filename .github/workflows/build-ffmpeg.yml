@@ -13,18 +13,26 @@ jobs:
           - os: ubuntu-22.04
             artifact_name: linux-x64
             static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
-          
+            extra_flags: ""
+        
           - os: windows-latest
             artifact_name: windows-x64
             static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
-          
+            extra_flags: ""
+        
           - os: macos-15-intel
             artifact_name: macos-intel
             static_flags: ""
-          
+            extra_flags: >-
+              --extra-cflags="-I/usr/local/include"
+              --extra-ldflags="-L/usr/local/lib"
+            
           - os: macos-latest
             artifact_name: macos-silicon
             static_flags: ""
+            extra_flags: >-
+              --extra-cflags="-I/opt/homebrew/include"
+              --extra-ldflags="-L/opt/homebrew/lib"
 
     runs-on: ${{ matrix.os }}
 
@@ -64,6 +72,7 @@ jobs:
           cd ffmpeg
           ./configure \
             ${{ matrix.static_flags }} \
+            ${{ matrix.extra_flags }} \
             --disable-all \
             --disable-autodetect \
             --enable-avcodec \
