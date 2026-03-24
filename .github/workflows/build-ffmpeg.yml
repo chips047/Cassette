@@ -11,19 +11,23 @@ jobs:
           - os: ubuntu-22.04
             artifact_name: linux-x64
             static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
+            extra_flags: ""
 
           - os: windows-latest
             artifact_name: windows-x64
             static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
+            extra_flags: ""
 
           - os: macos-15-intel
             artifact_name: macos-intel
+            static_flags: ""
             extra_flags: >-
               --extra-cflags="-I/usr/local/include"
               --extra-ldflags="-L/usr/local/lib"
 
           - os: macos-latest
             artifact_name: macos-silicon
+            static_flags: ""
             extra_flags: >-
               --extra-cflags="-I/opt/homebrew/include"
               --extra-ldflags="-L/opt/homebrew/lib"
@@ -62,11 +66,17 @@ jobs:
           brew link --overwrite lame
           echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
 
-      - name: Download Source
+      - name: Download and Extract Source
+        if: runner.os != 'Windows'
+        run: curl -L https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 | tar xj
+
+      - name: Download and Extract Source (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
         run: curl -L https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 | tar xj
 
       - name: Build
-        shell: ${{ runner.os == 'Windows' && 'msys2 {0}' || 'bash' }}
+        if: runner.os != 'Windows'
         run: |
           cd ffmpeg
           ./configure \
@@ -93,6 +103,36 @@ jobs:
             --disable-debug \
             --disable-doc
           make -j$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cd ffmpeg
+          ./configure \
+            ${{ matrix.static_flags }} \
+            ${{ matrix.extra_flags }} \
+            --disable-all \
+            --enable-ffmpeg \
+            --disable-autodetect \
+            --enable-avcodec \
+            --enable-avformat \
+            --enable-avfilter \
+            --enable-swresample \
+            --enable-decoder=aac,ac3,mp3,pcm_s16le,flac,vorbis,opus \
+            --enable-demuxer=mov,matroska,mp3,wav,flac,ogg,opus \
+            --enable-encoder=libmp3lame,pcm_s16le,flac,libvorbis,libopus \
+            --enable-muxer=mp3,wav,flac,ogg,opus \
+            --enable-parser=aac,ac3,mpegaudio,flac,vorbis,opus \
+            --enable-protocol=file \
+            --enable-filter=aresample \
+            --enable-libmp3lame \
+            --enable-libvorbis \
+            --enable-libopus \
+            --enable-small \
+            --disable-debug \
+            --disable-doc
+          make -j$(nproc)
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
