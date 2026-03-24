@@ -48,8 +48,8 @@ jobs:
       - name: Install Dependencies macOS
         if: runner.os == 'macOS'
         run: |
-          brew install yasm nasm lame libvorbis opus wget
-          brew link lame
+          brew install yasm nasm lame libvorbis opus wget pkg-config
+          brew link --overwrite lame
           echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
 
       - name: Download Source
