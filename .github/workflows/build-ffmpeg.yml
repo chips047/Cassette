@@ -86,7 +86,6 @@ jobs:
             --enable-ffmpeg \
             --enable-ffprobe \
             --disable-autodetect \
-            --disable-lcevc \
             --enable-avcodec \
             --enable-avformat \
             --enable-avfilter \
