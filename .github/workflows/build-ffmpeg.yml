@@ -87,6 +87,7 @@ jobs:
             --disable-autodetect \
             --enable-avcodec \
             --enable-avformat \
+            --enable-ffprobe \
             --enable-avfilter \
             --enable-swresample \
             --enable-decoder=aac,ac3,mp3,pcm_s16le,flac,vorbis,opus \
