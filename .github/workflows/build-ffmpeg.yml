@@ -84,17 +84,18 @@ jobs:
             ${{ matrix.extra_flags }} \
             --disable-all \
             --enable-ffmpeg \
+            --enable-ffprobe \
             --disable-autodetect \
+            --disable-lcevc \
             --enable-avcodec \
             --enable-avformat \
-            --enable-ffprobe \
             --enable-avfilter \
             --enable-swresample \
             --enable-decoder=aac,ac3,mp3,pcm_s16le,flac,vorbis,opus \
             --enable-demuxer=mov,matroska,mp3,wav,flac,ogg,opus \
             --enable-encoder=libmp3lame,pcm_s16le,flac,libvorbis,libopus \
             --enable-muxer=mp3,wav,flac,ogg,opus \
-            --enable-parser=aac,ac3,mpegaudio,flac,vorbis,opus \
+            --enable-parser=aac,ac3,mpegaudio,flac,vorbis,opus,h264,hevc \
             --enable-protocol=file \
             --enable-filter=aresample \
             --enable-libmp3lame \
