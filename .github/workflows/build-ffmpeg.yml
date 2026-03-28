@@ -68,8 +68,8 @@ jobs:
 
       - name: Download and Extract Source
         if: runner.os != 'Windows'
-        run: curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 | tar xj
-
+        run: curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 | tar xj && mv ffmpeg-7.1 ffmpeg
+                
       - name: Download and Extract Source (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
