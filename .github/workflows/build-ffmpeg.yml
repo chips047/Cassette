@@ -84,17 +84,17 @@ jobs:
             ${{ matrix.extra_flags }} \
             --disable-all \
             --enable-ffmpeg \
-            --enable-ffprobe \
             --disable-autodetect \
             --enable-avcodec \
             --enable-avformat \
+            --enable-ffprobe \
             --enable-avfilter \
             --enable-swresample \
             --enable-decoder=aac,ac3,mp3,pcm_s16le,flac,vorbis,opus \
             --enable-demuxer=mov,matroska,mp3,wav,flac,ogg,opus \
             --enable-encoder=libmp3lame,pcm_s16le,flac,libvorbis,libopus \
             --enable-muxer=mp3,wav,flac,ogg,opus \
-            --enable-parser=aac,ac3,mpegaudio,flac,vorbis,opus,h264,hevc \
+            --enable-parser=aac,ac3,mpegaudio,flac,vorbis,opus \
             --enable-protocol=file \
             --enable-filter=aresample \
             --enable-libmp3lame \
@@ -102,6 +102,7 @@ jobs:
             --enable-libopus \
             --enable-small \
             --disable-debug \
+            --disable-iamf \
             --disable-doc
           make -j$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
 
