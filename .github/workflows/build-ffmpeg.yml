@@ -68,7 +68,7 @@ jobs:
 
       - name: Download and Extract Source
         if: runner.os != 'Windows'
-        run: curl -L https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2 | tar xj
+        run: curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 | tar xj
 
       - name: Download and Extract Source (Windows)
         if: runner.os == 'Windows'
