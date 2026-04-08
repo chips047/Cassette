@@ -1,8 +1,11 @@
 name: Build Cross-Platform FFmpeg
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason'
+        required: false
+        default: 'Manual Building'
 jobs:
   build:
     strategy:
