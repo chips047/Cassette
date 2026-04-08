@@ -127,7 +127,6 @@ def open_file(path: str) -> None:
         subprocess.run(["xdg-open", path])
 
 def get_user_path(relative_path: str, folder: str) -> str:
-    if folder == "Cassette/Songs": folder = "Songs"
     normalized_parts = os.path.normpath(relative_path).split(os.sep)
     full_path = os.path.join(os.path.expanduser("~"), folder, *normalized_parts)
 
