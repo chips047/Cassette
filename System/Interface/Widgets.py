@@ -1297,7 +1297,7 @@ class GlyphItem(QGraphicsObject):
         self.apply_paint_transforms(painter, width_px, height)
         self.draw_base_shape(painter, width_px, height)
 
-        if self.pending_fade_keyframes:
+        if self.pending_fade_keyframes and width_px > 30:
             self.draw_fade_keyframes(painter, width_px, height)
 
         painter.restore()
@@ -1737,9 +1737,14 @@ class GlyphItem(QGraphicsObject):
             self.fade_dragging      = False
             self.fade_dragged_index = None
             
+            formatted = [
+                (round(time, 2), int(brightness))
+                for time, brightness in self.pending_fade_keyframes
+            ]
+
             self.conductor.glyph_controller.commit_fade_keyframes(
                 self.glyph_id,
-                list(self.pending_fade_keyframes)
+                formatted
             )
             
             event.accept()
