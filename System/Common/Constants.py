@@ -388,12 +388,12 @@ DEVICES: dict[str, DeviceConfig] = {
             "glyphs": {
                 "1": {
                     "svg": "M4,3 V150",
-                    "position": (11, 0),
+                    "position": (12, 0),
                     "segments": 7
-                },
+                }
             },
-            "size": (30, 150),
-            "thickness": 15
+            "size": (32, 150),
+            "thickness": 14
         },
 
         port_variants = ["2a", "3a"]
@@ -701,7 +701,7 @@ PortMaps = {
                 "8": ["6"],
                 "9": ["6"],
                 "10": ["7"],
-                "11": ["8"],
+                "11": ["8"],    
 
                 "effects": {
                     "segments": {
