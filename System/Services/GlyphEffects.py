@@ -238,7 +238,8 @@ def bpm_effect(
             "start":     time,
             "duration":  time_off - time,
             "track":     data["track"],
-            "keyframes": [(0.0, brightness), (1.0, 0)]
+            "keyframes": [(0.0, brightness), (1.0, 0)],
+            "easing":    "linear"
         }
 
         if data["active_segments"]:
@@ -274,12 +275,14 @@ def sparkle_effect(
         element = {
             "start":    time,
             "duration": time_next - time,
-            "track":    str(data["track"]),
+            "track":    data["track"],
             "segments": [selected_segment]
         }
 
         if fade_out:
             element["keyframes"] = [(0.0, data["brightness"]), (1.0, 0)]
+            element["easing"]    = "linear"
+        
         else:
             element["brightness"] = data["brightness"]
         
@@ -328,7 +331,7 @@ def sidebeat_effect(
                 {
                     "start":      data["start"] + shrink,
                     "duration":   (data["end"] - data["start"]) - 2 * shrink,
-                    "track":      str(data["track"]),
+                    "track":      data["track"],
                     "segments":   [(base_segment + i * direction) - 1],
                     "brightness": 100
                 }
@@ -356,9 +359,10 @@ def fill_effect(
             {
                 "start":     start,
                 "duration":  duration,
-                "track":     str(data["track"]),
+                "track":     data["track"],
                 "segments":  [i],
-                "keyframes": [(0.0, 0), (1.0, data["brightness"])]
+                "keyframes": [(0.0, 0), (1.0, data["brightness"])],
+                "easing":    "linear"
             }
         )
     
@@ -406,7 +410,7 @@ def random_fill_effect(
                 {
                     "start":      segment_start,
                     "duration":   segment_duration,
-                    "track":      str(data["track"]),
+                    "track":      data["track"],
                     "segments":   [segment_index],
                     "brightness": data["brightness"]
                 }
@@ -417,7 +421,7 @@ def random_fill_effect(
                 {
                     "start":      data["start"],
                     "duration":   segment_start - data["start"],
-                    "track":      str(data["track"]),
+                    "track":      data["track"],
                     "segments":   [segment_index],
                     "brightness": data["brightness"]
                 }
@@ -466,12 +470,13 @@ def glitch_effect(
         item = {
             "start":    time_start,
             "duration": time_end - time_start,
-            "track":    str(data["track"]),
+            "track":    data["track"],
             "segments": list(set(chosen))
         }
 
         if enable_fade_out:
             item["keyframes"] = [(0.0, brightness), (1.0, 0)]
+            item["easing"]    = "linear"
         
         else:
             item["brightness"] = brightness
@@ -547,7 +552,7 @@ def ripple_effect(
                     {
                         "start":      time,
                         "duration":   time_next - time,
-                        "track":      str(data["track"]),
+                        "track":      data["track"],
                         "segments":   [i],
                         "brightness": brightness_now
                     }
@@ -568,7 +573,7 @@ def ripple_effect(
                 {
                     "start":      time,
                     "duration":   time_next - time,
-                    "track":      str(data["track"]),
+                    "track":      data["track"],
                     "segments":   head_segments,
                     "brightness": data["brightness"]
                 }
@@ -625,7 +630,7 @@ def chase_effect(
                 {
                     "start":      time,
                     "duration":   step_time,
-                    "track":      str(data["track"]),
+                    "track":      data["track"],
                     "segments":   sorted(list(set(segments_to_light))),
                     "brightness": data["brightness"]
                 }
@@ -671,7 +676,7 @@ def zebra_effect(
                     {
                         "start":      time_start,
                         "duration":   time_end - time_start,
-                        "track":      str(data["track"]),
+                        "track":      data["track"],
                         "segments":   [i],
                         "brightness": data["brightness"]
                     }
@@ -708,12 +713,13 @@ def shocker_effect(
             element = {
                 "start":    time,
                 "duration": time_half - time,
-                "track":    str(data["track"]),
+                "track":    data["track"],
                 "segments": [i - 1]
             }
             
             if fade_out:
                 element["keyframes"] = [(0.0, data["brightness"]), (1.0, 0)]
+                element["easing"]    = "linear"
             
             else:
                 element["brightness"] = data["brightness"]
@@ -724,12 +730,13 @@ def shocker_effect(
             element = {
                 "start":    time_half,
                 "duration": time_next - time_half,
-                "track":    str(data["track"]),
+                "track":    data["track"],
                 "segments": [i - 1]
             }
             
             if fade_out:
                 element["keyframes"] = [(0.0, data["brightness"]), (1.0, 0)]
+                element["easing"]    = "linear"
             
             else:
                 element["brightness"] = data["brightness"]
@@ -795,7 +802,7 @@ def boomerang_effect(
                     {
                         "start":      time,
                         "duration":   step,
-                        "track":      str(data["track"]),
+                        "track":      data["track"],
                         "segments":   [segment_index - 1],
                         "brightness": brightness
                     }
