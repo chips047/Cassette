@@ -237,14 +237,14 @@ class Controls:
     """
 
     TextBoxNoBorder = f"""
-        background-color: transparent;
+        background-color: {Colors.Floating.Background};
         color: #fff;
         padding: 8px 12px;
         border-radius: {Roundings.Button}px;
     """
 
     FloatingTextBox = f"""
-        background-color: transparent;
+        background-color: {Colors.Floating.Background};
         color: #fff;
         padding: 8px 12px;
         border-radius: 15px;
@@ -260,7 +260,7 @@ class Controls:
     """
 
     FloatingTextBoxRound = f"""
-        background-color: transparent;
+        background-color: {Colors.Floating.Background};
         color: #fff;
         padding: 8px 12px;
         border-radius: 16px;
