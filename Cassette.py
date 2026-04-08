@@ -521,7 +521,7 @@ class ApplicationWindow(QMainWindow):
         self.setStyleSheet(f"background-color: {Styles.Colors.Background};")
 
         self.intro_overlay = StartupFadeOverlay(self)
-        self.intro_overlay.finished.connect(self.easter_egg_manager.check_calendar_events)
+        self.intro_overlay.finished.connect(self.on_intro_finished)
 
         self.is_closing = False
 
@@ -532,18 +532,26 @@ class ApplicationWindow(QMainWindow):
 
         self.easter_egg_manager.handle_shake(
             event.pos().x(),
-            event.pos().y(),
+            event.pos().y()
         )
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
 
-        self.easter_egg_manager.handle_resize_accordion(
+        size = (
             event.size().width(),
-            event.size().height(),
+            event.size().height()
         )
 
+        self.easter_egg_manager.handle_resize_accordion(*size)
+
+        if not self.intro_overlay:
+            return
+
+        self.intro_overlay.resize(*size)
+
     # Animations
+    
     def setup_animations(self) -> None:
         self.entry_move_animation = QPropertyAnimation(None, b"geometry")
         self.entry_fade_animation = QPropertyAnimation(None, b"opacity")
@@ -622,6 +630,11 @@ class ApplicationWindow(QMainWindow):
 
         self.entry_move_animation.start()
         self.entry_fade_animation.start()
+    
+    @pyqtSlot()
+    def on_intro_finished(self) -> None:
+        self.intro_overlay = None
+        self.easter_egg_manager.check_calendar_events()
 
     # Lifecycle
 
