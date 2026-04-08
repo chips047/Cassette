@@ -199,10 +199,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-Cache/
-Songs/
 .vscode/
-python/
 *.pyc
 Cassette.bat
 Cassette.sh

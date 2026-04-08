@@ -13,7 +13,7 @@ jobs:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - os: ubuntu-22.04
@@ -76,14 +76,32 @@ jobs:
             rm System/ADB/adb.exe
             rm System/ADB/AdbWinApi.dll
             rm System/ADB/AdbWinUsbApi.dll
-          elif [ "${{ runner.os }}" == "Windows" ]; then
+            rm System/FFmpeg/ffmpeg-windows.exe
+            rm System/FFmpeg/ffprobe-windows.exe
+            rm System/FFmpeg/ffmpeg-macos-intel
+            rm System/FFmpeg/ffmpeg-macos-silicon
+            rm System/FFmpeg/ffprobe-macos-intel
+            rm System/FFmpeg/ffprobe-macos-silicon
+          
+            elif [ "${{ runner.os }}" == "Windows" ]; then
             rm System/ADB/adb-macos
             rm System/ADB/adb-linux
-          elif [ "${{ runner.os }}" == "macOS" ]; then
+            rm System/FFmpeg/ffmpeg-macos-intel
+            rm System/FFmpeg/ffmpeg-macos-silicon
+            rm System/FFmpeg/ffprobe-macos-intel
+            rm System/FFmpeg/ffprobe-macos-silicon
+            rm System/FFmpeg/ffmpeg-linux
+            rm System/FFmpeg/ffprobe-linux
+          
+            elif [ "${{ runner.os }}" == "macOS" ]; then
             rm System/ADB/adb-linux
             rm System/ADB/adb.exe
             rm System/ADB/AdbWinApi.dll
             rm System/ADB/AdbWinUsbApi.dll
+            rm System/FFmpeg/ffmpeg-linux
+            rm System/FFmpeg/ffprobe-linux
+            rm System/FFmpeg/ffmpeg-windows.exe
+            rm System/FFmpeg/ffprobe-windows.exe
           fi
 
           rm System/ADB/CassetteReceiver.apk

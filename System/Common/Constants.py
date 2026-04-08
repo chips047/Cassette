@@ -1,289 +1,814 @@
-from enum import Enum
-from PyQt5.QtCore import *
+from loguru import logger
 
 from System.Common import Utils
 
-CurrentSettings = {}
+from PyQt5.QtCore import QSettings
 
-def load_settings():
+from dataclasses import (
+    field,
+    dataclass
+)
+
+CURRENT_SETTINGS: dict[str, object] = {}
+
+def load_settings() -> None:
     qsettings_cache = QSettings("chips047", "Cassette")
 
-    CurrentSettings.clear()
-    CurrentSettings.update(
+    logger.debug(f"Loaded settings from chips047/Cassette")
+
+    CURRENT_SETTINGS.clear()
+    CURRENT_SETTINGS.update(
         {
             k: Utils.auto_cast(qsettings_cache.value(k)) for k in qsettings_cache.allKeys()
         }
     )
 
-def prepare_default_settings(setting_components):
-    settings = QSettings("chips047", "Cassette")
-    existing_keys = set(settings.allKeys())
-    new_keys = set()
-    exceptions = ["tutorial_shown"]
+def get_default_value(parameters: dict[str, object]) -> int | str | bool | None:
+    element_type = parameters.get("type", "")
+    
+    if element_type == "checkbox":
+        return parameters.get("default", False)
+    
+    if element_type == "slider":
+        return parameters.get("default", parameters.get("min", 0))
+    
+    if element_type.startswith("selector"):
+        return parameters["map"][parameters["default"]]
+    
+    return None
 
-    for _, components in setting_components.items():
-        for element_params in components:
-            element_type = element_params["type"]
-            key = element_params["key"]
+def prepare_default_settings(setting_components: dict[str, list]) -> None:
+    settings       = QSettings("chips047", "Cassette")
+    existing_keys  = set(settings.allKeys())
+    new_keys       = set()
+    protected_keys = {"tutorial_shown", "new_user"}
+
+    for components in setting_components.values():
+        for parameters in components:
+            key = parameters["key"]
             new_keys.add(key)
 
-            if not settings.contains(key):
-                if element_type == "checkbox":
-                    default_val = element_params.get("default", False)
+            if settings.contains(key):
+                continue
 
-                elif element_type == "slider":
-                    default_val = element_params.get("default", element_params.get("min", 0))
+            default_val = get_default_value(parameters)
+            if default_val is not None:
+                settings.setValue(key, default_val)
 
-                elif element_type.startswith("selector"):
-                    default_val = element_params["map"][element_params["default"]]
-                
-                else:
-                    default_val = None
-
-                if default_val is not None:
-                    settings.setValue(key, default_val)
-
-    obsolete_keys = existing_keys - new_keys
-    for key in obsolete_keys:
-        if key in exceptions:
+    for key in (existing_keys - new_keys):
+        if key in protected_keys:
             continue
-        
-        if key != "new_user":
-            settings.remove(key)
+
+        settings.remove(key)
 
     settings.sync()
 
-PortVariants = {
-    "PHONE1": [
-        "2"
-    ],
-    "PHONE2": [
-        "1"
-    ],
-    "PHONE2A": [
-        "1",
-        "2",
-        "3a",
-    ],
-    "PHONE3A": [
-        "1",
-        "2",
-        "2a"
-    ]
+# Models and Related
+
+@dataclass
+class DeviceConfig:
+    code_name:          str
+    short_name:         str
+    full_name:          str
+    hardware_codes:     list[str]
+    composer_code_name: str
+    
+    glyph_indexes:      list[list[int]]
+    zone_indexes:       list[list[int]]
+    segments_map:       dict[str, int]   = field(default_factory = dict)
+
+    visualization_map:  dict             = field(default_factory = dict)
+    port_variants:      list[str]        = field(default_factory = list)
+    
+    columns:            int              = field(init = False)
+    base_tracks:        int              = field(init = False)
+    custom2_str:        str              = field(init = False)
+
+    # to support phone (1) 5 cols mode (for import function)
+    legacy_tracks: dict[int, dict[str, list[str]]] = field(default_factory=dict)
+    
+    def __post_init__(self) -> None:
+        self.columns     = sum(len(group) for group in self.glyph_indexes)
+        self.base_tracks = len(self.glyph_indexes)
+        self.custom2_str = f"{self.columns}cols"
+        
+        self.setup_offset_calc()
+
+        logger.info(f"\n\nModel {self.full_name}")
+        logger.debug(f"Total columns (Glyphs + Segments): {self.columns}")
+        logger.debug(f"Base Tracks: {self.base_tracks}")
+        logger.debug(f"Hardware: {self.hardware_codes[0]}")
+        logger.debug(f"Glyph Indexes: {self.glyph_indexes}")
+        logger.debug(f"Zone Indexes: {self.zone_indexes}")
+
+    def setup_offset_calc(self) -> None:
+        if not self.segments_map:
+            self.zone_offset_calc = lambda g: 0
+            return
+
+        sorted_segments = sorted([(k, v) for k, v in self.segments_map.items()])
+        
+        def calc(g_idx: int) -> int:
+            offset = 0
+            
+            for glyph_pos, val in sorted_segments:
+                if g_idx < int(glyph_pos):
+                    continue
+                
+                offset += (val - 1)
+            
+            return offset
+        
+        self.zone_offset_calc = calc
+
+    @property
+    def total_tracks(self) -> int:
+        return self.base_tracks
+
+    @property
+    def total_tracks_with_segments(self) -> int:
+        total = 0
+        
+        for i in range(1, self.base_tracks + 1):
+            total += self.segments_map.get(str(i), 1)
+        
+        return total
+
+    def get_array_indexes(
+            self,
+            glyph_index: int,
+            zone_index:  int
+        ) -> list | int:
+
+        glyph_index -= 1
+        zone_index  -= 1
+        
+        if zone_index == -1:
+            return self.glyph_indexes[glyph_index]
+        
+        offset = self.zone_offset_calc(glyph_index)
+        
+        return self.zone_indexes[glyph_index + zone_index + offset]
+    
+    def resolve_tracks(
+            self,
+            input_track:  str,
+            total_tracks: int
+        ) -> list[tuple[str, int | None]]:
+        
+        if total_tracks in self.legacy_tracks:
+            mapping = self.legacy_tracks[total_tracks]
+            
+            if input_track in mapping:
+                return [(t, None) for t in mapping[input_track]]
+
+        if input_track in self.segments_map:
+            count = self.segments_map[input_track]
+            return [(input_track, i) for i in range(count)]
+
+        return [(input_track, None)]
+
+def make_ranges(*args: int | list[int]) -> list[list[int]]:
+    result = []
+    current = 0
+
+    for arg in args:
+        if isinstance(arg, int):
+            result.append(list(range(current, current + arg)))
+            current += arg
+        
+        else:
+            result.append(arg)
+            current = max(arg) + 1 if arg else current
+    
+    return result
+
+DEVICES: dict[str, DeviceConfig] = {
+    "PHONE1": DeviceConfig(
+        "PHONE1", "1", "Phone (1)", ["A063"], "Spacewar",
+        glyph_indexes = [[0], [1], [4], [5], [2], [3], list(range(7, 15)), [6]],
+        zone_indexes = [[0], [1], [4], [5], [2], [3], [14], [13], [12], [11], [10], [9], [8], [7], [6]],
+        segments_map = {"7": 8},
+        legacy_tracks = {
+            5: {
+                "1": ["1"],
+                "2": ["2"],
+                "3": ["3", "4", "5", "6"],
+                "4": ["7"],
+                "5": ["8"]
+            }
+        },
+
+        visualization_map = {
+            "glyphs": {
+                "1": {
+                    "svg": "M41.66,47.69 V58.08 C41.66,68.73 33.01,77.38 22.36,77.38 C11.71,77.38 3.06,68.73 3.06,58.08 V22.18 C3.06,11.53 11.71,2.88 22.36,2.88 C33.01,2.88 41.66,11.53 41.66,22.18",
+                    "position": (5, 5)
+                },
+
+                "2": {
+                    "svg": "M3.54,43.78 L37.25,3.61",
+                    "position": (130, 10)
+                },
+
+                "3": {
+                    "svg": "M158.48,37.83 C138.94,14.3 109.87,0.76 79.29,0.96 C55.43,0.96 34.12,9.45 18.5,23.15",
+                    "position": (10, 90)
+                },
+
+                "4": {
+                    "svg": "M18.5,23.15 C9.2,31.32 3.5,41.5 0.57,47.68 L0.57,125.8",
+                    "position": (10, 90)
+                },
+
+                "5": {
+                    "svg": "M0.57,125.8 V158.4 C19.95,191.2 49.11,205.12 79.94,205.12 C85.2,205.12 90.3,204.5 95.1,203.4",
+                    "position": (10, 90)
+                },
+
+                "6": {
+                    "svg": "M95.1,203.4 C123.5,197.2 146.8,183.5 159.31,167.23 V106.58",
+                    "position": (10, 90)
+                },
+
+                "7": {
+                    "svg": "M3.99,3.80 L3.99,45.68",
+                    "position": (89, 320),
+                    "segments": 8
+                },
+
+                "8": {
+                    "svg": "M3.99,3.11 L3.99,10.95",
+                    "position": (89, 373)
+                }
+            },
+
+            "size": (180, 385),
+            "thickness": 6
+        },
+
+        port_variants = ["2"]
+    ),
+
+    "PHONE2": DeviceConfig(
+        "PHONE2", "2", "Phone (2)", ["A065", "AIN065"], "Pong",
+        glyph_indexes = [[0], [1], [2], list(range(3, 19)), [19], [20], [21], [22], [23], list(range(25, 33)), [24]],
+        zone_indexes = [[i] for i in range(24)] + [[32], [31], [30], [29], [28], [27], [26], [25], [24]],
+        segments_map = {"4": 16, "10": 8},
+
+        visualization_map = {
+            "glyphs": {
+                "1": {
+                    "svg": "M4,47 V22 C4,10 13,4 23.5,4 C34,4 43,10 43,22",
+                    "position": (0, 0)
+                },
+                "2": {
+                    "svg": "M34.5,1.5 V19.5 C34.5,25.5 31,31 25,34 C19.5,37 13,36.5 8,33",
+                    "position": (9, 45)
+                },
+                "3": {
+                    "svg": "M37,3 L3,42",
+                    "position": (130, 10)
+                },
+                "4": {
+                    "svg": "M4,4 C38,1 71,15 94,40",
+                    "position": (80, 90)
+                },
+                "5": {
+                    "svg": "M49,-4.25 C31.5,3.25 16.5,15.75 4,32",
+                    "position": (0, 105)
+                },
+                "6": {
+                    "svg": "M3,3 V44",
+                    "position": (0, 150)
+                },
+                "7": {
+                    "svg": "M4,3 C30,30 65,42 95,39",
+                    "position": (3, 260)
+                },
+                "8": {
+                    "svg": "M3,32 C20.5,23.25 38,10.75 49.25,-4.25",
+                    "position": (120, 262)
+                },
+                "9": {
+                    "svg": "M3.5,4 V35",
+                    "position": (169, 195)
+                },
+                "10": {
+                    "svg": "M4,3 V43",
+                    "position": (86, 320),
+                    "segments": 8
+                },
+                "11": {
+                    "svg": "M3.99,3.11 L3.99,10.95",
+                    "position": (86, 371)
+                }
+            },
+
+            "size": (177, 385),
+            "thickness": 6
+        },
+
+        port_variants = ["1"]
+    ),
+
+    "PHONE2A": DeviceConfig(
+        "PHONE2A", "2a", "Phone (2a)", ["A142", "A142P"], "Pacman",
+        glyph_indexes = make_ranges(24, 1, 1),
+        zone_indexes = [[i] for i in range(26)],
+        segments_map = {"1": 24},
+
+        visualization_map = {
+            "glyphs": {
+                "1": {
+                    "svg": "M-5.69,72.38 C12.45,28.38 40.50,10.20 65.68,5.18",
+                    "position": (20, 20),
+                    "segments": 24
+                },
+
+                "2": {
+                    "svg": "M15.00,5.00 C15.00,40.00 15.00,75.00 15.00,110.00",
+                    "position": (225, 80)
+                },
+
+                "3": {
+                    "svg": "M2.91,7.12 C10.00,15.00 20.00,30.00 35.89,40.28",
+                    "position": (20, 192)
+                }
+            },
+
+            "size": (255, 250),
+            "thickness": 10
+        },
+
+        port_variants = ["1", "2", "3a", "4a"]
+    ),
+
+    "PHONE3A": DeviceConfig(
+        "PHONE3A", "3a", "Phone (3a)", ["A059", "A059P"], "Asteroids",
+        glyph_indexes = make_ranges(20, 11, 5),
+        zone_indexes = [[i] for i in range(36)],
+        segments_map = {"1": 20, "2": 11, "3": 5},
+
+        visualization_map = {
+            "glyphs": {
+                "1": {
+                    "svg": "M-5.69,72.38 C12.45,28.38 40.50,10.20 65.68,5.18",
+                    "position": (20, 10),
+                    "segments": 20
+                },
+
+                "2": {
+                    "svg": "M15.00,5.00 C32.00,40.00 32.00,75.00 15.00,110.00",
+                    "position": (210, 70),
+                    "segments": 11
+                },
+
+                "3": {
+                    "svg": "M35.89,40.28 L2.91,7.12",
+                    "position": (20, 178),
+                    "segments": 5
+                }
+            },
+
+            "size": (250, 240),
+            "thickness": 10
+        },
+
+        port_variants = ["1", "2", "2a", "4a"]
+    ),
+
+    "PHONE4A": DeviceConfig(
+        "PHONE4A", "4a", "Phone (4a)", ["A069"], "Frogger",
+        glyph_indexes = make_ranges(7),
+        zone_indexes = [[i] for i in range(7)],
+        segments_map = {"1": 7},
+
+        visualization_map = {
+            "glyphs": {
+                "1": {
+                    "svg": "M4,3 V150",
+                    "position": (11, 0),
+                    "segments": 7
+                },
+            },
+            "size": (30, 150),
+            "thickness": 15
+        },
+
+        port_variants = ["2a", "3a"]
+    )
 }
 
-ModelVisualizerMaps = {
-    "PHONE1": {
-        "glyphs": {
-            "1": {
-                "svg": "M41.66,47.69 V58.08 C41.66,68.73 33.01,77.38 22.36,77.38 C11.71,77.38 3.06,68.73 3.06,58.08 V22.18 C3.06,11.53 11.71,2.88 22.36,2.88 C33.01,2.88 41.66,11.53 41.66,22.18",
-                "position": (5, 5)
-            },
-            
-            "2": {
-                "svg": "M3.54,43.78 L37.25,3.61",
-                "position": (130, 10)
-            },
+NUMBER_TO_CODE = {config.short_name: code for code, config in DEVICES.items()}
 
-            "3": {
-                "svg": "M158.48,37.83 C138.94,14.3 109.87,0.76 79.29,0.96 C55.43,0.96 34.12,9.45 18.5,23.15",
-                "position": (10, 90)
-            },
-            
-            "4": {
-                "svg": "M18.5,23.15 C9.2,31.32 3.5,41.5 0.57,47.68 L0.57,125.8",
-                "position": (10, 90)
-            },
-            
-            "5": {
-                "svg": "M0.57,125.8 V158.4 C19.95,191.2 49.11,205.12 79.94,205.12 C85.2,205.12 90.3,204.5 95.1,203.4",
-                "position": (10, 90)
-            },
-            
-            "6": {
-                "svg": "M95.1,203.4 C123.5,197.2 146.8,183.5 159.31,167.23 V106.58",
-                "position": (10, 90)
-            },
-            
-            "7": {
-                "svg": "M3.99,3.80 L3.99,45.68",
-                "position": (89, 320),
-                "segments": 8
-            },
-            
-            "8": {
-                "svg": "M3.99,3.11 L3.99,10.95",
-                "position": (89, 373)
-            }
-        },
-        
-        "size": (180, 385),
-        "thickness": 6
-    },
-    
-    "PHONE3A": {
-        "glyphs": {
-            "1": {
-                "svg": "M-5.69,72.38 C12.45,28.38 40.50,10.20 65.68,5.18",
-                "position": (20, 10),
-                "segments": 20
-            },
-            
-            "2": {
-                "svg": "M15.00,5.00 C32.00,40.00 32.00,75.00 15.00,110.00",
-                "position": (210, 70),
-                "segments": 11
-            },
-            
-            "3": {
-                "svg": "M35.89,40.28 L2.91,7.12",
-                "position": (20, 178),
-                "segments": 5
-            }
-        },
-        
-        "size": (250, 240),
-        "thickness": 10
-    },
-    
+# Maps
+
+PortMaps = {
     "PHONE2A": {
-        "glyphs": {
-            "1": {
-                "svg": "M-5.69,72.38 C12.45,28.38 40.50,10.20 65.68,5.18",
-                "position": (20, 20),
-                "segments": 24
+        "to": {
+            "PHONE4A": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "2": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "3": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
+            },
+
+            "PHONE3A": {
+                "1": ["1"],
+                "2": ["2"],
+                "3": ["3"],
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
             },
             
-            "2": {
-                "svg": "M15.00,5.00 C15.00,40.00 15.00,75.00 15.00,110.00",
-                "position": (225, 80)
+            "PHONE2": {
+                "effects": {
+                    "segments": {
+                        "1": ["4"]
+                    }
+                },
+
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1", "2", "3"],
+                        ["4", "5", "6", "7", "8", "9"],
+                        ["1", "2"],
+                        ["3"]
+                    ],
+                    "randomize": 1
+                },
+
+                "2": {
+                    "mode": "random",
+                    "variants": [
+                        ["4", "5", "6"],
+                        ["7", "8", "9"],
+                        ["4", "5", "6", "7", "8", "9"],
+                        ["5", "8"]
+                    ],
+                    "randomize": 1
+                },
+
+                "3": {
+                    "mode": "random",
+                    "variants": [
+                        ["10"],
+                        ["11"],
+                        ["10", "11"]
+                    ],
+                    "randomize": 1
+                }
             },
             
-            "3": {
-                "svg": "M2.91,7.12 C10.00,15.00 20.00,30.00 35.89,40.28",
-                "position": (20, 192)
+            "PHONE1": {
+                "effects": {
+                    "segments": {
+                        "1": ["7"]
+                    }
+                },
+
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["1", "2"]
+                    ],
+                    "randomize": 1
+                },
+
+                "2": {
+                    "mode": "random",
+                    "variants": [
+                        ["3", "5"],
+                        ["4", "6"],
+                        ["3", "4", "5", "6"],
+                        ["3", "4", "5", "6", "7"]
+                    ],
+                    "randomize": 1
+                },
+                
+                "3": {
+                    "mode": "random",
+                    "variants": [
+                        ["7"],
+                        ["7", "8"]
+                    ],
+                    "randomize": 1
+                }
             }
-        },
-        
-        "size": (255, 250),
-        "thickness": 10
+        }
     },
-    
-    "PHONE2": {
-        "glyphs": {
-            "1": {
-                "svg": "M4,47 V22 C4,10 13,4 23.5,4 C34,4 43,10 43,22",
-                "position": (0, 0)
+
+    "PHONE3A": {
+        "to": {
+            "PHONE2A": {
+                "1": ["1"],
+                "2": ["2"],
+                "3": ["3"],
+                
+                "effects": {
+                    "segments": {
+                        "1": ["1"],
+                        "2": ["1"],
+                        "3": ["1"]
+                    }
+                },
             },
-            "2": {
-                "svg": "M34.5,1.5 V19.5 C34.5,25.5 31,31 25,34 C19.5,37 13,36.5 8,33",
-                "position": (9, 45)
+            
+            "PHONE1": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1", "2"],
+                        ["3", "5"],
+                        ["4", "6"]
+                    ]
+                },
+
+                "2": {
+                    "mode": "random",
+                    "variants": [
+                        ["3", "5"],
+                        ["4", "6"],
+                        ["3", "4", "5", "6"]
+                    ]
+                },
+
+                "3": {
+                    "mode": "random",
+                    "variants": [
+                        ["7"],
+                        ["8"],
+                        ["7", "8"]
+                    ]
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["7"],
+                        "2": ["7"],
+                        "3": ["7"]
+                    }
+                },
             },
-            "3": {
-                "svg": "M37,3 L3,42",
-                "position": (130, 10)
+            
+            "PHONE2": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1", "2", "3"],
+                        ["1", "2"],
+                        ["3"]
+                    ],
+                    "randomizes": 1
+                },
+
+                "2": {
+                    "mode": "random",
+                    "variants": [
+                        ["4", "5", "6", "7", "8", "9"],
+                        ["5", "8"],
+                        ["6", "9"],
+                        ["4", "7"]
+                    ],
+                    "randomizes": 1
+                },
+
+                "3": {
+                    "mode": "random",
+                    "variants": [
+                        ["10"],
+                        ["11"],
+                        ["10", "11"]
+                    ],
+                    "randomizes": 1
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["4"],
+                        "2": ["4"],
+                        "3": ["10"]
+                    }
+                }
             },
-            "4": {
-                "svg": "M4,4 C38,1 71,15 94,40",
-                "position": (80, 90)
+
+            "PHONE4A": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "2": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "3": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"],
+                        "2": ["1"],
+                        "3": ["1"]
+                    }
+                }
             },
-            "5": {
-                "svg": "M49,-4.25 C31.5,3.25 16.5,15.75 4,32",
-                "position": (0, 105)
+        }
+    },
+
+    "PHONE4A": {
+        "to": {
+            "PHONE2A": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
             },
-            "6": {
-                "svg": "M3,3 V44",
-                "position": (0, 150)
-            },
-            "7": {
-                "svg": "M4,3 C30,30 65,42 95,39",
-                "position": (3, 260)
-            },
-            "8": {
-                "svg": "M3,32 C20.5,23.25 38,10.75 49.25,-4.25",
-                "position": (120, 262)
-            },
-            "9": {
-                "svg": "M3.5,4 V35",
-                "position": (169, 195)
-            },
-            "10": {
-                "svg": "M4,3 V43",
-                "position": (86, 320),
-                "segments": 8
-            },
-            "11": {
-                "svg": "M3.99,3.11 L3.99,10.95",
-                "position": (86, 371)
+
+            "PHONE3A": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
             }
-        },
-        
-        "size": (177, 385),
-        "thickness": 6
+        }
+    },
+
+    "PHONE1": {
+        "to": {
+            "PHONE2": {
+                "1": ["1", "2"],
+                "2": ["3"],
+                "3": ["4", "5"],
+                "4": ["5", "6"],
+                "5": ["7", "8"],
+                "6": ["8", "9"],
+                "7": ["10"],
+                "8": ["11"],
+                
+                "effects": {
+                    "segments": {
+                        "7": ["10"]
+                    }
+                }
+            }
+        }
+    },
+
+    "PHONE2": {
+        "to": {
+            "PHONE1": {
+                "1": ["1"],
+                "2": ["1"],
+                "3": ["2"],
+                "4": ["3"],
+                "5": ["4"],
+                "6": ["4"],
+                "7": ["5"],
+                "8": ["6"],
+                "9": ["6"],
+                "10": ["7"],
+                "11": ["8"],
+
+                "effects": {
+                    "segments": {
+                        "4": ["7"],
+                        "10": ["7"]
+                    }
+                }
+            }
+        }
     }
 }
 
-def number_model_to_code(number: str):
-    return {
-        "1": "PHONE1",
-        "2": "PHONE2",
-        "2a": "PHONE2A",
-        "3a": "PHONE3A"
-    }.get(number)
-
-def code_to_number_model(code: str):
-    return {
-        "PHONE1": "1",
-        "PHONE2": "2",
-        "PHONE2A": "2a",
-        "PHONE3A": "3a"
-    }.get(code)
-
-def is_segmented(track, model):
-    segments = {
-        "PHONE1": {"7": 8},
-        "PHONE2": {"4": 16, "10": 8},
-        "PHONE2A": {"1": 24},
-        "PHONE3A": {"1": 20, "2": 11, "3": 5}
-    }
-
-    return segments.get(model, {}).get(str(track), False)
-
-# ANIMATIONS :))) (ms)
-TEXTBOX_SHAKE = 100
-TEXTBOX_SHAKE_PER = 30
-TEXTBOX_INPUT = 250
-
-# Perfomance
-TILE_SIZE = 1024
-
-# Compositor Defaults
+# Defaults
 STATUS_BAR_DEFAULT = f"Cassette {open('version').read()}"
 
-# Qt Timer FPS
-FPS_60 = 16
+DEFAULT_DURATION   = 100
+DEFAULT_BRIGHTNESS = 100
+
+SPRING_STIFFNESS           = 0.04
+FADE_OVERLAY_SIZE          = 60
+SPRING_DAMPING_FACTOR      = 0.4
+ANIMATION_TICK_INTERVAL    = 8
+USER_SCROLL_IDLE_TIMEOUT   = 150
+WHEEL_SCROLL_SENSITIVITY   = 1.0
+INERTIA_DECELERATION_RATE  = 0.93
+VISUAL_RESISTANCE_STRENGTH = 600.0
+
+# Paths
+FFMPEG_PATH  = Utils.get_ffmpeg_path("ffmpeg")
+FFPROBE_PATH = Utils.get_ffmpeg_path("ffprobe")
+
+# Qt Timer Presets
+FPS_60  = 16
 FPS_120 = 8
-FPS_30 = 33
+FPS_30  = 33
 
 GITHUB_LINK = "https://www.github.com/Chipik0/Cassette/releases/latest"
-
-# Models and Related
-ModelSegments = {
-    "PHONE1": {"7": 8},
-    "PHONE2": {"4": 16, "10": 8},
-    "PHONE2A": {"1": 24},
-    "PHONE3A": {"1": 20, "2": 11, "3": 5},
-}
-
-def get_segments(model, track):
-    return ModelSegments.get(model, {}).get(track)
-
-ModelTracks = {
-    "PHONE1": 8,
-    "PHONE2": 11,
-    "PHONE2A": 3,
-    "PHONE3A": 3
-}
 
 # Shaders
 GLYPH_VS = """#version 330 core
@@ -373,84 +898,6 @@ void main() {
     color = vec4(finalColor.rgb, finalColor.a * mask * u_globalAlpha);
 }
 """
-
-# Columns (To export)
-class PhoneModel(Enum):
-    PHONE1 = 0
-    PHONE2 = 1
-    PHONE2A = 2
-    PHONE3A = 3
-
-class ColsModder(Enum):
-    FIVE_ZONE = 0
-    FIFTEEN_ZONE = 1
-    ELEVEN_ZONE = 2
-    THIRTY_THREE_ZONE = 3
-    THREE_ZONE = 4
-    TWENTY_SIX_ZONE = 5
-    THIRTY_SIX_ZONE = 6
-
-class Cols(Enum):
-    FIVE_ZONE = 0
-    FIFTEEN_ZONE = 1
-    ELEVEN_ZONE = 2
-    THIRTY_THREE_ZONE = 3
-    THREE_ZONE_2A = 4
-    TWENTY_SIX_ZONE = 5
-    THREE_ZONE_3A = 6
-    THIRTY_SIX_ZONE = 7
-
-STRING_TO_COLS: dict[ColsModder, str] = {
-    ColsModder.FIVE_ZONE: '5cols',
-    ColsModder.FIFTEEN_ZONE: '5cols',
-    ColsModder.THIRTY_THREE_ZONE: '33cols',
-    ColsModder.TWENTY_SIX_ZONE: '26cols',
-    ColsModder.THIRTY_SIX_ZONE: '36cols',
-}
-
-N_COLUMNS_TO_COLS = {
-    5: ColsModder.FIVE_ZONE,
-    15: ColsModder.FIFTEEN_ZONE,
-    33: ColsModder.THIRTY_THREE_ZONE,
-    26: ColsModder.TWENTY_SIX_ZONE,
-    36: ColsModder.THIRTY_SIX_ZONE,
-}
-
-DEVICE_CODENAME = {
-    ColsModder.FIVE_ZONE: 'Spacewar',
-    ColsModder.FIFTEEN_ZONE: 'Spacewar',
-    ColsModder.THIRTY_THREE_ZONE: 'Pong',
-    ColsModder.TWENTY_SIX_ZONE: 'Pacman',
-    ColsModder.THIRTY_SIX_ZONE: 'Asteroids',
-}
-
-# Column Lists
-PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(8)]
-PHONE1_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_15COL = [[0], [1], [4], [5], [2], [3], list(range(7, 15)), [6]]
-PHONE1_15COL_GLYPH_ZONE_INDEX_TO_ARRAY_INDEXES_15COL = [[0], [1], [4], [5], [2], [3], [14], [13], [12], [11], [10], [9], [8], [7], [6]]
-PHONE2_11COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[0], [0], [1], [2], [2], [2], [2], [2], [2], [3], [4]]
-PHONE2_5COL_GLYPH_INDEX_TO_ARRAY_INDEXES_11COL = [list(range(0, 2)), [2], list(range(3, 9)), [9], [10]]
-PHONE2_11COL_GLYPH_INDEX_TO_ARRAY_INDEXES_33COL = [[0], [1], [2], list(range(3, 19)), [19], [20], [21], [22], [23], list(range(25, 33)), [24]]
-PHONE2_33_COL_GLYPH_ZONE_INDEX_TO_ARRAY_INDEXES_33COL = [[i] for i in range(24)] + [[32], [31], [30], [29], [28], [27], [26], [25], [24]]
-PHONE2A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(3)]
-PHONE2A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_26COL = [list(range(0, 24)), [24], [25]]
-PHONE2A_26COL_GLYPH_INDEX_TO_ARRAY_INDEXES_26COL = [[i] for i in range(24)] + [[24], [25]]
-PHONE3A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_5COL = [[i] for i in range(3)]
-PHONE3A_3COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL = [list(range(0, 20)), list(range(20, 31)), list(range(31, 36))]
-PHONE3A_36COL_GLYPH_INDEX_TO_ARRAY_INDEXES_36COL = [[i] for i in range(36)]
-
-ModelCodes = {
-    "A063": "Phone (1)",
-    "A065": "Phone (2)",
-    "AIN065": "Phone (2)",
-    "A142": "Phone (2a)",
-    "A142P": "Phone (2a)",
-    "A059": "Phone (3a)",
-    "A059P": "Phone (3a)"
-}
-
-DEFAULT_DURATION = 100
-DEFAULT_BRIGHTNESS = 100
 
 SettingsDict = {
     "Performance": [
@@ -657,15 +1104,157 @@ SettingsDict = {
             },
             "default": "Very big"
         }
-    ],
-
-    "Devices": [
-        {
-            "type": "checkbox",
-            "title": "Device Auto - Search",
-            "key": "auto_search",
-            "description": "Automatically searches for a connected Nothing Phone.",
-            "default": True
-        }
     ]
+}
+
+DOT_FONT = {
+    'A': [[0,1,0], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'B': [[1,1,0], [1,0,1], [1,1,0], [1,0,1], [1,1,0]],
+    'C': [[0,1,1], [1,0,0], [1,0,0], [1,0,0], [0,1,1]],
+    'D': [[1,1,0], [1,0,1], [1,0,1], [1,0,1], [1,1,0]],
+    'E': [[1,1,1], [1,0,0], [1,1,0], [1,0,0], [1,1,1]],
+    'F': [[1,1,1], [1,0,0], [1,1,0], [1,0,0], [1,0,0]],
+    'G': [[0,1,1], [1,0,0], [1,0,1], [1,0,1], [0,1,1]],
+    'H': [[1,0,1], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'I': [[1,1,1], [0,1,0], [0,1,0], [0,1,0], [1,1,1]],
+    'J': [[0,0,1], [0,0,1], [0,0,1], [1,0,1], [0,1,0]],
+    'K': [[1,0,1], [1,0,1], [1,1,0], [1,0,1], [1,0,1]],
+    'L': [[1,0,0], [1,0,0], [1,0,0], [1,0,0], [1,1,1]],
+    'M': [[1,0,1], [1,1,1], [1,0,1], [1,0,1], [1,0,1]],
+    'N': [[1,1,0], [1,0,1], [1,0,1], [1,0,1], [1,0,1]],
+    'O': [[0,1,0], [1,0,1], [1,0,1], [1,0,1], [0,1,0]],
+    'P': [[1,1,0], [1,0,1], [1,1,0], [1,0,0], [1,0,0]],
+    'Q': [[0,1,0], [1,0,1], [1,0,1], [1,1,1], [0,1,1]],
+    'R': [[1,1,0], [1,0,1], [1,1,0], [1,0,1], [1,0,1]],
+    'S': [[0,1,1], [1,0,0], [0,1,0], [0,0,1], [1,1,0]],
+    'T': [[1,1,1], [0,1,0], [0,1,0], [0,1,0], [0,1,0]],
+    'U': [[1,0,1], [1,0,1], [1,0,1], [1,0,1], [1,1,1]],
+    'V': [[1,0,1], [1,0,1], [1,0,1], [0,1,0], [0,1,0]],
+    'W': [[1,0,1], [1,0,1], [1,0,1], [1,1,1], [1,0,1]],
+    'X': [[1,0,1], [1,0,1], [0,1,0], [1,0,1], [1,0,1]],
+    'Y': [[1,0,1], [1,0,1], [0,1,0], [0,1,0], [0,1,0]],
+    'Z': [[1,1,1], [0,0,1], [0,1,0], [1,0,0], [1,1,1]],
+
+    'a': [[0,0,0], [0,1,1], [1,0,1], [1,1,1], [0,1,1]],
+    'b': [[0,0,0], [1,0,0], [1,1,0], [1,0,1], [1,1,0]],
+    'c': [[0,0,0], [0,1,1], [1,0,0], [1,0,0], [0,1,1]],
+    'd': [[0,0,0], [0,0,1], [0,1,1], [1,0,1], [0,1,1]],
+    'e': [[0,0,0], [0,1,0], [1,1,1], [1,0,0], [0,1,1]],
+    'f': [[0,0,0], [0,1,1], [0,1,0], [0,1,1], [0,1,0]],
+    'g': [[0,1,1], [1,0,1], [0,1,1], [0,0,1], [1,1,0]],
+    'h': [[0,0,0], [1,0,0], [1,1,0], [1,0,1], [1,0,1]],
+    'l': [[0], [1], [1], [1], [1]],
+    'i': [[1], [0], [1], [1], [1]],
+    'k': [[0,0,0], [1,0,1], [1,1,0], [1,0,1], [1,0,1]],
+    'm': [[0,0,0,0,0], [1,1,1,1,1], [1,0,1,0,1], [1,0,1,0,1], [1,0,1,0,1]],
+    'n': [[0,0,0], [1,1,0], [1,0,1], [1,0,1], [1,0,1]],
+    'o': [[0,0,0], [0,1,0], [1,0,1], [1,0,1], [0,1,0]],
+    'p': [[0,0,0], [1,1,0], [1,0,1], [1,1,0], [1,0,0]],
+    'r': [[0,0,0], [1,1,0], [1,0,1], [1,0,0], [1,0,0]],
+    's': [[0,0,0], [0,1,1], [0,1,0], [0,0,1], [1,1,1]],
+    'q': [[0,0,0], [0,1,1], [1,0,1], [0,1,1], [0,0,1]],
+    't': [[0,0,0], [0,1,0], [1,1,1], [0,1,0], [0,1,1]],
+    'u': [[0,0,0], [1,0,1], [1,0,1], [1,0,1], [0,1,1]],
+    'v': [[0,0,0], [1,0,1], [1,0,1], [1,0,1], [0,1,0]],
+    'w': [[0,0,0,0,0], [1,0,1,0,1], [1,0,1,0,1], [1,1,1,1,1], [1,0,1,0,1]],
+    'x': [[0,0,0], [1,0,1], [0,1,0], [1,0,1], [1,0,1]],
+    'y': [[0,0,0], [1,0,1], [1,1,1], [0,0,1], [1,1,0]],
+    'z': [[0,0,0], [1,1,1], [0,1,0], [1,0,0], [1,1,1]],
+    'j': [[0,1], [0,0], [0,1], [0,1], [1,0]],
+
+    'А': [[0,1,0], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'Б': [[1,1,1], [1,0,0], [1,1,0], [1,0,1], [1,1,0]],
+    'В': [[1,1,0], [1,0,1], [1,1,0], [1,0,1], [1,1,0]],
+    'Г': [[1,1,1], [1,0,0], [1,0,0], [1,0,0], [1,0,0]],
+    'Д': [[0,1,1], [0,1,0], [0,1,0], [1,1,1], [1,0,1]],
+    'Е': [[1,1,1], [1,0,0], [1,1,0], [1,0,0], [1,1,1]],
+    'Ё': [[0,1,0], [1,1,1], [1,0,0], [1,1,0], [1,1,1]],
+    'Ж': [[1,0,1], [1,0,1], [0,1,0], [1,0,1], [1,0,1]],
+    'З': [[1,1,0], [0,0,1], [0,1,0], [0,0,1], [1,1,0]],
+    'И': [[1,0,1], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'Й': [[1,1,1], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'К': [[1,0,1], [1,0,1], [1,1,0], [1,0,1], [1,0,1]],
+    'Л': [[0,1,1], [1,0,1], [1,0,1], [1,0,1], [1,0,1]],
+    'М': [[1,0,1], [1,1,1], [1,0,1], [1,0,1], [1,0,1]],
+    'Н': [[1,0,1], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'О': [[0,1,0], [1,0,1], [1,0,1], [1,0,1], [0,1,0]],
+    'П': [[1,1,1], [1,0,1], [1,0,1], [1,0,1], [1,0,1]],
+    'Р': [[1,1,0], [1,0,1], [1,1,0], [1,0,0], [1,0,0]],
+    'С': [[0,1,1], [1,0,0], [1,0,0], [1,0,0], [0,1,1]],
+    'Т': [[1,1,1], [0,1,0], [0,1,0], [0,1,0], [0,1,0]],
+    'У': [[1,0,1], [1,0,1], [0,1,1], [0,0,1], [0,1,1]],
+    'Ф': [[0,1,0], [1,1,1], [1,1,1], [0,1,0], [0,1,0]],
+    'Х': [[1,0,1], [1,0,1], [0,1,0], [1,0,1], [1,0,1]],
+    'Ц': [[1,0,1], [1,0,1], [1,0,1], [1,1,1], [0,0,1]],
+    'Ч': [[1,0,1], [1,0,1], [0,1,1], [0,0,1], [0,0,1]],
+    'Ш': [[1,0,1], [1,0,1], [1,0,1], [1,0,1], [1,1,1]],
+    'Щ': [[1,0,1,0,0], [1,0,1,0,0], [1,0,1,0,0], [1,1,1,0,0], [0,0,0,1,1]],
+    'Ъ': [[1,1,0], [0,1,0], [1,1,0], [1,0,1], [1,1,0]],
+    'Ы': [[1,0,1], [1,0,1], [1,1,1], [1,0,1], [1,1,1]],
+    'Ь': [[1,0,0], [1,0,0], [1,1,0], [1,0,1], [1,1,0]],
+    'Э': [[1,1,0], [0,0,1], [0,1,1], [0,0,1], [1,1,0]],
+    'Ю': [[1,1,1], [1,0,1], [1,1,1], [1,0,1], [1,1,1]],
+    'Я': [[0,1,1], [1,0,1], [0,1,1], [1,0,1], [1,0,1]],
+
+    'а': [[0,0,0], [0,1,1], [1,0,1], [1,1,1], [0,1,1]],
+    'б': [[1,1,0], [1,0,0], [1,1,0], [1,0,1], [1,1,0]],
+    'в': [[0,0,0], [1,1,0], [1,1,1], [1,0,1], [1,1,1]],
+    'г': [[0,0,0], [1,1,1], [1,0,0], [1,0,0], [1,0,0]],
+    'д': [[0,1,0], [0,1,0], [1,1,1], [1,0,1], [1,0,1]],
+    'е': [[0,0,0], [0,1,0], [1,1,1], [1,0,0], [0,1,1]],
+    'ё': [[0,1,0], [0,0,0], [1,1,1], [1,0,0], [1,1,1]],
+    'ж': [[0,0,0], [1,0,1], [0,1,0], [1,0,1], [1,0,1]],
+    'з': [[0,0,0], [1,1,1], [0,1,1], [0,0,1], [1,1,1]],
+    'и': [[0,0,0], [1,0,1], [1,0,1], [1,0,1], [1,1,1]],
+    'й': [[1,0,1], [0,0,0], [1,0,1], [1,0,1], [1,1,1]],
+    'к': [[0,0,0], [1,0,1], [1,1,0], [1,0,1], [1,0,1]],
+    'л': [[0,0,0], [0,1,1], [1,0,1], [1,0,1], [1,0,1]],
+    'м': [[0,0,0,0,0], [1,1,1,1,1], [1,0,1,0,1], [1,0,1,0,1], [1,0,1,0,1]],
+    'н': [[0,0,0], [1,0,1], [1,1,1], [1,0,1], [1,0,1]],
+    'о': [[0,0,0], [0,1,0], [1,0,1], [1,0,1], [0,1,0]],
+    'п': [[0,0,0], [1,1,1], [1,0,1], [1,0,1], [1,0,1]],
+    'р': [[0,0,0], [1,1,0], [1,0,1], [1,1,0], [1,0,0]],
+    'с': [[0,0,0], [0,1,1], [1,0,0], [1,0,0], [0,1,1]],
+    'т': [[0,0,0,0,0], [1,1,1,1,1], [0,0,1,0,0], [0,0,1,0,0], [0,0,1,0,0]],
+    'у': [[0,0,0], [1,0,1], [1,1,1], [0,0,1], [1,1,0]],
+    'ф': [[0,1,0], [1,1,1], [1,1,1], [0,1,0], [0,1,0]],
+    'х': [[0,0,0], [1,0,1], [0,1,0], [1,0,1], [1,0,1]],
+    'ц': [[0,0,0], [1,0,1], [1,0,1], [1,1,1], [0,0,1]],
+    'ч': [[0,0,0], [1,0,1], [0,1,1], [0,0,1], [0,0,1]],
+    'ш': [[0,0,0], [1,0,1], [1,0,1], [1,0,1], [1,1,1]],
+    'щ': [[0,0,0,0,0], [1,0,1,0,0], [1,0,1,0,0], [1,1,1,0,0], [0,0,0,1,1]],
+    'ъ': [[0,1,0], [0,1,0], [1,1,0], [1,0,1], [1,1,0]],
+    'ы': [[0,0,0], [1,0,1], [1,1,1], [1,0,1], [1,1,1]],
+    'ь': [[0,0,0], [1,0,0], [1,1,0], [1,0,1], [1,1,0]],
+    'э': [[0,0,0], [1,1,0], [0,1,1], [0,0,1], [1,1,0]],
+    'ю': [[0,0,0,0,0], [1,0,1,1,0], [1,0,1,0,1], [1,0,1,0,1], [1,0,1,1,0]],
+    'я': [[0,0,0], [0,1,1], [1,0,1], [0,1,1], [1,0,1]],
+
+    '1': [[0,1,0], [1,1,0], [0,1,0], [0,1,0], [1,1,1]],
+    '2': [[1,1,1], [0,0,1], [1,1,1], [1,0,0], [1,1,1]],
+    '3': [[1,1,1], [0,0,1], [0,1,1], [0,0,1], [1,1,1]],
+    '4': [[1,0,1], [1,0,1], [1,1,1], [0,0,1], [0,0,1]],
+    '5': [[1,1,1], [1,0,0], [1,1,1], [0,0,1], [1,1,1]],
+    '6': [[1,1,1], [1,0,0], [1,1,1], [1,0,1], [1,1,1]],
+    '7': [[1,1,1], [0,0,1], [0,1,0], [0,1,0], [0,1,0]],
+    '8': [[1,1,1], [1,0,1], [1,1,1], [1,0,1], [1,1,1]],
+    '9': [[1,1,1], [1,0,1], [1,1,1], [0,0,1], [1,1,1]],
+    '0': [[1,1,1], [1,0,1], [1,0,1], [1,0,1], [1,1,1]],
+    
+    ',': [[0,0,0], [0,0,0], [0,0,0], [1,0,0], [0,1,0]],
+    '?': [[1,1,1], [0,0,1], [0,1,1], [0,0,0], [0,1,0]],
+    '-': [[0,0,0], [0,0,0], [1,1,1], [0,0,0], [0,0,0]],
+    '+': [[0,0,0], [0,1,0], [1,1,1], [0,1,0], [0,0,0]],
+    '.': [[0], [0], [0], [0], [1]],
+    '!': [[1], [1], [1], [0], [1]],
+    ':': [[0], [1], [0], [1], [0]],
+    ' ': [[0], [0], [0], [0], [0]]
+}
+
+VISUAL_EASINGS = {
+    "linear":         lambda t: t,
+    "ease_in":        lambda t: t * t,
+    "ease_out":       lambda t: 1 - (1 - t) ** 2,
+    "ease_in_out":    lambda t: 2 * t * t if t < 0.5 else 1 - (-2 * t + 2) ** 2 / 2,
+    "ease_out_cubic": lambda t: 1 - (1 - t) ** 3
 }

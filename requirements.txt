@@ -1,11 +1,9 @@
 numpy
-pygame
 PyQt5
 loguru
 aubio
-requests
 soundfile
-sounddevice
+miniaudio
 PyOpenGL
 mutagen
-av
+ffmpeg-python
