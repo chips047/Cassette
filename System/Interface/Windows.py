@@ -3008,15 +3008,12 @@ class BPMEditorBase(AudioEditorBase):
 class AudioSetupDialog(BPMEditorBase):
     def __init__(
             self,
-            audio_path: str,
-            signal: pyqtSignal
+            audio_path: str
         ):
 
         self.player     = Player.player
         self.audio_path = audio_path
         self.filename   = audio_path.split("/")[-1]
-
-        self.signal     = signal
 
         super().__init__(
             "Audio",
@@ -3115,15 +3112,10 @@ class AudioSetupDialog(BPMEditorBase):
             self.ok_button.start_glitch()
             return
 
-        settings = self.get_settings()
-        composition = ProjectSaver.Composition(
-            self.audio_path,
-            settings
-        )
+        self.settings = self.get_settings()
 
         self.cleanup_audio()
         super().on_ok()
-        self.signal.emit(composition)
 
     def get_settings(self) -> dict:
         return {
@@ -3215,7 +3207,7 @@ class GlyphtoneEditor(AudioEditorBase):
 # Import Window
 
 class ImportWindow(BPMEditorBase):
-    def __init__(self, signal: pyqtSignal):
+    def __init__(self):
         self.player     = Player.player
         self.audio_path = None
         self.save_path  = None
@@ -3231,7 +3223,6 @@ class ImportWindow(BPMEditorBase):
             enable_audioplayer_effects = False
         )
 
-        self.signal = signal
         self.setAcceptDrops(True)
 
         self.setup_import_ui()
@@ -3405,7 +3396,7 @@ class ImportWindow(BPMEditorBase):
 
         bpm_settings = self.get_bpm_settings()
 
-        settings = {
+        self.settings = {
             "model": model,
             "audio": {
                 "bpm":      bpm_settings["bpm"],
@@ -3418,15 +3409,8 @@ class ImportWindow(BPMEditorBase):
             "glyphs": glyphs
         }
 
-        composition = ProjectSaver.Composition(
-            self.audio_path,
-            settings
-        )
-
         self.cleanup_audio()
         self.on_ok()
-
-        self.signal.emit(composition)
 
 # Playground
 

@@ -753,10 +753,15 @@ class MainMenu(QWidget):
                 widget.show()
 
     def process_new_composition(self, file_path: str) -> None:
-        Windows.AudioSetupDialog(
-            file_path,
-            self.composition_created
-        ).exec_()
+        window = Windows.AudioSetupDialog(file_path)
+
+        if window.exec_():
+            composition = ProjectSaver.Composition(
+                file_path,
+                window.settings
+            )
+
+            self.composition_created.emit(composition)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         event.acceptProposedAction()
@@ -771,6 +776,7 @@ class MainMenu(QWidget):
 
             self.process_new_composition(file_path)
             event.acceptProposedAction()
+
             return
 
         super().dropEvent(event)
@@ -785,7 +791,15 @@ class MainMenu(QWidget):
         settings_dialog.exec_()
 
     def on_import(self) -> None:
-        Windows.ImportWindow(self.composition_created).exec_()
+        window = Windows.ImportWindow()
+
+        if window.exec_():
+            composition = ProjectSaver.Composition(
+                window.audio_path,
+                window.settings
+            )
+
+            self.composition_created.emit(composition)
 
     def on_about(self) -> None:
         modifiers = QApplication.keyboardModifiers()
