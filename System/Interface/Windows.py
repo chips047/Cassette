@@ -2173,15 +2173,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             do_not_multiply_duration = True
         )
 
-        self.animation_engine.animate(
-            "opacity_background",
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ],
-            175,
-            do_not_multiply_duration = True
-        )
+        self.animation_engine.set_property_base_value("opacity_background", 1.0)
 
     def scale_out(self, cleanup: bool) -> None:
         if not self.animations_enabled:
