@@ -457,7 +457,7 @@ class BaseComposition:
         for model in DEVICES[self.model].port_variants:
             self.export(watermark, NUMBER_TO_CODE[model])
 
-        Utils.open_file(Utils.get_user_path(str(self.id)), "Cassette/Songs")
+        Utils.open_file(Utils.get_user_path(str(self.id), "Cassette/Songs"))
 
 class Composition(BaseComposition):
     def __init__(
