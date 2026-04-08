@@ -779,8 +779,6 @@ class UISoundManager:
         if name not in self.preloaded:
             return UISound(-1, self)
 
-        print("playing")
-
         self.ensure_device()
 
         sound_id = self.next_sound_id

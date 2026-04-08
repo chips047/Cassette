@@ -1211,8 +1211,6 @@ class AnimationEngine:
             easing_function: Callable[[float], float] = Easing.smooth
         ) -> None:
 
-        print("ANIMATING", name, value)
-
         if name not in self.properties:
             logger.error(f"Property {name} not found.")
             return
