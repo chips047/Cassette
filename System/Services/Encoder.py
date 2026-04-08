@@ -539,10 +539,12 @@ def labels_to_glyphs(
         if line.strip() and not any(x in line for x in ["PHONE_MODEL", "LABEL_VERSION", "END"])
     ]
 
-    unique_tracks_in_file = len({
-        line.split("\t")[2].split("-")[0].split(".")[0]
-        for line in raw_lines if "\t" in line
-    })
+    unique_tracks_in_file = len(
+        {
+            line.split("\t")[2].split("-")[0].split(".")[0]
+            for line in raw_lines if "\t" in line
+        }
+    )
 
     grouped_glyphs = {}
 
@@ -572,9 +574,17 @@ def labels_to_glyphs(
             legacy_mapping = config.legacy_tracks.get(unique_tracks_in_file, {}).get(track_id_in)
 
             if legacy_mapping and manual_segment is not None:
-                if manual_segment >= len(legacy_mapping):
-                    continue
-                target_tracks = [(legacy_mapping[manual_segment], None)]
+                resolved_single = legacy_mapping[0] if len(legacy_mapping) == 1 else None
+
+                if resolved_single and config.segments_map.get(resolved_single, 1) > 1:
+                    target_tracks = [(resolved_single, manual_segment)]
+
+                else:
+                    if manual_segment >= len(legacy_mapping):
+                        continue
+                    
+                    target_tracks = [(legacy_mapping[manual_segment], None)]
+            
             else:
                 target_tracks = config.resolve_tracks(track_id_in, unique_tracks_in_file)
 
@@ -583,8 +593,10 @@ def labels_to_glyphs(
 
                 if time_key in grouped_glyphs:
                     existing = grouped_glyphs[time_key]
+                    
                     if automatic_segment is not None and automatic_segment not in existing.get("segments", []):
                         existing.setdefault("segments", []).append(automatic_segment)
+                    
                     continue
 
                 glyph = {
@@ -613,7 +625,7 @@ def labels_to_glyphs(
 
                 grouped_glyphs[time_key] = glyph
 
-        except:
+        except Exception as e:
             continue
 
     return model_name, finalize_glyphs(grouped_glyphs, config)
