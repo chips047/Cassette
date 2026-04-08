@@ -331,10 +331,7 @@ def is_peak_shape(values: list[int]) -> bool:
     if peak_index == 0 or peak_index == len(values) - 1:
         return False
 
-    up_part   = values[: peak_index + 1]
-    down_part = values[peak_index:]
-
-    return is_increasing(up_part) and is_decreasing(down_part)
+    return is_increasing(values[: peak_index + 1]) and is_decreasing(values[peak_index:])
 
 def detect_easing(data: list[int]) -> str:
     if len(data) < 3:
@@ -346,9 +343,9 @@ def detect_easing(data: list[int]) -> str:
     if not deltas:
         return "linear"
 
-    abs_deltas  = [abs(delta) for delta in deltas]
-    increasing  = is_increasing(abs_deltas)
-    decreasing  = is_decreasing(abs_deltas)
+    abs_deltas = [abs(delta) for delta in deltas]
+    increasing = is_increasing(abs_deltas)
+    decreasing = is_decreasing(abs_deltas)
 
     if increasing and not decreasing:
         return "ease_in"
@@ -374,20 +371,10 @@ def resolve_fade_info(effect_data: list[int]) -> tuple[str | None, str, bool]:
     if is_decreasing(effect_data):
         return "fade_out", detect_easing(effect_data), False
 
-    peak_index = effect_data.index(max(effect_data))
-
-    if peak_index == 0 or peak_index == len(effect_data) - 1:
+    if not is_peak_shape(effect_data):
         return None, "linear", True
 
-    up_part   = effect_data[: peak_index + 1]
-    down_part = effect_data[peak_index:]
-
-    if not is_increasing(up_part):
-        return None, "linear", True
-
-    if not is_decreasing(down_part):
-        return None, "linear", True
-
+    peak_index  = effect_data.index(max(effect_data))
     easing_type = "smooth" if effect_data[peak_index] == effect_data[peak_index - 1] else "sharp"
 
     return "fade_in_out", easing_type, False
@@ -398,17 +385,11 @@ def build_audio_fade_filters(
         fade_out_ms:  float = 120.0
     ) -> tuple[str | None, str | None]:
 
-    fade_in_s  = max(0.0, fade_in_ms / 1000.0)
-    fade_out_s = max(0.0, fade_out_ms / 1000.0)
-
     if duration_s <= 0:
         return None, None
 
-    if fade_in_s > duration_s:
-        fade_in_s = duration_s
-
-    if fade_out_s > duration_s:
-        fade_out_s = duration_s
+    fade_in_s  = min(max(0.0, fade_in_ms  / 1000.0), duration_s)
+    fade_out_s = min(max(0.0, fade_out_ms / 1000.0), duration_s)
 
     filters = []
 
@@ -421,16 +402,14 @@ def build_audio_fade_filters(
 
     return ",".join(filters) if filters else None, ("libopus" if filters else None)
 
-def finalize_glyphs(
-        grouped_dict: dict,
-        config:       object
-    ) -> dict:
+def finalize_glyphs(grouped_dict: dict, config: object) -> dict:
+    segments_map = config.segments_map
 
     for glyph in grouped_dict.values():
         if "segments" not in glyph:
             continue
 
-        maximum_segments = config.segments_map.get(glyph["track"], 0)
+        maximum_segments = segments_map.get(glyph["track"], 0)
 
         if len(glyph["segments"]) == maximum_segments and maximum_segments > 0:
             del glyph["segments"]
@@ -448,14 +427,15 @@ def bngc_to_glyphs(
         end_ms:      int | None = None
     ) -> tuple[str, dict[int, dict[str, object]]]:
 
-    total_tracks  = len(json_data)
-    target_config = None
-    model_name    = "UNKNOWN"
+    total_tracks = len(json_data)
 
-    for name, config in DEVICES.items():
-        if config.total_tracks_with_segments == total_tracks or total_tracks in config.legacy_tracks:
-            target_config, model_name = config, name
-            break
+    target_config, model_name = next(
+        (
+            (config, name) for name, config in DEVICES.items()
+            if config.total_tracks_with_segments == total_tracks or total_tracks in config.legacy_tracks
+        ),
+        (None, "UNKNOWN")
+    )
 
     if not target_config:
         raise LabelsNoModelError(f"No device matches track count: {total_tracks}")
@@ -546,7 +526,9 @@ def labels_to_glyphs(
         }
     )
 
-    grouped_glyphs = {}
+    legacy_track_map = config.legacy_tracks.get(unique_tracks_in_file, {})
+    segments_map     = config.segments_map
+    grouped_glyphs   = {}
 
     for line in raw_lines:
         parts_tab = line.split("\t")
@@ -571,20 +553,20 @@ def labels_to_glyphs(
 
             shifted_start_ms = start_ms_item - start_ms if start_ms and start_ms > 0 else start_ms_item
 
-            legacy_mapping = config.legacy_tracks.get(unique_tracks_in_file, {}).get(track_id_in)
+            legacy_mapping = legacy_track_map.get(track_id_in)
 
             if legacy_mapping and manual_segment is not None:
                 resolved_single = legacy_mapping[0] if len(legacy_mapping) == 1 else None
 
-                if resolved_single and config.segments_map.get(resolved_single, 1) > 1:
+                if resolved_single and segments_map.get(resolved_single, 1) > 1:
                     target_tracks = [(resolved_single, manual_segment)]
 
                 else:
                     if manual_segment >= len(legacy_mapping):
                         continue
-                    
+
                     target_tracks = [(legacy_mapping[manual_segment], None)]
-            
+
             else:
                 target_tracks = config.resolve_tracks(track_id_in, unique_tracks_in_file)
 
@@ -593,10 +575,10 @@ def labels_to_glyphs(
 
                 if time_key in grouped_glyphs:
                     existing = grouped_glyphs[time_key]
-                    
+
                     if automatic_segment is not None and automatic_segment not in existing.get("segments", []):
                         existing.setdefault("segments", []).append(automatic_segment)
-                    
+
                     continue
 
                 glyph = {
@@ -617,7 +599,8 @@ def labels_to_glyphs(
                     )
 
                 final_segment = automatic_segment
-                if final_segment is None and manual_segment is not None and config.segments_map.get(str(track_id), 1) > 1:
+
+                if final_segment is None and manual_segment is not None and segments_map.get(str(track_id), 1) > 1:
                     final_segment = manual_segment
 
                 if final_segment is not None:
@@ -625,7 +608,7 @@ def labels_to_glyphs(
 
                 grouped_glyphs[time_key] = glyph
 
-        except Exception as e:
+        except Exception:
             continue
 
     return model_name, finalize_glyphs(grouped_glyphs, config)
