@@ -385,6 +385,9 @@ class GlyphController(QObject):
 
         self.create_glyph_items([new_id])
         self.push_action(Actions.ActionAdd(self, {new_id: new_data}))
+
+        self.composition.syncer.pulse_track(track_index)
+        
         self.elements_changed.emit()
 
     def copy_glyphs(self) -> None:

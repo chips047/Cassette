@@ -391,6 +391,9 @@ class GlyphSyncer(QObject):
     
     def set_speed(self, speed: float) -> None:
         self.send_payload({"action": "set_speed", "value": speed})
+    
+    def pulse_track(self, track: str) -> None:
+        self.send_payload({"action": "pulse", "track": track})
 
     def exit_app(self) -> None:
         self.send_payload({"action": "stop_app"})
