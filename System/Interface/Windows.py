@@ -1646,6 +1646,37 @@ class ErrorWindow(FloatingWindowGPU):
 
         ok_button.clicked.connect(self.on_ok)
         self.title_label.start_glitch()
+    
+    def start_open_animation(self):
+        if random.random() > 0.995:
+            self.adjustSize()
+            self.center_window()
+            self.is_ready = True
+
+            Player.ui_player.play_sound("Packs/NOK/Death")
+
+            self.title_label.start_glitch(0.01, 18)
+            
+            self.animation_engine.animate(
+                "scale",
+                [
+                    (0.0, 1.5),
+                    (1.0, 1.0)
+                ], 12000, LoomEngine.Easing.ease_out_quart
+            )
+
+            self.animation_engine.set_property_base_value("opacity_content", 1.0)
+
+            self.animation_engine.animate(
+                "opacity_background",
+                [
+                    (0.0, 0.0),
+                    (1.0, 1.0)
+                ], 3000, LoomEngine.Easing.linear
+            )
+        
+        else:
+            super().start_open_animation()
 
 # Fun Windows
 
@@ -1840,7 +1871,7 @@ class Settings(FloatingWindowGPU):
         page_area = Widgets.ElasticScrollArea(self)
         page_area.setFixedHeight(450)
 
-        navigation_button = Inputs.NavButton(page_name)
+        navigation_button = Basic.NavButton(page_name)
         navigation_button.clicked.connect(lambda _, w = page_area: self.change_page(w))
         self.nav_layout.addWidget(navigation_button)
 
