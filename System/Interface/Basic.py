@@ -305,16 +305,19 @@ class TitleLabel(QLabel):
 
         self.characters = string.ascii_uppercase
 
+        self.decode_chance = 0.2
+
         self.glitch_timer = Timer(
             interval = 24,
             callback = self.text_glitch_step,
             parent   = self
         )
 
-    def start_glitch(self) -> None:
-        self.solved_indices.clear()
+    def start_glitch(self, decode_chance: float = 0.2, interval: int = 24) -> None:
+        self.decode_chance = decode_chance
 
-        self.glitch_timer.start()
+        self.solved_indices.clear()
+        self.glitch_timer.start(interval)
 
     def text_glitch_step(self) -> None:
         new_text = []
@@ -325,7 +328,7 @@ class TitleLabel(QLabel):
 
                 continue
             
-            if random.random() < 0.2:
+            if random.random() < self.decode_chance:
                 self.solved_indices.add(index)
                 new_text.append(character)
 
