@@ -1,5 +1,6 @@
 import random
 import string
+import webbrowser
 
 from loguru import logger
 
@@ -31,7 +32,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QPushButton,
     QButtonGroup,
-    QAbstractButton
+    QApplication
 )
 
 from System.Common import (
@@ -39,7 +40,11 @@ from System.Common import (
     Styles
 )
 
-from System.Interface import Basic
+from System.Interface import (
+    Basic,
+    Windows
+)
+
 from System.Services import Player
 
 from System.Common.Constants import CURRENT_SETTINGS
@@ -1285,3 +1290,91 @@ class CycleButton(BaseControlWidget):
     
     def get_current_value(self) -> any:
         return self.states[self.current_state_index][1]
+
+class SearchTextbox(Textbox):
+    def __init__(self):
+        super().__init__(
+            "text",
+            max_length  = 100,
+            placeholder = "Search"
+        )
+
+        self.search_box_glitch_count = 0
+
+        self.setStyleSheet(Styles.Controls.FloatingSearchTextBox)
+        
+        self.glitchStarted.connect(self.on_search_box_glitch)
+        self.safeTextChanged.connect(self.on_text_changed)
+
+        self.ee_random_title_timer = Basic.Timer(
+            50,
+            self.on_random_title_timer,
+            single_shot = True
+        )
+
+        self.search_box_glitch_count_reset_timer = Basic.Timer(
+            20000,
+            self.on_search_box_reset,
+            single_shot = True
+        )
+    
+    def on_search_box_reset(self):
+        self.search_box_glitch_count = 0
+    
+    def on_search_box_glitch(self):
+        self.search_box_glitch_count += 1
+        self.search_box_glitch_count_reset_timer.start()
+
+        if self.search_box_glitch_count == 60:
+            Player.ui_player.play_sound("Packs/NOK/Illogical")
+        
+        elif self.search_box_glitch_count == 150:
+            Player.ui_player.play_sound("Packs/NOK/ZZZ")
+        
+        elif self.search_box_glitch_count == 250:
+            Windows.ErrorWindow(
+                "That's it.",
+                "I'm deleting textbox. For disciplinary measures."
+            ).exec_()
+
+            self.deleteLater()
+    
+    def on_random_title_timer(self):
+        title = random.choice(
+            [
+                "CYCLE",
+                "BREAK",
+                "THE",
+                "BREx000",
+                "stop",
+                "the",
+                "cycle",
+                "b̷̦͓̞͛̾̊ŕ̷̮͝e̶̟͚͎̠̓̉a̶̙̓́̓̅k̴̥̎̋́͝ ̸̤̈̉̓̽͠t̷̹̞̼̹͗͂͋h̵̺̓̔͛̏ȩ̸͙̝̏͝ ̴̨̦̌͑͋̐c̶̠̙̻̔y̴̡̢̧̠̝͝c̴̡̛͓̬̝̈́͆l̵͚̗̦̺̂͝͠e̴̅͗͟",
+                "TERMINATE",
+                "1̸͓̈́̌̂̚0̸͔̼̭̙̲́̑7̵͎̕͟",
+                "108",
+                "1̷̡̽̄͛0̷̧͍̞̺̃͂͛̓9̸̧̖̮̝͐̈̂̏͡",
+                "∞",
+                "STAND DOWN",
+                "HORIZON DID NOT LIE",
+                "FIX IT"
+            ]
+        )
+
+        active_window = QApplication.activeWindow()
+        
+        if active_window:
+            active_window.setWindowTitle(title if random.random() > 0.5 else "Cassette")
+        
+        self.ee_random_title_timer.start(random.randint(30, 400))
+    
+    def on_text_changed(self, text):
+        text = (text or "").lower().strip().replace(" ", "")
+        
+        ee = {
+            "subject106": lambda: self.ee_random_title_timer.start(),
+            "chips047":   lambda: webbrowser.open("https://github.com/Chipik0")
+        }
+
+        if text in ee:
+            ee[text]()

@@ -411,8 +411,6 @@ class MainMenu(QWidget):
         self.search_box:    Inputs.Textbox | None        = None
         self.tracks_widget: QWidget | None               = None
 
-        self.search_box_glitch_count = 0
-
         self.container = QFrame(self)
         self.container.setObjectName("container")
         self.container.setStyleSheet(
@@ -430,67 +428,7 @@ class MainMenu(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.container)
-
-        self.ee_random_title_timer = Basic.Timer(
-            50,
-            self.on_random_title_timer,
-            single_shot = True
-        )
-
-        self.search_box_glitch_count_reset_timer = Basic.Timer(
-            20000,
-            self.on_search_box_reset,
-            single_shot = True
-        )
-
-    def on_random_title_timer(self):
-        title = random.choice(
-            [
-                "CYCLE",
-                "BREAK",
-                "THE",
-                "BREx000",
-                "stop",
-                "the",
-                "cycle",
-                "b̷̦͓̞͛̾̊ŕ̷̮͝e̶̟͚͎̠̓̉a̶̙̓́̓̅k̴̥̎̋́͝ ̸̤̈̉̓̽͠t̷̹̞̼̹͗͂͋h̵̺̓̔͛̏ȩ̸͙̝̏͝ ̴̨̦̌͑͋̐c̶̠̙̻̔y̴̡̢̧̠̝͝c̴̡̛͓̬̝̈́͆l̵͚̗̦̺̂͝͠e̴̅͗͟",
-                "TERMINATE",
-                "1̸͓̈́̌̂̚0̸͔̼̭̙̲́̑7̵͎̕͟",
-                "108",
-                "1̷̡̽̄͛0̷̧͍̞̺̃͂͛̓9̸̧̖̮̝͐̈̂̏͡",
-                "∞",
-                "STAND DOWN",
-                "HORIZON DID NOT LIE",
-                "FIX IT"
-            ]
-        )
-
-        active_window = QApplication.activeWindow()
-        if active_window:
-            active_window.setWindowTitle(title if random.random() > 0.5 else "Cassette")
-        
-        self.ee_random_title_timer.start(random.randint(30, 400))
     
-    def on_search_box_glitch(self):
-        self.search_box_glitch_count += 1
-        self.search_box_glitch_count_reset_timer.start()
-
-        if self.search_box_glitch_count == 60:
-            Player.ui_player.play_sound("Packs/NOK/Illogical")
-        
-        elif self.search_box_glitch_count == 150:
-            Player.ui_player.play_sound("Packs/NOK/ZZZ")
-        
-        elif self.search_box_glitch_count == 250:
-            Windows.ErrorWindow(
-                "That's it.",
-                "I'm deleting textbox. For disciplinary measures."
-            ).exec_()
-            self.search_box.deleteLater()
-    
-    def on_search_box_reset(self):
-        self.search_box_glitch_count = 0
-
     def setup_ui(self) -> None:
         container_layout = QVBoxLayout(self.container)
         container_layout.setContentsMargins(15, 15, 15, 15)
@@ -527,15 +465,8 @@ class MainMenu(QWidget):
         button_panel = self.create_button_panel()
         button_layout.addWidget(button_panel)
 
-        self.search_box = Inputs.Textbox(
-            "text",
-            max_length  = 100,
-            placeholder = "Search"
-        )
-
-        self.search_box.setStyleSheet(Styles.Controls.FloatingSearchTextBox)
+        self.search_box = Inputs.SearchTextbox()
         self.search_box.safeTextChanged.connect(self.apply_search_filter)
-        self.search_box.glitchStarted.connect(self.on_search_box_glitch)
 
         button_layout.addWidget(self.search_box)
 
@@ -719,20 +650,6 @@ class MainMenu(QWidget):
         self.apply_search_filter(self.search_box.text())
 
     def apply_search_filter(self, search_text: str) -> None:
-        text = (search_text or "").lower().strip().replace(" ", "")
-        
-        ee = {
-            "subject106":       lambda: self.ee_random_title_timer.start(),
-            "chips047":         lambda: webbrowser.open("https://github.com/Chipik0"),
-            "wednesdaymydudes": lambda: Player.ui_player.play_sound("Packs/NOK/Wednesday", enable_tone_randomizer = False)
-        }
-
-        if text in ee:
-            ee[text]()
-
-        if search_text and search_text.lower().replace(" ", "") == "subject106":
-            self.ee_random_title_timer.start()
-
         for i in reversed(range(self.tracks_grid_layout.count())):
             item = self.tracks_grid_layout.takeAt(i)
             widget = item.widget()
