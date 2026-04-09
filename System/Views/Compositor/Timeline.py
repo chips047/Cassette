@@ -146,6 +146,14 @@ class ScrollableContent(QGraphicsView):
             self.fps_timer.start()
 
             self.setViewport(self.gl_viewport)
+        
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+        self.setOptimizationFlags(
+            QGraphicsView.DontSavePainterState |
+            QGraphicsView.DontAdjustForAntialiasing
+        )
+
+        self.scene.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.BspTreeIndex)
 
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)

@@ -1261,6 +1261,15 @@ class GlyphItem(QGraphicsObject):
 
     def px_to_ms(self, px: float) -> float:
         return px * 1000.0 / self.conductor.px_per_sec
+    
+    def opaqueArea(self) -> QPainterPath:
+        path = QPainterPath()
+        path.addRect(self.boundingRect())
+        
+        return path
+
+    def shape(self) -> QPainterPath:
+        return self.opaqueArea()
 
     def boundingRect(self) -> QRectF:
         margin = self.animation_margin + self.border_width
@@ -1286,6 +1295,9 @@ class GlyphItem(QGraphicsObject):
         option:  QStyleOptionGraphicsItem,
         widget:  QWidget = None
     ) -> None:
+        
+        if self.isObscured():
+            return
         
         width_px     = self.ms_to_px(self.duration_ms)
         height       = Styles.Metrics.Tracks.BoxHeight
