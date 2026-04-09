@@ -45,7 +45,7 @@ from PyQt5.QtWidgets import (
 # Initialization
 
 if getattr(sys, "frozen", False):
-    base_directory = sys.MEIPASS
+    base_directory = sys._MEIPASS
 
 else:
     base_directory = os.path.dirname(os.path.abspath(__file__))
@@ -193,6 +193,7 @@ class EasterEggManager:
         horizontal_position: int,
         vertical_position:   int,
     ) -> None:
+        
         del vertical_position
 
         current_time       = time.time()
@@ -243,11 +244,11 @@ class EasterEggManager:
         height: int,
     ) -> None:
         
-        current_time      = time.time()
-        current_area      = width * height
-        delta_time        = current_time - self.last_accordion_time if self.last_accordion_time > 0 else 0.01
-        area_difference   = current_area - self.last_area
-        velocity          = abs(area_difference) / delta_time
+        current_time    = time.time()
+        current_area    = width * height
+        delta_time      = current_time - self.last_accordion_time if self.last_accordion_time > 0 else 0.01
+        area_difference = current_area - self.last_area
+        velocity        = abs(area_difference) / delta_time
 
         minimum_velocity  = 50000
         maximum_velocity  = 2000000
@@ -255,6 +256,7 @@ class EasterEggManager:
         if abs(area_difference) < 200 or velocity < minimum_velocity:
             self.last_area           = current_area
             self.last_accordion_time = current_time
+            
             return
 
         current_direction = 1 if area_difference > 0 else -1
@@ -551,7 +553,7 @@ class ApplicationWindow(QMainWindow):
         self.intro_overlay.resize(*size)
 
     # Animations
-    
+
     def setup_animations(self) -> None:
         self.entry_move_animation = QPropertyAnimation(None, b"geometry")
         self.entry_fade_animation = QPropertyAnimation(None, b"opacity")
