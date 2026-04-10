@@ -438,7 +438,7 @@ class PlaybackManager(QObject):
         self.current_audio_level = float(numpy.max(numpy.abs(block)) / self.track_peak_level)
 
         if self.position >= len(self.data):
-            self.is_playing = False
+            self.stop()
 
         return block
 
