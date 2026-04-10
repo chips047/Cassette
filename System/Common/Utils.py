@@ -263,3 +263,32 @@ def get_ffmpeg_path(name: str = "ffmpeg") -> str:
         logger.error(f"{name} not found at {full_path}")
 
     return full_path
+
+def run_ffmpeg_silent(node: object, ffmpeg_path: str = "ffmpeg") -> str:
+    startupinfo   = None
+    creationflags = 0
+    
+    if platform.system() == "Windows":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0  # SW_HIDE
+        creationflags = 0x08000000   # CREATE_NO_WINDOW
+
+    cmd = node.overwrite_output().compile(cmd=ffmpeg_path)
+
+    process = subprocess.Popen(
+        cmd,
+        stdin              = subprocess.PIPE,
+        stdout             = subprocess.PIPE,
+        stderr             = subprocess.PIPE,
+        startupinfo        = startupinfo,
+        creationflags      = creationflags,
+        universal_newlines = True
+    )
+    
+    out, err = process.communicate()
+    
+    if process.returncode != 0:
+        raise RuntimeError(f"FFmpeg error: {err}")
+    
+    return out

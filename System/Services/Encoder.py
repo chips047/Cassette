@@ -9,6 +9,7 @@ from loguru import logger
 
 from mutagen.oggopus import OggOpus
 
+from System.Common import Utils
 from System.Services import GlyphEffects
 
 from System.Common.Constants import (
@@ -673,13 +674,11 @@ def trim_glyphs_ogg(
     else:
         output_kwargs["acodec"] = "copy"
 
-    (
-        ffmpeg
-        .input(path, ss = start_ms / 1000)
-        .output(output, **output_kwargs)
-        .overwrite_output()
-        .run(cmd = FFMPEG_PATH, quiet = True)
-    )
+    node = ffmpeg.input(
+        path, ss = start_ms / 1000
+    ).output(output, **output_kwargs)
+    
+    Utils.run_ffmpeg_silent(node, FFMPEG_PATH)
 
     trimmed_audio            = OggOpus(output)
     trimmed_audio["AUTHOR"]  = author_b64_new

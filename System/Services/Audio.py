@@ -12,6 +12,8 @@ from System.Common.Constants import (
     FFPROBE_PATH
 )
 
+from System.Common import Utils
+
 class NoAudioStreams(Exception):
     pass
 
@@ -49,13 +51,13 @@ def ensure_wav(path: str) -> str:
     temp_file.close()
 
     try:
-        (
-            ffmpeg
-            .input(path)
-            .output(temp_path, acodec="pcm_s16le", ar=audio_streams[0].get("sample_rate", 44100))
-            .overwrite_output()
-            .run(cmd = FFMPEG_PATH, quiet = True)
+        node = ffmpeg.input(path).output(
+            temp_path, 
+            acodec = "pcm_s16le", 
+            ar = audio_streams[0].get("sample_rate", 44100)
         )
+
+        Utils.run_ffmpeg_silent(node, FFMPEG_PATH)
     
     except ffmpeg.Error as e:
         stderr = e.stderr.decode(errors="ignore") if e.stderr else ""

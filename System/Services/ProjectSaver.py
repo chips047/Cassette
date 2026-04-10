@@ -366,16 +366,14 @@ class BaseComposition:
             )
 
         try:
-            (
-                ffmpeg
-                .output(stream, output_path, acodec = "libopus", ar = 48000)
-                .overwrite_output()
-                .run(
-                    cmd            = FFMPEG_PATH,
-                    capture_stdout = True,
-                    capture_stderr = True
-                )
+            node = ffmpeg.output(
+                stream,
+                output_path,
+                acodec = "libopus",
+                ar     = 48000
             )
+
+            Utils.run_ffmpeg_silent(node, FFMPEG_PATH)
 
         except ffmpeg.Error as error:
             logger.critical(error.stderr.decode("utf-8", errors = "ignore"))
