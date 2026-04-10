@@ -371,12 +371,12 @@ class BaseComposition:
             "dynaudnorm"
         ]
 
-        if fade_in > 0:
+        if fade_in:
             fade_in_s = fade_in / 1000.0
             
             filters.append(f"afade=t=in:st=0:d={fade_in_s}")
 
-        if fade_out > 0:
+        if fade_out:
             fade_out_s = fade_out / 1000.0
             fade_start = max(0.0, duration_sec - fade_out_s)
             
