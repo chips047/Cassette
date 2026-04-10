@@ -1334,6 +1334,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             self.bpm = int(bpm)
 
         if self.bpm_animations_enabled and not self.enable_advanced_beat_animations:
+            self.bpm_timer.stop()
             self.bpm_timer.setInterval(60000 // self.bpm)
             self.bpm_timer.start()
 
@@ -2862,7 +2863,6 @@ class AudioEditorBase(AudioLoadingDialog):
         super().on_cancel()
 
 class BPMEditorBase(AudioEditorBase):
-
     def setup_bpm_section(self) -> None:
         self.bpm_thread = None
         self.bpm_worker = None
@@ -3003,9 +3003,13 @@ class BPMEditorBase(AudioEditorBase):
         self.bpm_input.setPlaceholderText("BPM")
         self.shrink_bpm_input()
 
-    def on_bpm_changed(self, value: str) -> None:
-        if not value:
+    def on_bpm_changed(self, value: int) -> None:
+        if not value or value < 1:
             return
+
+        self.bpm_animation_timer.stop()
+        self.bpm_animation_timer.setInterval(60000 // int(value) // 4)
+        self.bpm_animation_timer.start()
 
         self.update_bpm(int(value))
 
