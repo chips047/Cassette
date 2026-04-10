@@ -5,7 +5,6 @@ import copy
 import json
 import random
 import shutil
-import ffmpeg
 
 from loguru import (
     logger
@@ -39,23 +38,49 @@ from System.Common.Constants import (
 # Utility Functions
 
 def get_audio_duration_ms(file_path: str) -> int:
-    probe        = ffmpeg.probe(file_path, cmd = FFPROBE_PATH)
-    duration_sec = float(probe["format"]["duration"])
-    
+    cmd = [
+        FFPROBE_PATH,
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "json",
+        file_path,
+    ]
+
+    result = Utils.run_hidden(cmd)
+
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "ffprobe failed")
+
+    data = json.loads(result.stdout)
+    duration_sec = float(data["format"]["duration"])
+
     return int(duration_sec * 1000)
 
 def get_metadata(file_path: str) -> tuple[str | None, str]:
+    cmd = [
+        FFPROBE_PATH,
+        "-v", "error",
+        "-show_entries", "format_tags=title,artist,TITLE,ARTIST",
+        "-of", "json",
+        file_path
+    ]
+
     try:
-        probe = ffmpeg.probe(file_path, cmd = FFPROBE_PATH)
+        result = Utils.run_hidden(cmd)
+        if result.returncode != 0:
+            return None, "Unknown Artist"
 
-    except ffmpeg.Error:
+        data = json.loads(result.stdout)
+        tags = data.get("format", {}).get("tags", {})
+
+        title = tags.get("title") or tags.get("TITLE")
+        artist = tags.get("artist") or tags.get("ARTIST") or "Unknown Artist"
+
+        return title, artist
+
+    except Exception:
+        logger.error("Unable to get metadata from the audio.")
         return None, "Unknown Artist"
-
-    tags   = probe.get("format", {}).get("tags", {})
-    title  = tags.get("title") or tags.get("TITLE")
-    artist = tags.get("artist") or tags.get("ARTIST") or "Unknown Artist"
-
-    return title, artist
 
 class SyncedDict(dict):
     def __init__(
@@ -338,45 +363,46 @@ class BaseComposition:
         
         start_time   = start_ms / 1000.0
         end_time     = end_ms / 1000.0
-        duration_sec = (end_ms - start_ms) / 1000.0
+        duration_sec = max(0.0, (end_ms - start_ms) / 1000.0)
 
-        stream = ffmpeg.input(input_path)
-        stream = ffmpeg.filter(stream, "atrim", start = start_time, end = end_time)
-        stream = ffmpeg.filter(stream, "asetpts", expr = "PTS-STARTPTS")
-        stream = ffmpeg.filter(stream, "dynaudnorm")
+        filters = [
+            f"atrim=start={start_time}:end={end_time}",
+            "asetpts=PTS-STARTPTS",
+            "dynaudnorm"
+        ]
 
-        if fade_in:
-            stream = ffmpeg.filter(
-                stream,
-                "afade",
-                type       = "in",
-                start_time = 0,
-                duration   = fade_in / 1000.0,
-            )
-
-        if fade_out:
-            fade_start = max(0.0, duration_sec - fade_out / 1000.0)
+        if fade_in > 0:
+            fade_in_s = fade_in / 1000.0
             
-            stream = ffmpeg.filter(
-                stream,
-                "afade",
-                type       = "out",
-                start_time = fade_start,
-                duration   = fade_out / 1000.0,
-            )
+            filters.append(f"afade=t=in:st=0:d={fade_in_s}")
 
-        try:
-            node = ffmpeg.output(
-                stream,
-                output_path,
-                acodec = "libopus",
-                ar     = 48000
-            )
+        if fade_out > 0:
+            fade_out_s = fade_out / 1000.0
+            fade_start = max(0.0, duration_sec - fade_out_s)
+            
+            filters.append(f"afade=t=out:st={fade_start}:d={fade_out_s}")
 
-            Utils.run_ffmpeg_silent(node, FFMPEG_PATH)
+        afilter = ",".join(filters)
 
-        except ffmpeg.Error as error:
-            logger.critical(error.stderr.decode("utf-8", errors = "ignore"))
+        cmd = [
+            FFMPEG_PATH,
+            "-y",
+            "-v", "error",
+            "-i", input_path,
+            "-vn",
+            "-af", afilter,
+            "-c:a", "libopus",
+            "-ar", "48000",
+            output_path
+        ]
+
+        result = Utils.run_hidden(cmd)
+
+        if result.returncode != 0:
+            err = (result.stderr or "").strip()
+            logger.critical(err)
+
+            raise RuntimeError(err or "ffmpeg failed")
 
     def sorted_glyphs(self) -> tuple[list[dict], list[dict]]:
         singles: list[dict] = []

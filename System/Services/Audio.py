@@ -1,11 +1,13 @@
 import time
+import json
 import aubio
 import numpy
-import ffmpeg
 import tempfile
 import soundfile
 
 from loguru import logger
+
+from pathlib import Path
 
 from System.Common.Constants import (
     FFMPEG_PATH,
@@ -23,51 +25,105 @@ class PermissionError(Exception):
 class CorruptedFileError(Exception):
     pass
 
-def ensure_wav(path: str) -> str:
+def probe_audio(path: str) -> dict:
+    cmd = [
+        FFPROBE_PATH,
+        "-v", "error",
+        "-print_format", "json",
+        "-show_streams",
+        "-show_format",
+        path,
+    ]
+
     try:
-        probe = ffmpeg.probe(path, cmd=FFPROBE_PATH)
-    
-    except ffmpeg.Error:
-        raise CorruptedFileError("The audio file is corrupted or in an unsupported format.")
+        result = Utils.run_hidden(cmd)
     
     except FileNotFoundError:
+        raise FileNotFoundError("FFprobe was not found.")
+
+    if result.returncode != 0:
+        raise CorruptedFileError(
+            "The audio file is corrupted or in an unsupported format."
+        )
+
+    try:
+        return json.loads(result.stdout)
+    
+    except json.JSONDecodeError:
+        raise CorruptedFileError(
+            "The audio file is corrupted or in an unsupported format."
+        )
+
+def ensure_wav(path: str) -> str:
+    path_obj = Path(path)
+
+    if not path_obj.exists():
         raise FileNotFoundError("The specified audio file was not found.")
 
-    audio_streams = [s for s in probe["streams"] if s["codec_type"] == "audio"]
+    try:
+        probe = probe_audio(path)
+    
+    except FileNotFoundError:
+        raise
+    
+    except Exception:
+        raise CorruptedFileError(
+            "The audio file is corrupted or in an unsupported format."
+        )
+
+    audio_streams = [
+        s for s in probe.get("streams", [])
+        if s.get("codec_type") == "audio"
+    ]
 
     if not audio_streams:
         raise NoAudioStreams()
 
-    fmt = probe.get("format", {}).get("format_name", "")
+    fmt = probe.get("format", {}).get("format_name", "").lower()
 
-    if "wav" in fmt and path.lower().endswith(".wav"):
+    if "wav" in fmt and path_obj.suffix.lower() == ".wav":
         logger.warning("Audio is WAV. Not converting.")
-        return path
+        return str(path_obj)
 
     logger.warning("Audio is not WAV. Starting conversion...")
+
+    sample_rate = audio_streams[0].get("sample_rate", "44100")
 
     temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     temp_path = temp_file.name
     temp_file.close()
 
+    cmd = [
+        FFMPEG_PATH,
+        "-y",
+        "-v", "error",
+        "-i", path,
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", str(sample_rate),
+        temp_path
+    ]
+
     try:
-        node = ffmpeg.input(path).output(
-            temp_path, 
-            acodec = "pcm_s16le", 
-            ar = audio_streams[0].get("sample_rate", 44100)
-        )
+        result = Utils.run_hidden(cmd)
 
-        Utils.run_ffmpeg_silent(node, FFMPEG_PATH)
-    
-    except ffmpeg.Error as e:
-        stderr = e.stderr.decode(errors="ignore") if e.stderr else ""
-        
-        if "permission" in stderr.lower():
-            raise PermissionError("Permission error while accessing the file. Please check if the file is open in another application.")
-        
-        raise CorruptedFileError("The audio file is corrupted or in an unsupported format.")
+        if result.returncode != 0:
+            stderr = (result.stderr or "").lower()
 
-    return temp_path
+            if "permission" in stderr or "access is denied" in stderr:
+                raise PermissionError(
+                    "Permission error while accessing the file. "
+                    "Please check if the file is open in another application."
+                )
+
+            raise CorruptedFileError(
+                "The audio file is corrupted or in an unsupported format."
+            )
+
+        return temp_path
+
+    except FileNotFoundError:
+        raise FileNotFoundError("FFmpeg was not found.")
 
 def analyze_bpm_and_beats(
     audio_path:  str,

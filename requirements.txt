@@ -6,4 +6,3 @@ soundfile
 miniaudio
 PyOpenGL
 mutagen
-ffmpeg-python

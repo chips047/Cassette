@@ -2,7 +2,6 @@ import json
 import math
 import zlib
 import base64
-import ffmpeg
 import shutil
 
 from loguru import logger
@@ -661,29 +660,37 @@ def trim_glyphs_ogg(
         custom1_b64_new = encode_base64(zlib.compress(custom1_raw_new, zlib.Z_BEST_COMPRESSION))
 
     clip_duration_s = max(0.0, (end_ms - start_ms) / 1000.0)
-    fade_filters, audio_codec = build_audio_fade_filters(clip_duration_s, fade_in_ms, fade_out_ms)
+    
+    fade_filters, audio_codec = build_audio_fade_filters(
+        clip_duration_s,
+        fade_in_ms,
+        fade_out_ms
+    )
 
-    output_kwargs = {
-        "t": clip_duration_s
-    }
+    cmd = [
+        FFMPEG_PATH,
+        "-y",
+        "-v", "error",
+        "-ss", str(start_ms / 1000.0),
+        "-t", str(clip_duration_s),
+        "-i", path,
+        "-vn",
+        "-map_metadata", "0"
+    ]
 
     if fade_filters:
-        output_kwargs["acodec"] = audio_codec or "libopus"
-        output_kwargs["af"]     = fade_filters
+        cmd += ["-af", fade_filters, "-c:a", audio_codec or "libopus"]
     
     else:
-        output_kwargs["acodec"] = "copy"
+        cmd += ["-c:a", "copy"]
 
-    node = ffmpeg.input(
-        path, ss = start_ms / 1000
-    ).output(output, **output_kwargs)
-    
-    Utils.run_ffmpeg_silent(node, FFMPEG_PATH)
+    cmd.append(output)
 
-    trimmed_audio            = OggOpus(output)
-    trimmed_audio["AUTHOR"]  = author_b64_new
+    Utils.run_hidden(cmd)
+
+    trimmed_audio = OggOpus(output)
+    trimmed_audio["AUTHOR"] = author_b64_new
     trimmed_audio["CUSTOM1"] = custom1_b64_new
-
     trimmed_audio.save()
 
 class LabelsNoModelError(Exception):
