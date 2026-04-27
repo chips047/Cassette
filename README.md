@@ -76,8 +76,7 @@ To enable live ringtone preview on a connected phone:
 
 ## Roadmap
 
-* Undo / Redo
-* Import from BNGC and Audacity Label File.
+* Enhance cross - platform stability.
 * MAYBE an auto ringtone creator.
 
 ## Contact
