@@ -402,6 +402,7 @@ class FadeScrollArea(QScrollArea):
 
 class MainMenu(QWidget):
     composition_created = pyqtSignal(object)
+    edit_requested      = pyqtSignal(str)
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -541,16 +542,12 @@ class MainMenu(QWidget):
         ]
 
         for text, is_accent, slot_name in buttons_data:
-            button = QPushButton(text)
-            button.setFont(Utils.NType(13))
-            button.setCursor(Qt.PointingHandCursor)
-            button.setStyleSheet(
-                Styles.Buttons.MainMenu.AccentButton if is_accent
-                else Styles.Buttons.MainMenu.NormalButton
+            button = Basic.OptionButton(
+                text,
+                is_accent,
+                getattr(self, slot_name)
             )
-            button.setFixedHeight(50)
-            button.clicked.connect(getattr(self, slot_name))
-            
+
             layout.addWidget(button)
 
         panel.setStyleSheet("background-color: transparent;")
@@ -731,8 +728,8 @@ class MainMenu(QWidget):
         webbrowser.open("https://glyphtones.firu.dev/")
 
     def on_edit_project(self, project_id: str) -> None:
-        composition = ProjectSaver.Composition(id = project_id)
-        self.composition_created.emit(composition)
+        self.setEnabled(False)
+        self.edit_requested.emit(project_id)
 
     def ask_for_file(self) -> str | None:
         options  = QFileDialog.Options()
