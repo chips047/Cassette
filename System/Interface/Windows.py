@@ -773,13 +773,22 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         QApplication.setCursorFlashTime(interval_ms)
 
-        self.animation_engine.animate(
-            "scale",
-            [
+        if CURRENT_SETTINGS.get("window_bpm_animation_style") == "pulse":
+            keyframes = [
                 (0.0, 1.0),
                 (0.5, self.bpm_peak_scale + self.squish(audio_level)),
                 (1.0, 1.0)
-            ],
+            ]
+        
+        else:
+            keyframes = [
+                (0.0, self.bpm_peak_scale + self.squish(audio_level)),
+                (1.0, 1.0)
+            ]
+
+        self.animation_engine.animate(
+            "scale",
+            keyframes,
             interval_ms,
             LoomEngine.Easing.ease_out_cubic,
             do_not_multiply_duration = True
@@ -1220,12 +1229,12 @@ class FloatingWindowGPU(QOpenGLWidget):
         else:
             if not self.content_widget.geometry().contains(event.pos()):
                 return
-
+        
         self.drag_pos = event.globalPos() - self.frameGeometry().topLeft()
         self.move_start_animation()
-        
-        QTimer.singleShot(0, self.window().windowHandle().startSystemMove)
-        
+
+        self.window().windowHandle().startSystemMove()
+    
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
@@ -1427,7 +1436,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         }.get(self.animation_style))
 
     def squish(self, x: float, power: float = 1.2) -> float:
-        return 0.05 * (x ** power)
+        return 0.075 * (x ** power)
 
     def get_window_size(self) -> tuple[int, int]:
         geometry = self.content_widget.geometry()
@@ -2500,7 +2509,6 @@ class Tutorial(FloatingWindowGPU):
         if effect:
             effect()
 
-
 # Workers
 
 class PrepareWorker(QObject):
@@ -3004,7 +3012,7 @@ class BPMEditorBase(AudioEditorBase):
         self.shrink_bpm_input()
 
     def on_bpm_changed(self, value: int) -> None:
-        if not value or value < 1:
+        if not value or int(value) < 1:
             return
 
         self.bpm_animation_timer.stop()
@@ -3137,6 +3145,7 @@ class AudioSetupDialog(BPMEditorBase):
 
         if self.beat_count % 4 == 0:
             self.animation_title_scale(peak_scale = 1.4, duration = 200)
+        
         else:
             self.animation_title_scale(peak_scale = 1.1, duration = 120)
 
