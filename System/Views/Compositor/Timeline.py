@@ -192,6 +192,8 @@ class ScrollableContent(QGraphicsView):
 
         self.playhead_hover.hide()
 
+        self.setStyleSheet("border: none;")
+
     def setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+="), self).activated.connect(lambda: self.scale_view(+100))
         QShortcut(QKeySequence("Ctrl+-"), self).activated.connect(lambda: self.scale_view(-100))
@@ -376,9 +378,12 @@ class ScrollableContent(QGraphicsView):
 
     def scale_view(
             self,
-            delta: float,
-            force_update: bool = False
+            delta:        float = 0,
+            force_update: bool  = False
         ) -> None:
+
+        if not self.total_content_width:
+            return
         
         viewport_width = self.viewport().width()
         current_scroll = self.horizontalScrollBar().value()
@@ -535,6 +540,31 @@ class ScrollableContent(QGraphicsView):
         self.draw_beat_lines(painter, rect)
         self.draw_ruler(painter, rect)
         self.draw_track_grid(painter, rect)
+
+    def drawForeground(
+            self,
+            painter: QPainter,
+            rect: QRectF
+        ) -> None:
+        
+        painter.resetTransform()
+
+        radius    = 16
+        view_rect = self.viewport().rect()
+
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        full = QPainterPath()
+        full.addRect(QRectF(view_rect))
+
+        rounded = QPainterPath()
+        rounded.addRoundedRect(QRectF(view_rect), radius, radius)
+
+        mask = full.subtracted(rounded)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(31, 31, 31))
+        painter.drawPath(mask)
 
     def draw_waveform(self, painter: QPainter, rect: QRectF) -> None:
         if self.playback_manager.data is None or len(self.playback_manager.data) == 0:
@@ -897,7 +927,9 @@ class ScrollableContent(QGraphicsView):
         settings.sync()
         Constants.load_settings()
 
-        QTimer.singleShot(0, self.tutorial_window.exec_)
+        QTimer.singleShot(0, self.tutorial_window.show)
+
+        return True
 
     # Misc
 
@@ -911,7 +943,7 @@ class ScrollableContent(QGraphicsView):
 
     def resizeEvent(self, event: QEvent) -> None:
         super().resizeEvent(event)
-        self.scale_view(0)
+        self.scale_view()
         self.update_scene_rect()
 
     # Events
