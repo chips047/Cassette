@@ -36,7 +36,8 @@ from PyQt5.QtGui import (
     QWheelEvent,
     QFontMetrics,
     QPainterPath,
-    QResizeEvent
+    QResizeEvent,
+    QLinearGradient
 )
 
 from PyQt5.QtWidgets import (
@@ -262,7 +263,7 @@ class MiniWaveformPreview(QWidget):
 
     def set_audio_data(self, audio: np.ndarray) -> None:
         self.audio = audio
-        
+
         self.prepare_audio_data()
         self.regenerate_pixmap()
         self.update()
@@ -278,22 +279,11 @@ class MiniWaveformPreview(QWidget):
             self.min_samples  = np.array([])
             self.max_samples  = np.array([])
             self.waveform_max = 1.0
-            
+
             return
 
-        total          = audio.shape[0]
-        fade_in_length = min(int(total * 0.03), total)
-        fade_out_len   = min(int(total * 0.03), max(0, total - fade_in_length))
-        processed      = audio.astype(np.float32, copy = True)
-
-        if fade_in_length > 0:
-            processed[:fade_in_length, :] *= np.linspace(0.0, 1.0, fade_in_length, dtype=np.float32)[:, None]
-
-        if fade_out_len > 0:
-            processed[total - fade_out_len:, :] *= np.linspace(1.0, 0.0, fade_out_len, dtype=np.float32)[:, None]
-
-        self.min_samples = np.min(processed, axis=1)
-        self.max_samples = np.max(processed, axis=1)
+        self.min_samples = np.min(audio, axis=1).astype(np.float32)
+        self.max_samples = np.max(audio, axis=1).astype(np.float32)
 
         max_absolute      = max(np.max(np.abs(self.min_samples)), np.max(np.abs(self.max_samples)))
         self.waveform_max = max(max_absolute, 1e-6)
@@ -317,7 +307,7 @@ class MiniWaveformPreview(QWidget):
         if pad_needed:
             padded_min = np.pad(min_samples, (0, pad_needed), mode = 'constant')
             padded_max = np.pad(max_samples, (0, pad_needed), mode = 'constant')
-        
+
         else:
             padded_min = min_samples
             padded_max = max_samples
@@ -338,7 +328,7 @@ class MiniWaveformPreview(QWidget):
 
         if top.size == bottom.size:
             mask = top > bottom
-            
+
             if np.any(mask):
                 average      = (top[mask] + bottom[mask]) * 0.5
                 top[mask]    = average
@@ -370,6 +360,19 @@ class MiniWaveformPreview(QWidget):
         painter.setPen(QPen(QColor(170, 170, 170, 255), 2.0))
         painter.setBrush(QBrush(QColor(255, 255, 255, 100)))
         painter.drawPath(path)
+
+        fade_width = width * 0.05
+
+        gradient = QLinearGradient(0.0, 0.0, float(width), 0.0)
+        gradient.setColorAt(0.0,                          QColor(0, 0, 0, 0))
+        gradient.setColorAt(fade_width / width,           QColor(0, 0, 0, 255))
+        gradient.setColorAt(1.0 - fade_width / width,     QColor(0, 0, 0, 255))
+        gradient.setColorAt(1.0,                          QColor(0, 0, 0, 0))
+
+        painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+        painter.fillRect(0, 0, width, height, QBrush(gradient))
+        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+
         painter.end()
 
         return pixmap
@@ -380,45 +383,44 @@ class MiniWaveformPreview(QWidget):
     # Events
 
     def paintEvent(self, event: QPaintEvent) -> None:
-        painter = QPainter(self)
-
         if not self.pixmap:
             return
+
+        painter = QPainter(self)
 
         painter.drawPixmap(2, 5, self.pixmap)
 
         x = float(self.width()) * self.playhead_position
-        
+
         painter.setPen(QPen(QColor(255, 0, 0), 2.0))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        
         painter.drawLine(QLineF(x, 0.0, x, float(self.height())))
-        
+
         painter.end()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if not self.pixmap:
+        if not self.pixmap or event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
             return
-        
-        if event.button() != Qt.MouseButton.LeftButton:
-            super().mousePressEvent(event)
-            return
-        
+
         self.mouse_pressed = True
         normalized         = float(np.clip(event.x() / float(max(1, self.width())), 0.0, 1.0))
-        
+
         self.set_playhead_position(normalized)
         self.preview_clicked.emit(normalized)
 
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if not self.mouse_pressed:
+            super().mouseMoveEvent(event)
+            return
+
         normalized = float(np.clip(event.x() / float(max(1, self.width())), 0.0, 1.0))
-        
+
         self.set_playhead_position(normalized)
         self.preview_clicked.emit(normalized)
-        
+
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -427,7 +429,7 @@ class MiniWaveformPreview(QWidget):
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        
+
         if self.isVisible():
             self.regenerate_pixmap()
             self.update()
