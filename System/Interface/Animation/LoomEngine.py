@@ -1004,7 +1004,8 @@ class PropertyNode:
             self.animations.clear()
 
     def update(self, delta_ms: int) -> None:
-        running_animations = []
+        running_animations  = []
+        any_animation_ended = False
 
         for animation in self.animations:
             animation.update(delta_ms)
@@ -1013,7 +1014,8 @@ class PropertyNode:
                 running_animations.append(animation)
                 continue
 
-            final_value = animation.get_value()
+            any_animation_ended = True
+            final_value         = animation.get_value()
 
             if self.mode == MixMode.MULTIPLY:
                 self.base_value = AnimMath.mul(self.base_value, final_value)
@@ -1064,7 +1066,8 @@ class PropertyNode:
         should_update = (
             AnimMath.is_diff(self.cached_value, self.target_value) or
             bool(self.animations) or
-            self.is_targeting
+            self.is_targeting or
+            any_animation_ended
         )
 
         if should_update:

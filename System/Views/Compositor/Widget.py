@@ -140,9 +140,7 @@ class CompositorWidget(QWidget):
         self.playback_manager.load_audio(path)
         self.content_widget.load_composition(composition)
 
-        self.content_widget.playhead_moved.connect(
-            self.mini_preview_widget.set_playhead_position
-        )
+        self.content_widget.playhead_moved.connect(self.mini_preview_widget.set_playhead_position)
         self.mini_preview_widget.set_audio_data(self.playback_manager.data)
 
         self.on_elements_changed()

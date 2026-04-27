@@ -954,6 +954,16 @@ SettingsDict = {
             "description": "Enables beat - synced animations.",
             "key": "bpm_animations",
             "default": True
+        },
+        {
+            "type": "selector",
+            "title": "Window BPM Animation Style",
+            "key": "window_bpm_animation_style",
+            "map": {
+                "Pulse": "pulse",
+                "Punch": "punch"
+            },
+            "default": "Pulse"
         }
     ],
 

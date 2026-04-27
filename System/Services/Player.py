@@ -270,7 +270,7 @@ class PlaybackManager(QObject):
 
         self.playback_state_changed.emit(False)
 
-    def play(self, start_position_ms: float) -> None:
+    def play(self, start_position_ms: float = 0) -> None:
         self.playback_state_changed.emit(True)
 
         with self.lock:

@@ -15,12 +15,6 @@ from PyQt5.QtGui import (
     QPainterPath
 )
 
-from PyQt5.QtCore import (
-    QEasingCurve,
-    QPropertyAnimation,
-    QParallelAnimationGroup
-)
-
 from loguru import logger
 
 def get_fox_image() -> str | None:

@@ -77,6 +77,7 @@ class Textbox(QLineEdit):
         self.arrow_pressed             = False
         self.arrow_direction           = 0
         self.glitch_steps_left         = 0
+        self.glitch_blocked            = False
         
         self.original_position         = QPoint()
         self.original_textbox_position = QPoint()
@@ -237,6 +238,11 @@ class Textbox(QLineEdit):
     ) -> None:
         
         super().keyReleaseEvent(event)
+
+        if not event.isAutoRepeat():
+            self.glitch_blocked = False
+
+            print("released")
         
         if event.key() in (Qt.Key_Left, Qt.Key_Right) and self.arrow_pressed:
             self.arrow_pressed   = False
@@ -464,6 +470,10 @@ class Textbox(QLineEdit):
         sound: bool = True
     ) -> None:
         
+        if self.glitch_blocked:
+            return
+
+        self.glitch_blocked = True
         self.glitchStarted.emit()
         
         if sound:

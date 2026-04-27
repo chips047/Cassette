@@ -201,8 +201,12 @@ class WheelController:
             self.scroll_target_velocity = 0
 
 class GlyphController(QObject):
-    elements_changed = pyqtSignal()
-    glyph_changed    = pyqtSignal(int)
+    elements_changed       = pyqtSignal()
+    glyph_changed          = pyqtSignal(int)
+
+    glyph_spawned          = pyqtSignal()
+    glyph_moved_or_resized = pyqtSignal()
+    glyph_deleted          = pyqtSignal()
 
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__()
@@ -225,7 +229,7 @@ class GlyphController(QObject):
             Qt.Key.Key_8:     "8",
             Qt.Key.Key_9:     "9",
             Qt.Key.Key_0:     "10",
-            Qt.Key.Key_Minus: "11",
+            Qt.Key.Key_Minus: "11"
         }
 
         self.undo_stack        = []
@@ -256,6 +260,7 @@ class GlyphController(QObject):
             for gid in selected_glyph_ids
             if (data := self.composition.get_glyph(gid))
         }
+
         after_state = {
             gid: {**copy.deepcopy(data), key: value}
             for gid, data in before_state.items()
@@ -277,6 +282,7 @@ class GlyphController(QObject):
                 Actions.ActionDelete |
                 Actions.EditFadeKeyframesCommand
     ) -> None:
+        
         if isinstance(action, Actions.ActionModify) and action.glyphs_before_modify == action.glyphs_after_modify:
             return
 
@@ -368,6 +374,7 @@ class GlyphController(QObject):
         if push_undo and deleted_batch:
             self.push_action(Actions.ActionDelete(self, deleted_batch))
 
+        self.glyph_deleted.emit()
         self.elements_changed.emit()
 
     def spawn_glyph_on_track(self, track_index: int) -> None:
@@ -388,6 +395,7 @@ class GlyphController(QObject):
 
         self.composition.syncer.pulse_track(track_index)
         
+        self.glyph_spawned.emit()
         self.elements_changed.emit()
 
     def copy_glyphs(self) -> None:
@@ -445,7 +453,7 @@ class GlyphController(QObject):
         glyphs_id:       list[int],
         reset_selection: bool = True,
         set_selected:    bool = True,
-        animate_spawn:   bool = True,
+        animate_spawn:   bool = True
     ) -> None:
         
         for glyph_id in glyphs_id:
@@ -543,6 +551,8 @@ class GlyphController(QObject):
 
         self.drag_session      = {}
         self.temp_before_state = {}
+
+        self.glyph_moved_or_resized.emit()
 
     def commit_fade_keyframes(self, glyph_id: int, new_keyframes: list[tuple[float, int]]) -> None:
         original_glyph = self.conductor.composition.get_glyph(glyph_id)

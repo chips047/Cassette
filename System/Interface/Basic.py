@@ -288,6 +288,29 @@ class NavButton(QPushButton):
         style = self.active_style if is_active else self.inactive_style
         self.setStyleSheet(style)
 
+class OptionButton(QPushButton):
+    def __init__(
+            self,
+            text:     str,
+            accent:   bool   = False,
+            callback: object = None
+        ) -> None:
+        
+        super().__init__(text)
+
+
+        self.setStyleSheet(
+            Styles.Buttons.MainMenu.AccentButton if accent
+            else Styles.Buttons.MainMenu.NormalButton
+        )
+
+        self.setFixedHeight(50)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFont(Utils.NType(13))
+
+        if callback:
+            self.clicked.connect(callback)
+
 class TitleLabel(QLabel):
     def __init__(self, text: str) -> None:
         super().__init__(text)

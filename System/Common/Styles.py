@@ -1,8 +1,9 @@
 def make_button_style(
-        bg_color:    str,
-        hover_color: str,
-        border:      str = None,
-        rounding:    int = 16
+        bg_color:          str,
+        hover_color:       str,
+        border:            str = None,
+        rounding:          int = 16,
+        deactivated_color: str = "#777777"
     ) -> str:
     
     base = f"""
@@ -20,7 +21,7 @@ def make_button_style(
         }}
 
         QPushButton:disabled {{
-            background-color: #777777;
+            background-color: {deactivated_color};
             color: #dddddd;
         }}
     """
@@ -127,19 +128,22 @@ class Buttons:
         AccentButton = make_button_style(
             Colors.NothingAccent,
             Colors.NothingAccentHover,
-            rounding = 20
+            rounding          = 20,
+            deactivated_color = Colors.NothingAccent
         )
 
         NormalButton = make_button_style(
             Colors.MainMenu.Button,
             Colors.MainMenu.ButtonHover,
-            rounding = 20
+            rounding          = 20,
+            deactivated_color = Colors.MainMenu.Button
         )
 
         SmallButton = make_button_style(
             Colors.MainMenu.SmallButton,
             Colors.MainMenu.SmallButtonHover,
-            rounding = 14
+            rounding          = 14,
+            deactivated_color = Colors.MainMenu.SmallButton
         )
 
     class Settings:
