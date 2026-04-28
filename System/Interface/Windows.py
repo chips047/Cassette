@@ -1233,7 +1233,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.drag_pos = event.globalPos() - self.frameGeometry().topLeft()
         self.move_start_animation()
 
-        self.window().windowHandle().startSystemMove()
+        QTimer.singleShot(0, self.window().windowHandle().startSystemMove)
     
         event.accept()
 
