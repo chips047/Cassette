@@ -9,6 +9,15 @@ from functools import partial
 
 from loguru import logger
 
+if getattr(sys, "frozen", False):
+    base_directory = sys._MEIPASS
+
+else:
+    base_directory = os.path.dirname(os.path.abspath(__file__))
+
+os.chdir(base_directory)
+sys.path.insert(0, base_directory)
+
 from PyQt5.QtCore import (
     Qt,
     QRect,
@@ -69,15 +78,6 @@ from System.Views.Compositor import CompositorWidget
 from System.Views.ProjectMenu import MainMenu
 
 # Initialization
-
-if getattr(sys, "frozen", False):
-    base_directory = sys._MEIPASS
-
-else:
-    base_directory = os.path.dirname(os.path.abspath(__file__))
-
-os.chdir(base_directory)
-sys.path.insert(0, base_directory)
 
 is_processing_exception = False
 
