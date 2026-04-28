@@ -1692,7 +1692,7 @@ class ErrorWindow(FloatingWindowGPU):
 
 class About(FloatingWindowGPU):
     def __init__(self):
-        super().__init__(f"Cassette {open('version').read()} by chips047")
+        super().__init__(f"Cassette {open(Utils.get_resource_path('version')).read()} by chips047")
 
         text = (
             "The best open - source compositor. Currently in active development!\n\n"

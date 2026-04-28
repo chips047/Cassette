@@ -715,7 +715,7 @@ PortMaps = {
 }
 
 # Defaults
-STATUS_BAR_DEFAULT = f"Cassette {open('version').read()}"
+STATUS_BAR_DEFAULT = f"Cassette {open(Utils.get_resource_path('version')).read()}"
 
 DEFAULT_DURATION   = 100
 DEFAULT_BRIGHTNESS = 100
