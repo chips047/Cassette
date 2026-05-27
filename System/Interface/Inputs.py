@@ -4,12 +4,12 @@ import webbrowser
 
 from loguru import logger
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
     QIcon,
     QMouseEvent
 )
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     QEvent,
     QPoint,
@@ -20,7 +20,7 @@ from PyQt5.QtCore import (
     QPropertyAnimation
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QFrame,
     QLabel,
     QSlider,
@@ -37,7 +37,8 @@ from PyQt5.QtWidgets import (
 
 from System.Common import (
     Utils,
-    Styles
+    Styles,
+    Constants
 )
 
 from System.Interface import (
@@ -46,8 +47,6 @@ from System.Interface import (
 )
 
 from System.Services import Player
-
-from System.Common.Constants import CURRENT_SETTINGS
 
 class Textbox(QLineEdit):
     safeTextChanged = pyqtSignal(str)
@@ -85,8 +84,10 @@ class Textbox(QLineEdit):
         if placeholder:
             self.setPlaceholderText(placeholder)
         
-        self.setFont(Utils.NType(14))
+        self.setFont(Utils.NType(11))
         self.setStyleSheet(Styles.Controls.FloatingTextBox)
+
+        self.setAcceptDrops(False)
         
         self.textChanged.connect(self.schedule_input_animation)
         self.textChanged.connect(self.safe_emit)
@@ -110,18 +111,18 @@ class Textbox(QLineEdit):
         self.original_text = super().text()
     
     def setup_animations(self) -> None:
-        self.animations_enabled = CURRENT_SETTINGS["textbox_animations"]
+        self.animations_enabled = Constants.current_settings["textbox_animations"]
         
         if not self.animations_enabled:
             return
         
         self.input_field_animation = QPropertyAnimation(self, b"pos")
         self.input_field_animation.setDuration(250)
-        self.input_field_animation.setEasingCurve(QEasingCurve.OutExpo)
+        self.input_field_animation.setEasingCurve(QEasingCurve.Type.OutExpo)
         
         self.shake_animation = QPropertyAnimation(self, b"pos")
         self.shake_animation.setDuration(100)
-        self.shake_animation.setEasingCurve(QEasingCurve.Linear)
+        self.shake_animation.setEasingCurve(QEasingCurve.Type.Linear)
     
     # Events
 
@@ -158,15 +159,15 @@ class Textbox(QLineEdit):
             return super().keyPressEvent(event)
         
         control_keys = {
-            Qt.Key_End,
-            Qt.Key_Home,
-            Qt.Key_Left,
-            Qt.Key_Right,
-            Qt.Key_Enter,
-            Qt.Key_Shift,
-            Qt.Key_Delete,
-            Qt.Key_Return,
-            Qt.Key_Backspace
+            Qt.Key.Key_End,
+            Qt.Key.Key_Home,
+            Qt.Key.Key_Left,
+            Qt.Key.Key_Right,
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Shift,
+            Qt.Key.Key_Delete,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Backspace
         }
         
         if key in control_keys:
@@ -179,7 +180,7 @@ class Textbox(QLineEdit):
         else:
             return super().keyPressEvent(event)
         
-        if not (key in (Qt.Key_Left, Qt.Key_Right) or self.is_key_pressed):
+        if not (key in (Qt.Key.Key_Left, Qt.Key.Key_Right) or self.is_key_pressed):
             self.start_shake_animation()
     
     def handle_arrow_keys(
@@ -188,15 +189,15 @@ class Textbox(QLineEdit):
         current_text: str
     ) -> bool:
 
-        is_arrow         = key in (Qt.Key_Left, Qt.Key_Right)
+        is_arrow         = key in (Qt.Key.Key_Left, Qt.Key.Key_Right)
         can_animate      = self.animations_enabled and not self.arrow_pressed and current_text
         
         if is_arrow and can_animate:
-            direction = -1 if key == Qt.Key_Left else 1
+            direction = -1 if key == Qt.Key.Key_Left else 1
             position  = self.cursorPosition() + direction
             tone      = 0.85 + (position / len(current_text)) * 0.4
             
-            Player.ui_player.play_sound("ArrowTick", speed = tone)
+            Player.ui_player.play_sound("Textbox/ArrowTick", speed = tone)
             
             self.arrow_pressed   = True
             self.arrow_direction = direction
@@ -219,6 +220,8 @@ class Textbox(QLineEdit):
         
         if not self.validate_new_text(new_text, new_char):
             self.start_glitch()
+            self.glitch_blocked = True
+            
             return False
         
         super().keyPressEvent(event)
@@ -241,10 +244,8 @@ class Textbox(QLineEdit):
 
         if not event.isAutoRepeat():
             self.glitch_blocked = False
-
-            print("released")
         
-        if event.key() in (Qt.Key_Left, Qt.Key_Right) and self.arrow_pressed:
+        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right) and self.arrow_pressed:
             self.arrow_pressed   = False
             self.arrow_direction = 0
             self.animate_return_from_arrow()
@@ -256,14 +257,14 @@ class Textbox(QLineEdit):
         
         self.shake_timer.stop()
         
-        if self.shake_animation.state() == QPropertyAnimation.Running:
+        if self.shake_animation.state() == QPropertyAnimation.State.Running:
             self.shake_animation.stop()
         
-        if CURRENT_SETTINGS["textbox_animations"]:
+        if Constants.current_settings["textbox_animations"]:
             self.shake_animation.setStartValue(self.pos())
             self.shake_animation.setEndValue(self.original_textbox_position)
             self.shake_animation.setDuration(250)
-            self.shake_animation.setEasingCurve(QEasingCurve.OutQuad)
+            self.shake_animation.setEasingCurve(QEasingCurve.Type.OutQuad)
             self.shake_animation.start()
 
     # API
@@ -447,12 +448,12 @@ class Textbox(QLineEdit):
             elif delta <= 1:
                 tone = 1.2
 
-        Player.ui_player.play_sound("Tick", speed = tone)
+        Player.ui_player.play_sound("Textbox/Tick", speed = tone)
         
         if not self.animations_enabled:
             return
         
-        if self.input_field_animation.state() == QAbstractAnimation.Running:
+        if self.input_field_animation.state() == QAbstractAnimation.State.Running:
             self.input_field_animation.stop()
         
         self.move(self.original_textbox_position + QPoint(-5, -5))
@@ -473,13 +474,12 @@ class Textbox(QLineEdit):
         if self.glitch_blocked:
             return
 
-        self.glitch_blocked = True
         self.glitchStarted.emit()
         
         if sound:
             Player.ui_player.play_sound("Reject")
         
-        if not CURRENT_SETTINGS["textbox_animations"]:
+        if not Constants.current_settings["textbox_animations"]:
             return
         
         if self.glitch_timer.isActive():
@@ -522,26 +522,26 @@ class Textbox(QLineEdit):
         offset: int
     ) -> None:
         
-        if self.shake_animation.state() == QPropertyAnimation.Running:
+        if self.shake_animation.state() == QPropertyAnimation.State.Running:
             self.shake_animation.stop()
         
         self.shake_animation.setStartValue(self.pos())
         self.shake_animation.setEndValue(self.original_textbox_position + QPoint(offset, 0))
         self.shake_animation.setDuration(120)
-        self.shake_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self.shake_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.shake_animation.start()
     
     def animate_return_from_arrow(self) -> None:
         if not self.animations_enabled:
             return
         
-        if self.shake_animation.state() == QPropertyAnimation.Running:
+        if self.shake_animation.state() == QPropertyAnimation.State.Running:
             self.shake_animation.stop()
         
         self.shake_animation.setStartValue(self.pos())
         self.shake_animation.setEndValue(self.original_textbox_position)
         self.shake_animation.setDuration(180)
-        self.shake_animation.setEasingCurve(QEasingCurve.OutElastic)
+        self.shake_animation.setEasingCurve(QEasingCurve.Type.OutElastic)
         self.shake_animation.start()
     
     def animate_to_random_position(self) -> None:
@@ -550,13 +550,13 @@ class Textbox(QLineEdit):
         delta_y      = random.randint(-shake_radius, shake_radius)
         target_pos   = self.original_textbox_position + QPoint(delta_x, delta_y)
         
-        if self.shake_animation.state() == QPropertyAnimation.Running:
+        if self.shake_animation.state() == QPropertyAnimation.State.Running:
             self.shake_animation.stop()
         
         self.shake_animation.setStartValue(self.pos())
         self.shake_animation.setEndValue(target_pos)
         self.shake_animation.setDuration(100)
-        self.shake_animation.setEasingCurve(QEasingCurve.Linear)
+        self.shake_animation.setEasingCurve(QEasingCurve.Type.Linear)
         self.shake_animation.start()
 
 class Selector(QWidget):
@@ -571,7 +571,7 @@ class Selector(QWidget):
         super().__init__()
         
         self.setContentsMargins(0, 0, 0, 0)
-        self.setFixedHeight(50)
+        self.setFixedHeight(40)
         
         self.setup_ui(items, default_index)
     
@@ -590,11 +590,11 @@ class Selector(QWidget):
         
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        layout.setSpacing(4)
         
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
-        self.group.buttonClicked[int].connect(self.on_button_clicked)
+        self.group.buttonClicked.connect(self.on_button_clicked)
         
         for idx, text in enumerate(items):
             button = self.create_button(text, container)
@@ -612,27 +612,23 @@ class Selector(QWidget):
         
         button = QPushButton(text, parent, objectName = "segmentedButton")
         
-        button.setFont(Utils.NType(14))
+        button.setFont(Utils.NType(11))
         button.setCheckable(True)
-        button.setCursor(Qt.PointingHandCursor)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         return button
     
     def on_button_clicked(
         self,
-        id: int
+        button: QPushButton
     ) -> None:
-        
-        button = self.group.button(id)
-        
-        if not button:
-            return
-        
+
         count = len(self.group.buttons())
+        id    = self.group.id(button)
         tone  = ((id + 1) / count) ** 0.5 if count > 0 else 1.0
         
-        Player.ui_player.play_sound("Toggles/Toggle", speed = tone)
+        Player.ui_player.play_sound("Click/Toggle", speed = tone)
         self.selectionChanged.emit(id, button.text())
     
     # API
@@ -689,7 +685,7 @@ class Checkbox(QCheckBox):
         
         super().__init__(name)
         
-        self.setFont(Utils.NType(13))
+        self.setFont(Utils.NType(10))
         self.setStyleSheet(Styles.Controls.Checkbox)
         self.setChecked(default)
     
@@ -697,7 +693,7 @@ class Checkbox(QCheckBox):
         super().nextCheckState()
         
         tone = 1.0 if self.isChecked() else 0.9
-        Player.ui_player.play_sound("Toggles/Toggle", speed = tone)
+        Player.ui_player.play_sound("Click/Toggle", speed = tone)
 
 class BaseControlContainer(QWidget):
     def __init__(
@@ -718,8 +714,8 @@ class BaseControlContainer(QWidget):
         
         self.setWindowFlags(
             self.windowFlags() |
-            Qt.FramelessWindowHint |
-            Qt.NoDropShadowWindowHint
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.NoDropShadowWindowHint
         )
     
     def setup_layout(
@@ -735,8 +731,8 @@ class BaseControlContainer(QWidget):
         self.container_background.setStyleSheet(Styles.Controls.SliderBackground)
         
         self.inner_layout = inner_layout_type(self.container_background)
-        self.inner_layout.setContentsMargins(15, 10, 15, 10)
-        self.inner_layout.setSpacing(10)
+        self.inner_layout.setContentsMargins(12, 8, 12, 8)
+        self.inner_layout.setSpacing(8)
         
         main_layout.addWidget(self.container_background)
 
@@ -753,8 +749,8 @@ class SelectorWithLabel(BaseControlContainer):
         
         super().__init__()
         
-        self.setFixedHeight(90)
-        self.inner_layout.setContentsMargins(15, 10, 15, 15)
+        self.setFixedHeight(72)
+        self.inner_layout.setContentsMargins(12, 8, 12, 12)
         
         self.keys = {}
 
@@ -767,7 +763,7 @@ class SelectorWithLabel(BaseControlContainer):
     ) -> None:
         
         self.label = QLabel(description, self.container_background)
-        self.label.setFont(Utils.NType(14))
+        self.label.setFont(Utils.NType(11))
         self.label.setStyleSheet(Styles.Other.Label)
         self.inner_layout.addWidget(self.label)
     
@@ -785,7 +781,7 @@ class SelectorWithLabel(BaseControlContainer):
         layout.setContentsMargins(0, 0, 0, 0)
         
         self.group = QButtonGroup(self)
-        self.group.buttonClicked[int].connect(self.on_button_clicked)
+        self.group.buttonClicked.connect(self.on_button_clicked)
         
         source = items.items() if isinstance(items, dict) else ((i, i) for i in items)
         
@@ -811,26 +807,22 @@ class SelectorWithLabel(BaseControlContainer):
     ) -> QPushButton:
         
         button = QPushButton(text, parent, objectName = "segmentedButton", checkable = True)
-        button.setFont(Utils.NType(11))
-        button.setCursor(Qt.PointingHandCursor)
-        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        button.setFont(Utils.NType(9))
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         return button
     
     def on_button_clicked(
         self,
-        id: int
+        button: QPushButton
     ) -> None:
         
-        button = self.group.button(id)
-        
-        if not button:
-            return
-        
         count = len(self.group.buttons())
+        id    = self.group.id(button)
         tone  = ((id + 1) / count) ** 0.5
         
-        Player.ui_player.play_sound("Toggles/Toggle", speed = tone)
+        Player.ui_player.play_sound("Click/Toggle", speed = tone)
         self.selectionChanged.emit(id, button.text(), self.keys.get(id))
     
     # API
@@ -885,7 +877,7 @@ class CheckboxWithLabel(BaseControlContainer):
         
         super().__init__(inner_layout_type=QHBoxLayout)
         
-        self.setMaximumHeight(75)
+        self.setMaximumHeight(60)
         self.setup_checkbox(title, default)
         self.setup_description(description)
     
@@ -905,7 +897,7 @@ class CheckboxWithLabel(BaseControlContainer):
     ) -> None:
         
         self.description_label = QLabel(description, self.container_background)
-        self.description_label.setFont(Utils.NType(13))
+        self.description_label.setFont(Utils.NType(10))
         self.description_label.setStyleSheet(f"color: {Styles.Colors.SubtleFontColor}; padding: 0px;")
         self.inner_layout.addWidget(self.description_label, 1, Qt.AlignmentFlag.AlignVCenter)
     
@@ -938,7 +930,7 @@ class TextboxWithLabel(BaseControlContainer):
         
         super().__init__()
         
-        self.setMaximumHeight(100)
+        self.setMaximumHeight(80)
         self.setup_label(description)
         self.setup_textbox(min_value, max_value, default)
     
@@ -950,7 +942,7 @@ class TextboxWithLabel(BaseControlContainer):
         self.description_label = QLabel(description)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.description_label.setStyleSheet("color: #ddd; padding: 0px;")
-        self.description_label.setFont(Utils.NType(14))
+        self.description_label.setFont(Utils.NType(11))
         
         self.inner_layout.addWidget(self.description_label)
     
@@ -962,9 +954,9 @@ class TextboxWithLabel(BaseControlContainer):
     ) -> None:
         
         self.textbox = Textbox("number", min_value, max_value)
-        self.textbox.setFixedHeight(45)
-        self.textbox.setMaximumWidth(300)
-        self.textbox.setContentsMargins(0, 0, 0, 7)
+        self.textbox.setFixedHeight(36)
+        self.textbox.setMaximumWidth(240)
+        self.textbox.setContentsMargins(0, 0, 0, 6)
         self.inner_layout.addWidget(self.textbox, alignment=Qt.AlignmentFlag.AlignLeft)
         
         if default:
@@ -993,9 +985,9 @@ class SliderWithLabel(BaseControlContainer):
         
         super().__init__()
         
-        self.setMaximumHeight(75)
-        self.inner_layout.setContentsMargins(15, 10, 15, 5)
-        self.inner_layout.setSpacing(5)
+        self.setMaximumHeight(60)
+        self.inner_layout.setContentsMargins(12, 8, 12, 4)
+        self.inner_layout.setSpacing(4)
         
         self.setup_label(description)
         self.setup_slider(min_val, max_val, default_val)
@@ -1008,7 +1000,7 @@ class SliderWithLabel(BaseControlContainer):
     ) -> None:
         
         self.description_label = QLabel(description)
-        self.description_label.setFont(Utils.NType(14))
+        self.description_label.setFont(Utils.NType(11))
         self.description_label.setStyleSheet("color: #ddd; padding: 0px;")
         
         self.inner_layout.addWidget(self.description_label)
@@ -1022,7 +1014,7 @@ class SliderWithLabel(BaseControlContainer):
         
         slider_value_layout = QHBoxLayout()
         slider_value_layout.setContentsMargins(0, 0, 0, 0)
-        slider_value_layout.setSpacing(15)
+        slider_value_layout.setSpacing(12)
         
         self.slider = QSlider(Qt.Orientation.Horizontal, self.container_background)
         self.slider.setRange(min_val, max_val)
@@ -1053,7 +1045,7 @@ class SliderWithLabel(BaseControlContainer):
         
         if max_val < 20 and max_val > min_val:
             tone = (value - min_val) / (max_val - min_val) + 0.1
-            Player.ui_player.play_sound("Toggles/Toggle2", speed = tone)
+            Player.ui_player.play_sound("Click/Toggle2", speed = tone)
     
     def value(self) -> int:
         return self.slider.value()
@@ -1103,7 +1095,7 @@ class BaseControlWidget(QWidget):
             return
         
         self.top_label = QLabel(self.static_label_text)
-        self.top_label.setFont(Utils.NDot(11))
+        self.top_label.setFont(Utils.NDot(9))
         self.top_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.top_label.setStyleSheet(Styles.Other.SecondFont + Styles.Other.Transparent)
         
@@ -1126,7 +1118,7 @@ class BaseControlWidget(QWidget):
     def add_icon(self) -> None:
         self.icon_label = QLabel()
         
-        pixmap = self.icon.pixmap(20, 20)
+        pixmap = self.icon.pixmap(16, 16)
         
         self.icon_label.setPixmap(pixmap)
         self.icon_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
@@ -1139,7 +1131,7 @@ class BaseControlWidget(QWidget):
     
     def add_value_label(self) -> None:
         self.value_label = QLabel()
-        self.value_label.setFont(Utils.NDot(13))
+        self.value_label.setFont(Utils.NDot(10))
         self.value_label.setStyleSheet(Styles.Other.Font + Styles.Other.Transparent)
         self.value_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
         
@@ -1345,7 +1337,7 @@ class SearchTextbox(Textbox):
             Windows.ErrorWindow(
                 "That's it.",
                 "I'm deleting textbox. For disciplinary measures."
-            ).exec_()
+            ).exec()
 
             self.deleteLater()
     
