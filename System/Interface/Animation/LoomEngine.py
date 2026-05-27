@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import time
+import traceback
 import threading
 
 from enum import Enum
@@ -39,8 +40,7 @@ class EventSignal:
                 callback(*arguments, **keywords)
 
             except Exception as exception:
-                logger.error(f"Signal callback failed: {exception}")
-
+                logger.error(f"Signal callback failed: {traceback.format_exc()}")
 
 # Geometry
 
@@ -803,13 +803,17 @@ class AnimationInstance:
             keyframes:         list[tuple[float, object]],
             duration_ms:       int,
             easing_function:   Callable[[float], float],
-            finished_callback: Callable[[], object] | None = None
+            finished_callback: Callable[[], object] | None = None,
+            loop:              bool = False,
+            tag:               str | None = None
         ) -> None:
 
         self.scheduler         = scheduler
         self.keyframes         = sorted(keyframes, key=lambda item: item[0])
         self.duration          = duration_ms
         self.easing            = easing_function
+        self.tag               = tag
+        self.loop              = loop
         self.elapsed           = 0
         self.is_finished       = False
         self.finished_callback = finished_callback
@@ -820,6 +824,10 @@ class AnimationInstance:
         self.updated.emit()
 
         if self.elapsed < self.duration:
+            return
+
+        if self.loop:
+            self.elapsed %= self.duration if self.duration > 0 else 1
             return
 
         self.elapsed     = self.duration
@@ -1103,10 +1111,52 @@ class PropertyNode:
     def value(self) -> object:
         return self.cached_value
 
-    def clear_animations(self) -> None:
-        self.animations.clear()
-        self.cached_value = self.base_value
+    def clear_animations(
+            self,
+            tag: str | None = None
+        ) -> None:
 
+        if tag is None:
+            self.animations.clear()
+            self.cached_value = self.base_value
+            self.updated.emit(self.cached_value)
+
+            return
+
+        new_animations = []
+        contribution   = None
+        found          = False
+
+        for animation in self.animations:
+            if animation.tag == tag:
+                found = True
+                value = animation.get_value()
+
+                if contribution is None:
+                    contribution = value
+
+                elif self.mode == MixMode.ADD:
+                    contribution = AnimMath.add(contribution, value)
+
+                elif self.mode == MixMode.MULTIPLY:
+                    contribution = AnimMath.mul(contribution, value)
+
+            else:
+                new_animations.append(animation)
+
+        if not found:
+            return
+
+        if self.mode == MixMode.ADD:
+            self.base_value = AnimMath.add(self.base_value, contribution)
+
+        elif self.mode == MixMode.MULTIPLY:
+            self.base_value = AnimMath.mul(self.base_value, contribution)
+
+        elif self.mode == MixMode.NOMIX:
+            self.base_value = contribution
+
+        self.animations = new_animations
         self.updated.emit(self.cached_value)
 
 class AnimationEngine:
@@ -1264,7 +1314,9 @@ class AnimationEngine:
             easing_function:          Callable[[float], float]    = Easing.linear,
             finished:                 Callable[[], object] | None = None,
             do_not_multiply_duration: bool                        = False,
-            snap_to_start:            bool                        = False
+            snap_to_start:            bool                        = False,
+            loop:                     bool                        = False,
+            tag:                      str | None                  = None
         ) -> None:
 
         if name not in self.properties:
@@ -1278,10 +1330,28 @@ class AnimationEngine:
             keyframes         = keyframes,
             duration_ms       = final_duration,
             easing_function   = easing_function,
-            finished_callback = finished
+            finished_callback = finished,
+            loop              = loop,
+            tag               = tag
         )
 
         self.properties[name].add_animation(animation, snap_to_start)
+
+    def stop_animation(
+            self,
+            name: str,
+            tag:  str | None = None
+        ) -> None:
+
+        if name not in self.properties:
+            logger.error(f"Property {name} not found.")
+            return
+
+        self.properties[name].clear_animations(tag)
+
+    def stop_all_animations(self) -> None:
+        for node in self.properties.values():
+            node.clear_animations()
 
     def tick(self) -> None:
         current_time   = self.elapsed_timer.elapsed()
