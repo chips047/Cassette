@@ -15,9 +15,11 @@ from PyQt6.QtGui import (
     QIcon,
     QCursor,
     QPixmap,
+    QDropEvent,
     QMatrix4x4,
     QQuaternion,
     QWheelEvent,
+    QDragEnterEvent,
     QResizeEvent,
     QSurfaceFormat
 )
@@ -3432,7 +3434,7 @@ class ImportWindow(BPMEditorBase):
 
     # Drag and Drop
 
-    def dragEnterEvent(self, event) -> None:
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         Player.ui_player.play_sound("DragDrop/DragDrop", speed = 1.03)
 
         if not self.drag_loop_sound:
@@ -3445,7 +3447,7 @@ class ImportWindow(BPMEditorBase):
         self.start_shake()
         event.acceptProposedAction()
 
-    def dragLeaveEvent(self, event) -> None:
+    def dragLeaveEvent(self, event: object) -> None:
         Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.94)
 
         if self.drag_loop_sound:
@@ -3455,29 +3457,57 @@ class ImportWindow(BPMEditorBase):
         self.move_end_animation()
         self.stop_shake()
 
-    def dropEvent(self, event) -> None:
+    def dropEvent(self, event: QDropEvent) -> None:
         if self.drag_loop_sound:
             self.drag_loop_sound.stop()
             self.drag_loop_sound = None
 
+        found_valid_file = False
+
         for url in event.mimeData().urls():
-            file_path    = url.toLocalFile()
-            mime_type, _ = mimetypes.guess_type(file_path)
+            file_path      = url.toLocalFile()
+            mime_type, _   = mimetypes.guess_type(file_path)
 
             if not mime_type:
                 continue
 
-            if "audio" in mime_type:
+            is_audio_video = "audio" in mime_type or "video" in mime_type
+            is_save_file   = mime_type in ["text/plain", "application/json"]
+
+            if is_audio_video:
                 self.audio_path = file_path
                 self.audio_path_button.setText(file_path.split("/")[-1])
 
                 self.run_loading_pipeline(file_path)
+                found_valid_file = True
 
-            elif mime_type in ["text/plain", "application/json"]:
+            elif is_save_file:
                 self.save_path = file_path
                 self.save_path_button.setText(file_path.split("/")[-1])
 
                 self.refresh_import_button()
+                found_valid_file = True
+
+        if not found_valid_file:
+            Player.ui_player.play_sound("Signals/Error/MegaCritical")
+            self.title_label.setText(
+                random.choice(
+                    [
+                        "Uhhm, no.",
+                        "Huh?",
+                        "How do I read that?",
+                        "That's not music or video.",
+                        "I only eat audio and video files.",
+                        "Nice try, but no.",
+                        "Wrong tape.",
+                        "Unsupported format.",
+                        "Maybe try a .wav or .mp4?"
+                    ]
+                )
+            )
+
+        else:
+            self.title_label.setText("Import")
 
         self.move_end_animation()
         self.stop_shake()

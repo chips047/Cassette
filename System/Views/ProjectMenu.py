@@ -446,11 +446,11 @@ class MainMenu(QWidget):
         title_layout = QVBoxLayout(title_container)
         title_layout.setContentsMargins(20, 16, 20, 16)
 
-        title_label = QLabel(Utils.get_time())
-        title_label.setFont(Utils.NType(19))
-        title_label.setStyleSheet("background-color: transparent; color: #ffffff;")
+        self.title_label = QLabel(Utils.get_time())
+        self.title_label.setFont(Utils.NType(19))
+        self.title_label.setStyleSheet("background-color: transparent; color: #ffffff;")
 
-        title_layout.addWidget(title_label)
+        title_layout.addWidget(self.title_label)
 
         container_layout.addWidget(title_container)
 
@@ -677,6 +677,7 @@ class MainMenu(QWidget):
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if not self.drag_loop_sound:
+            Player.ui_player.play_sound("DragDrop/DragDrop", speed = 1.1)
             self.drag_loop_sound = Player.ui_player.play_sound(
                 "DragDrop/Loop",
                 loop = True
@@ -686,6 +687,7 @@ class MainMenu(QWidget):
 
     def dragLeaveEvent(self, event: object) -> None:
         if self.drag_loop_sound:
+            Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.9)
             self.drag_loop_sound.stop()
             self.drag_loop_sound = None
 
@@ -696,17 +698,41 @@ class MainMenu(QWidget):
             self.drag_loop_sound.stop()
             self.drag_loop_sound = None
 
+        valid_file_found = False
+        file_to_process  = None
+
         for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            mime_type = mimetypes.guess_type(file_path)[0]
+            current_file_path = url.toLocalFile()
+            mime_type         = mimetypes.guess_type(current_file_path)[0]
 
-            if not mime_type or not mime_type.startswith("audio"):
-                continue
+            if mime_type and (mime_type.startswith("audio") or mime_type.startswith("video")):
+                file_to_process  = current_file_path
+                valid_file_found = True
 
-            self.process_new_composition(file_path)
+                break
+
+        if not valid_file_found:
+            Player.ui_player.play_sound("Signals/Error/MegaCritical")
+            self.title_label.setText(
+                random.choice(
+                    [
+                        "Uhhm, no.",
+                        "Huh?",
+                        "How do I read that?",
+                        "That's not music.",
+                        "I only eat audio and video files.",
+                        "Nice try, but no.",
+                        "Wrong tape.",
+                        "Maybe try a .wav?"
+                    ]
+                )
+            )
+        
+        else:
+            Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.9)
+            
+            self.process_new_composition(file_to_process)
             event.acceptProposedAction()
-
-            return
 
         super().dropEvent(event)
 
