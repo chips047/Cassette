@@ -1263,14 +1263,14 @@ class FloatingWindowGPU(QOpenGLWidget):
             if not self.content_widget.geometry().contains(event.pos()):
                 return
         
-        self.drag_pos = event.pos() - self.frameGeometry().topLeft()
+        self.drag_pos = event.globalPosition().toPoint() - self.pos()
         self.move_start_animation()
     
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos:
-            self.move(event.pos() - self.drag_pos)
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos is not None:
+            self.move(event.globalPosition().toPoint() - self.drag_pos)
             event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
