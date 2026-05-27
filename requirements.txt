@@ -1,5 +1,5 @@
 numpy
-PyQt5
+PyQt6
 loguru
 aubio
 soundfile
