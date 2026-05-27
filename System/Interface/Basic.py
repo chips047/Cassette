@@ -4,14 +4,14 @@ import string
 
 from loguru import logger
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
     QIcon,
     QPainter,
     QTransform,
     QFontMetrics
 )
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     QSize,
     QPoint,
@@ -22,7 +22,7 @@ from PyQt5.QtCore import (
     pyqtProperty
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QLabel,
     QWidget,
     QHBoxLayout,
@@ -86,9 +86,10 @@ class GlitchyButton(QPushButton):
         if icon:
             self.setIcon(icon)
         
-        self.setFont(Utils.NType(13))
-        self.setFixedHeight(50)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setFont(Utils.NType(10))
+        self.setFixedHeight(40)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
         self.installEventFilter(self)
 
     def random_ass_text(self, length: int) -> str:
@@ -154,8 +155,8 @@ class GlitchyButton(QPushButton):
         
         if target_object != self:
             return super().eventFilter(target_object, event)
-            
-        if event.type() != QEvent.MouseButtonPress:
+
+        if event.type() != QEvent.Type.MouseButtonPress:
             return super().eventFilter(target_object, event)
 
         if self.isEnabled():
@@ -212,7 +213,7 @@ class ButtonWithOutlineSlim(GlitchyButton):
         super().__init__(title, enable_glitch_sound, icon)
 
         self.setStyleSheet(Styles.Buttons.NormalButtonWithBorderSlim)
-        self.setFixedHeight(35)
+        self.setFixedHeight(28)
 
 class IconButtonSmall(GlitchyButton):
     def __init__(
@@ -224,8 +225,8 @@ class IconButtonSmall(GlitchyButton):
         super().__init__(None, enable_glitch_sound, icon)
 
         self.setIcon(icon)
-        self.setFixedSize(66, 35)
-        self.setIconSize(QSize(28, 28))
+        self.setFixedSize(53, 28)
+        self.setIconSize(QSize(22, 22))
         self.setStyleSheet(Styles.Buttons.MainMenu.SmallButton)
 
 class ButtonRow(QHBoxLayout):
@@ -273,10 +274,10 @@ class NavButton(QPushButton):
         super().__init__(parent)
         
         self.setText(text)
-        self.setFont(Utils.NType(13))
-        self.setCursor(Qt.PointingHandCursor)
+        self.setFont(Utils.NType(10))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCheckable(True)
-        self.setFixedHeight(40)
+        self.setFixedHeight(32)
         
         self.active_style   = Styles.Buttons.Settings.CategoryActiveButton
         self.inactive_style = Styles.Buttons.Settings.CategoryInactiveButton
@@ -304,9 +305,9 @@ class OptionButton(QPushButton):
             else Styles.Buttons.MainMenu.NormalButton
         )
 
-        self.setFixedHeight(50)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFont(Utils.NType(13))
+        self.setFixedHeight(40)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFont(Utils.NType(10))
 
         if callback:
             self.clicked.connect(callback)
@@ -318,8 +319,8 @@ class TitleLabel(QLabel):
         self.current_scale    = 1.0
         self.current_rotation = 0.0
 
-        self.setContentsMargins(0, 0, 0, 5)
-        self.setFont(Utils.NType(15))
+        self.setContentsMargins(0, 0, 0, 4)
+        self.setFont(Utils.NType(12))
         self.setStyleSheet(Styles.Other.Font)
 
         self.original_text  = text
@@ -438,15 +439,21 @@ class DescriptionLabel(QLabel):
 
         super().__init__(text)
 
-        self.setFont(Utils.NType(12))
+        self.setFont(Utils.NType(10))
         self.setStyleSheet(Styles.Other.SecondFont)
-        self.setTextFormat(Qt.RichText)
+        self.setTextFormat(Qt.TextFormat.RichText)
         self.setWordWrap(True)
 
         if not maximum_width:
             return
         
         self.setMaximumWidth(maximum_width)
+    
+    def setText(self, text: str) -> None:
+        text = re.sub(r"`([^`]*)`", r'<span style="color:white;">\1</span>', text)
+        text = text.replace("\n", "<br>")
+
+        return super().setText(text)
 
 class Image(QLabel):
     clicked = pyqtSignal()
@@ -454,7 +461,7 @@ class Image(QLabel):
     def __init__(self, pixmap: object) -> None:
         super().__init__()
 
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.update_image(pixmap)
 
     def update_image(self, pixmap: object) -> None:
