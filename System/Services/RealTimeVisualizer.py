@@ -5,7 +5,7 @@ import socket
 
 from loguru import logger
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     QTimer,
     QObject,
     QProcess,
@@ -24,8 +24,8 @@ else:
     ADB_PATH = "System/ADB/adb-linux"
 
 class GlyphSyncer(QObject):
-    error_occurred: pyqtSignal = pyqtSignal(str, str)
-    device_changed: pyqtSignal = pyqtSignal(list)
+    error_occurred = pyqtSignal(str, str)
+    device_changed = pyqtSignal(list)
 
     def __init__(self, parent: QObject = None) -> None:
         super().__init__(parent)
@@ -35,10 +35,10 @@ class GlyphSyncer(QObject):
         self.connected_model:  str | None      = None
         self.client_socket:    socket.socket   = None
         
-        self.devices:          list            = []
-        self.blocked_devices:  list            = []
-        self.processes:        list            = []
-        self.last_synced:      dict            = {}
+        self.devices          = []
+        self.blocked_devices  = []
+        self.processes        = []
+        self.last_synced      = {}
 
         self.scan_timer:       QTimer          = QTimer(self)
         
@@ -51,6 +51,8 @@ class GlyphSyncer(QObject):
     def start_scanning_loop(self) -> None:
         if self.scan_timer.isActive():
             return
+        
+        self.run_command_async(["start-server"])
 
         logger.info("Starting device scanning...")
         self.scan_timer.start()
@@ -122,13 +124,8 @@ class GlyphSyncer(QObject):
 
     def scan_devices(self) -> None:
         self.run_command_async(
-            ["start-server"],
-            on_finished = lambda p, o, e:
-            
-            self.run_command_async(
-                ["devices"],
-                on_finished = self.on_devices_listed
-            )
+            ["devices"],
+            on_finished = self.on_devices_listed
         )
 
     def on_devices_listed(
@@ -288,7 +285,7 @@ class GlyphSyncer(QObject):
         
         except Exception as error:
             if self.has_active_connection():
-                Windows.ErrorWindow("Connection Error", str(error)).exec_()
+                Windows.ErrorWindow("Connection Error", str(error)).exec()
 
     def send_payload(
         self,
@@ -313,7 +310,7 @@ class GlyphSyncer(QObject):
             self.client_socket = None
             
             if self.has_active_connection():
-                Windows.ErrorWindow("Socket Error", str(error)).exec_()
+                Windows.ErrorWindow("Socket Error", str(error)).exec()
 
     def sync(
         self,
