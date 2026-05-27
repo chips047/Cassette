@@ -147,6 +147,7 @@ class KeyboardController(QObject):
 
         elif key_code == Qt.Key.Key_D:
             Player.ui_player.release_sound("warning_duration")
+            Player.ui_player.release_sound("warning_duplicate")
 
         return super().eventFilter(watched, event)
 
