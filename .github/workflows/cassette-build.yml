@@ -75,14 +75,20 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" == "Windows" ]; then
-            source venv/Scripts/activate
+            source venv/Scripts/activate;
+            PYTHRAN_EXT=".pyd";
           else
-            source venv/bin/activate
+            source venv/bin/activate;
+            PYTHRAN_EXT=".so";
           fi
 
           for file in System/Accelerated/*.py; do
             if grep -q "pythran export" "$file"; then
-              pythran "$file" -o "$(dirname "$file")"
+              # Extract the filename without the .py extension
+              filename_no_ext=$(basename "$file" .py);
+              # Construct the full output path including the correct extension
+              output_path="$(dirname "$file")/${filename_no_ext}${PYTHRAN_EXT}";
+              pythran "$file" -o "$output_path";
             fi
 
           done
