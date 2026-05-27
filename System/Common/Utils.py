@@ -10,9 +10,21 @@ import subprocess
 
 from urllib.request import urlopen
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
     QFont,
-    QPainterPath
+    QPainterPath,
+)
+
+from PyQt6.QtNetwork import (
+    QNetworkRequest,
+    QNetworkAccessManager,
+)
+
+from PyQt6.QtCore import (
+    QUrl,
+    QObject,
+    QSettings,
+    pyqtSignal
 )
 
 from loguru import logger
@@ -134,31 +146,62 @@ def run(*args, **kwargs) -> subprocess.CompletedProcess:
     
     return subprocess.run(*args, **kwargs)
 
-def auto_cast(value: str) -> str | bool | int | float | None:
+def auto_cast(value: object) -> object:
     if value is None:
         return None
 
-    v = str(value).strip()
+    if isinstance(value, (bool, int, float)):
+        return value
 
-    if v.lower() in {"true", "yes", "1"}:
+    text_value = str(value).strip()
+    low_value  = text_value.lower()
+
+    if low_value in {"true", "yes", "1"}:
         return True
     
-    if v.lower() in {"false", "no", "0"}:
+    if low_value in {"false", "no", "0"}:
         return False
 
     try:
-        return int(v)
+        return int(text_value)
     
     except ValueError:
         pass
 
     try:
-        return float(v)
+        return float(text_value)
     
     except ValueError:
         pass
 
-    return value
+    return text_value
+
+class SettingsController(dict):
+    def __init__(
+        self,
+        organization: str,
+        application:  str
+    ) -> None:
+        
+        super().__init__()
+
+        self.instance = QSettings(organization, application)
+        self.load()
+
+    def load(self) -> None:
+        self.clear()
+
+        for key in self.instance.allKeys():
+            self[key] = auto_cast(self.instance.value(key))
+
+    def set_value(
+        self,
+        key:   str,
+        value: object
+    ) -> None:
+        
+        self[key] = value
+        self.instance.setValue(key, value)
 
 def parse_svg_path_data(d_string: str) -> QPainterPath:
     path = QPainterPath()
@@ -273,3 +316,65 @@ def run_hidden(cmd: list[str]) -> subprocess.CompletedProcess:
         kwargs["startupinfo"] = si
 
     return subprocess.run(cmd, **kwargs)
+
+class UpdateChecker(QObject):
+    info_received  = pyqtSignal(dict)
+    error_occurred = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+
+        self.manager = QNetworkAccessManager(self)
+        self.manager.finished.connect(self.on_request_finished)
+
+        self.info_received.connect(self.on_info_received)
+        self.error_occurred.connect(self.on_error_occurred)
+
+    def fetch_latest_release(self):
+        url = QUrl("https://api.github.com/repos/Chipik0/Cassette/releases")
+
+        request = QNetworkRequest(url)
+        request.setAttribute(QNetworkRequest.Attribute.User, "get_release")
+        request.setRawHeader(b"User-Agent", b"Cassette-Updater-Script")
+
+        self.manager.get(request)
+
+    def on_request_finished(self, reply):
+        reply.deleteLater()
+        
+        if reply.error() != reply.NetworkError.NoError:
+            logger.error(f"Network error: {reply.errorString()}")
+            self.error_occurred.emit()
+
+            return
+
+        try:
+            data = json.loads(bytes(reply.readAll()))
+
+            if data:
+                self.info_received.emit(data[0])
+            
+            else:
+                logger.error("No release info found in response")
+                self.error_occurred.emit()
+        
+        except:
+            logger.exception("Failed to parse release info")
+            self.error_occurred.emit()
+    
+    def on_info_received(self, info: dict):
+        logger.debug("Latest release info received:")
+        logger.debug(info)
+    
+    def on_error_occurred(self):
+        logger.error("Failed to fetch latest release info")
+
+def check_dynamic_library(module: object):
+    file = module.__file__
+    is_dynamic_library = file.endswith(".so") or file.endswith(".pyd")
+
+    if is_dynamic_library:
+        logger.success(f"{module.__name__} module uses dynamic library")
+    
+    else:
+        logger.error(f"{module.__name__} module doesn't use dynamic library and will be slow")
