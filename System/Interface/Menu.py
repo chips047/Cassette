@@ -1,17 +1,17 @@
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     pyqtSignal
 )
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
+    QAction,
     QHideEvent,
     QShowEvent
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QMenu,
     QWidget,
-    QAction,
     QVBoxLayout,
     QWidgetAction
 )
@@ -50,12 +50,12 @@ class ContextMenu(QMenu):
         self.aboutToHide.connect(self.close_sound)
 
     def apply_styling(self, menu: QMenu) -> None:
-        menu.setAttribute(Qt.WA_TranslucentBackground)
-        menu.setAttribute(Qt.WA_NoSystemBackground)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        menu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         menu.setWindowFlags(
             menu.windowFlags()        |
-            Qt.FramelessWindowHint    |
-            Qt.NoDropShadowWindowHint
+            Qt.WindowType.FramelessWindowHint    |
+            Qt.WindowType.NoDropShadowWindowHint
         )
 
     def populate(
@@ -107,7 +107,7 @@ class ContextMenu(QMenu):
         menu.addAction(action)
     
     def close_sound(self) -> None:
-        Player.ui_player.play_sound("App/Menu/MenuClose")
+        Player.ui_player.play_sound("Menu/Close")
 
 class EffectPreviewWidget(QWidget):
     apply_requested: pyqtSignal = pyqtSignal(str, dict)
@@ -136,12 +136,12 @@ class EffectPreviewWidget(QWidget):
         logger.debug(f"Created Effect Previewer for {effect_name}")
 
     def setup_ui(self) -> None:
-        self.setFixedWidth(500)
+        self.setFixedWidth(400)
         self.setStyleSheet(Styles.Controls.EffectSetupper)
 
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
+        self.main_layout.setSpacing(12)
 
         self.live_preview_bar = Widgets.ScheduledSegmentedBar(30, loop = True)
         self.main_layout.addWidget(self.live_preview_bar)
