@@ -5,7 +5,7 @@ import bisect
 
 import numpy as np
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     QSize,
     QRect,
@@ -23,7 +23,7 @@ from PyQt5.QtCore import (
     QParallelAnimationGroup
 )
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
     QPen,
     QBrush,
     QColor,
@@ -37,10 +37,11 @@ from PyQt5.QtGui import (
     QFontMetrics,
     QPainterPath,
     QResizeEvent,
-    QLinearGradient
+    QLinearGradient,
+    QGuiApplication
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget,
     QScrollArea,
     QVBoxLayout,
@@ -57,21 +58,8 @@ from loguru import logger
 
 from System.Common import (
     Utils,
-    Styles
-)
-
-from System.Common.Constants import (
-    FPS_30,
-    FPS_60,
-    VISUAL_EASINGS,
-    SPRING_STIFFNESS,
-    CURRENT_SETTINGS,
-    SPRING_DAMPING_FACTOR,
-    ANIMATION_TICK_INTERVAL,
-    USER_SCROLL_IDLE_TIMEOUT,
-    WHEEL_SCROLL_SENSITIVITY,
-    INERTIA_DECELERATION_RATE,
-    VISUAL_RESISTANCE_STRENGTH
+    Styles,
+    Constants
 )
 
 from System.Interface import Basic
@@ -82,27 +70,27 @@ class ValuePopup(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.ToolTip)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
-        self.padding       = 10
+        self.padding       = 7
         self.text          = ""
-        self.font          = Utils.NType(12)
+        self.font          = Utils.NType(10)
         self.original_text = ""
 
         self.setup_animations()
-        self.setGeometry(200, 200, 1, 1)
+        self.move(160, 160)
+        self.resize(1, 1)
 
     # Setup
 
     def setup_animations(self) -> None:
-        self.animation_engine = LoomEngine.AnimationEngine("pyqt5")
+        self.animation_engine = LoomEngine.AnimationEngine("PyQt6")
 
         self.animation_engine.add_properties(
             [
-                ("opacity", 1.0,     LoomEngine.MixMode.NOMIX),
-                ("rect",    QRect(), LoomEngine.MixMode.NOMIX, self.update_position_and_size)
+                ("opacity", 1.0,     LoomEngine.MixMode.NOMIX, self.on_opacity_updated),
+                ("rect",    QRect(), LoomEngine.MixMode.NOMIX, self.on_geometry_updated)
             ]
         )
 
@@ -110,8 +98,18 @@ class ValuePopup(QWidget):
             1000,
             self.hide,
             single_shot = True,
-            parent = self
+            parent      = self
         )
+
+        self.final_hide_timer = Basic.Timer(
+            300,
+            self.on_hide_finished,
+            single_shot = True,
+            parent      = self
+        )
+
+        self.cached_background_color = QColor(Styles.Colors.SecondaryBackground)
+        self.cached_text_color       = QColor(Qt.GlobalColor.white)
 
     # Painting
 
@@ -122,25 +120,25 @@ class ValuePopup(QWidget):
         
         painter = QPainter(self)
         
-        if CURRENT_SETTINGS["antialiasing"]:
-            painter.setRenderHint(QPainter.Antialiasing)
+        if Constants.current_settings["antialiasing"]:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         alpha = int(self.animation_engine.get_property_value("opacity") * 255)
 
-        background_color = QColor(Styles.Colors.SecondaryBackground)
+        background_color = QColor(self.cached_background_color)
         background_color.setAlpha(alpha)
 
         painter.setBrush(background_color)
-        painter.setPen(Qt.NoPen)
-        painter.drawRoundedRect(self.rect(), 8, 8)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawRoundedRect(self.rect(), 6.5, 6.5)
 
-        text_color = QColor(Qt.white)
+        text_color = QColor(self.cached_text_color)
         text_color.setAlpha(alpha)
 
         painter.setPen(text_color)
         painter.setFont(self.font)
         painter.translate(self.padding, self.padding)
-        painter.drawText(self.rect(), Qt.AlignLeft, self.text)
+        painter.drawText(self.rect(), Qt.AlignmentFlag.AlignLeft, self.text)
 
     # Helpers
 
@@ -152,7 +150,7 @@ class ValuePopup(QWidget):
         self.original_text = text
         metrics            = QFontMetrics(self.font)
 
-        rect = metrics.boundingRect(0, 0, 700, 1000, Qt.TextWordWrap, text)
+        rect = metrics.boundingRect(0, 0, 700, 1000, Qt.TextFlag.TextWordWrap, text)
 
         width  = rect.width()  + self.padding * 2
         height = rect.height() + self.padding * 2
@@ -170,8 +168,13 @@ class ValuePopup(QWidget):
 
         return desired_x, desired_y
 
-    def update_position_and_size(self, geometry: QRect) -> None:
-        self.setGeometry(geometry)
+    def on_geometry_updated(self, geometry: QRect) -> None:
+        self.move(geometry.topLeft())
+        self.resize(geometry.size())
+        
+        self.update()
+
+    def on_opacity_updated(self, opacity: float) -> None:
         self.update()
 
     # API
@@ -182,8 +185,9 @@ class ValuePopup(QWidget):
         position:  QPoint,
         auto_hide: bool = False
     ) -> None:
-        
+                
         if auto_hide:
+            self.final_hide_timer.stop()
             self.manual_hide_timer.stop()
             self.manual_hide_timer.start()
 
@@ -192,6 +196,10 @@ class ValuePopup(QWidget):
 
         self.text = text
 
+        if self.parent():
+            parent_pos = self.parent().mapFromGlobal(QPoint(x, y))
+            x, y       = parent_pos.x(), parent_pos.y()
+
         self.animation_engine.set_target_value(
             "rect",
             QRect(x, y, width, height),
@@ -199,8 +207,7 @@ class ValuePopup(QWidget):
             LoomEngine.Easing.ease_out_cubic
         )
 
-        if not self.isVisible():
-            self.show()
+        self.show()
 
     def fade_in(self) -> None:
         self.animation_engine.set_target_value(
@@ -218,7 +225,7 @@ class ValuePopup(QWidget):
             LoomEngine.Easing.ease_out_cubic
         )
 
-        QTimer.singleShot(300, self.on_hide_finished)
+        self.final_hide_timer.start()
 
     def show(self) -> None:
         self.animation_engine.resume()
@@ -255,9 +262,16 @@ class MiniWaveformPreview(QWidget):
         self.mouse_pressed     = False
         self.playhead_position = 0.0
 
-        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(Styles.Controls.MiniWaveformPreview)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        self.cached_wave_pen                  = QPen(QColor(170, 170, 170, 255), 2.0)
+        self.cached_wave_brush                = QBrush(QColor(255, 255, 255, 100))
+        self.cached_playhead_pen              = QPen(QColor(255, 0, 0), 2.0)
+        self.cached_loading_color             = QColor("#888")
+        self.cached_gradient_fade_transparent = QColor(0, 0, 0, 0)
+        self.cached_gradient_fade_opaque      = QColor(0, 0, 0, 255)
 
     # Data
 
@@ -319,7 +333,7 @@ class MiniWaveformPreview(QWidget):
         top      = y_center - (tile_max / waveform_max * y_center)
         bottom   = y_center - (tile_min / waveform_max * y_center)
 
-        sigma = float(CURRENT_SETTINGS.get("waveform_smoothing", 0.0))
+        sigma = float(Constants.current_settings.get("waveform_smoothing", 0.0))
 
         if sigma > 0.0 and top.size > 1:
             pad    = min(int(np.ceil(sigma * 3.0)), top.size - 1)
@@ -336,13 +350,17 @@ class MiniWaveformPreview(QWidget):
 
         if top.size == 0:
             return None
+        
+        dpr = QGuiApplication.primaryScreen().devicePixelRatio()
+        
+        pixmap = QPixmap(int(width * dpr), int(height * dpr))
+        pixmap.setDevicePixelRatio(dpr)
 
-        pixmap  = QPixmap(width, height)
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
 
-        if CURRENT_SETTINGS.get("antialiasing"):
-            painter.setRenderHint(QPainter.Antialiasing)
+        if Constants.current_settings.get("antialiasing"):
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         bar_width = float(width) / float(top.size)
         path      = QPainterPath()
@@ -357,21 +375,21 @@ class MiniWaveformPreview(QWidget):
 
         path.closeSubpath()
 
-        painter.setPen(QPen(QColor(170, 170, 170, 255), 2.0))
-        painter.setBrush(QBrush(QColor(255, 255, 255, 100)))
+        painter.setPen(self.cached_wave_pen)
+        painter.setBrush(self.cached_wave_brush)
         painter.drawPath(path)
 
         fade_width = width * 0.05
 
         gradient = QLinearGradient(0.0, 0.0, float(width), 0.0)
-        gradient.setColorAt(0.0,                          QColor(0, 0, 0, 0))
-        gradient.setColorAt(fade_width / width,           QColor(0, 0, 0, 255))
-        gradient.setColorAt(1.0 - fade_width / width,     QColor(0, 0, 0, 255))
-        gradient.setColorAt(1.0,                          QColor(0, 0, 0, 0))
+        gradient.setColorAt(0.0,                          self.cached_gradient_fade_transparent)
+        gradient.setColorAt(fade_width / width,           self.cached_gradient_fade_opaque)
+        gradient.setColorAt(1.0 - fade_width / width,     self.cached_gradient_fade_opaque)
+        gradient.setColorAt(1.0,                          self.cached_gradient_fade_transparent)
 
-        painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
         painter.fillRect(0, 0, width, height, QBrush(gradient))
-        painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
 
         painter.end()
 
@@ -392,7 +410,7 @@ class MiniWaveformPreview(QWidget):
 
         x = float(self.width()) * self.playhead_position
 
-        painter.setPen(QPen(QColor(255, 0, 0), 2.0))
+        painter.setPen(self.cached_playhead_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawLine(QLineF(x, 0.0, x, float(self.height())))
 
@@ -404,7 +422,7 @@ class MiniWaveformPreview(QWidget):
             return
 
         self.mouse_pressed = True
-        normalized         = float(np.clip(event.x() / float(max(1, self.width())), 0.0, 1.0))
+        normalized         = float(np.clip(event.position().x() / float(max(1, self.width())), 0.0, 1.0))
 
         self.set_playhead_position(normalized)
         self.preview_clicked.emit(normalized)
@@ -416,7 +434,7 @@ class MiniWaveformPreview(QWidget):
             super().mouseMoveEvent(event)
             return
 
-        normalized = float(np.clip(event.x() / float(max(1, self.width())), 0.0, 1.0))
+        normalized = float(np.clip(event.position().x() / float(max(1, self.width())), 0.0, 1.0))
 
         self.set_playhead_position(normalized)
         self.preview_clicked.emit(normalized)
@@ -536,8 +554,8 @@ class BaseSegmentedBar(QWidget):
             self.update_paths()
 
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
 
         for i, path in enumerate(self.cached_paths):
             painter.setBrush(self.segment_color(i))
@@ -565,13 +583,13 @@ class ScheduledSegmentedBar(BaseSegmentedBar):
         self.color_off    = QColor("#404040")
         self.color_on     = QColor("#ffffff")
 
-        self.setAttribute(Qt.WA_OpaquePaintEvent)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
         self.setStyleSheet("background-color: transparent;")
 
         self.elapsed_timer = QElapsedTimer()
 
         self.timer = Basic.Timer(
-            FPS_60,
+            Constants.FPS_60,
             self.tick,
             parent = self
         )
@@ -695,7 +713,7 @@ class ScheduledSegmentedBar(BaseSegmentedBar):
             
             progress        = (now - time_start) / duration
             keyframes       = item.get("keyframes")
-            easing_function = VISUAL_EASINGS[item.get("easing", "linear")]
+            easing_function = Constants.VISUAL_EASINGS[item.get("easing", "linear")]
 
             value = (
                 self.eval_keyframes(keyframes, progress, easing_function)
@@ -731,22 +749,26 @@ class SegmentedBar(BaseSegmentedBar):
         self.last_index    = None
         self.drag_target   = None
 
+        self.cached_active_color = QColor(Styles.Colors.FontColor)
+        self.cached_hover_color  = QColor(Styles.Colors.GlassBorder).lighter(130)
+        self.cached_border_color = QColor(Styles.Colors.GlassBorder)
+
     # Override
 
     def segment_color(self, index: int) -> QColor:
         if self.active[index]:
-            return QColor("#ddd")
+            return self.cached_active_color
 
         if self.hovered_index == index:
-            return QColor(Styles.Colors.GlassBorder).lighter(130)
+            return self.cached_hover_color
 
-        return QColor(Styles.Colors.GlassBorder)
+        return self.cached_border_color
 
     # Events
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.is_pressed = True
-        index           = self.get_index(event.x())
+        index           = self.get_index(event.pos().x())
 
         if not (0 <= index < self.amount_of_segments):
             return
@@ -769,7 +791,7 @@ class SegmentedBar(BaseSegmentedBar):
         if self.amount_of_segments <= 0:
             return
 
-        index = self.get_index(event.x())
+        index = self.get_index(event.pos().x())
 
         if self.is_pressed and self.drag_target is not None and self.last_index is not None:
             self.handle_drag(index)
@@ -825,7 +847,7 @@ class SegmentedBar(BaseSegmentedBar):
         tone  = index / self.amount_of_segments + 0.5
         tone += 0.05 if self.active[index] else 0.0
         
-        Player.ui_player.play_sound("Toggles/Toggle3" if alt else "Toggles/Toggle", speed = tone)
+        Player.ui_player.play_sound("Click/Toggle3" if alt else "Click/Toggle", speed = tone)
 
     # API
 
@@ -833,21 +855,21 @@ class SegmentedBar(BaseSegmentedBar):
         self.active = [True] * self.amount_of_segments
         self.segment_changed.emit()
         
-        Player.ui_player.play_sound("Toggles/Toggle", speed=1.0, enable_tone_randomizer=False)
+        Player.ui_player.play_sound("Click/Toggle", speed=1.0, enable_tone_randomizer=False)
 
     def disable_all(self) -> None:
         self.active = [False] * self.amount_of_segments
         self.segment_changed.emit()
         
-        Player.ui_player.play_sound("Toggles/Toggle", speed=0.7, enable_tone_randomizer=False)
+        Player.ui_player.play_sound("Click/Toggle", speed=0.7, enable_tone_randomizer=False)
 
     def zebra(self) -> None:
         self.active = [i % 2 == 0 for i in range(self.amount_of_segments)]
         self.segment_changed.emit()
         
-        Player.ui_player.play_sound("Toggles/Toggle3")
+        Player.ui_player.play_sound("Click/Toggle3")
 
-class PlayheadItem(QGraphicsItem):
+class PlayheadItem(QGraphicsObject):
     
     def __init__(
         self,
@@ -860,6 +882,16 @@ class PlayheadItem(QGraphicsItem):
         self.conductor = conductor
         self.width     = 2.0
         self.height    = custom_height
+        self.target_x  = 0.0
+
+        self.cached_pen = QPen(QColor(255, 0, 0), 2.0)
+        self.cached_pen.setCosmetic(True)
+
+        self.lerp_timer = Basic.Timer(
+            Constants.FPS_120,
+            self.lerp_step,
+            parent = self
+        )
 
     # Graphics Item
 
@@ -874,15 +906,56 @@ class PlayheadItem(QGraphicsItem):
     def paint(
         self,
         painter: QPainter,
-        option: QStyleOptionGraphicsItem,
-        widget: QWidget = None
+        option:  QStyleOptionGraphicsItem,
+        widget:  QWidget = None
     ) -> None:
         
-        pen = QPen(QColor(255, 0, 0), 2.0)
-        pen.setCosmetic(True)
-        
-        painter.setPen(pen)
+        painter.setPen(self.cached_pen)
         painter.drawLine(0, 0, 0, self.height or self.conductor.height())
+
+    # Logic
+
+    def set_target_x(
+            self,
+            x:       float,
+            animate: bool = False
+        ) -> None:
+        
+        self.target_x = x
+
+        if animate and Constants.current_settings.get("playhead_animations", True):
+            if not self.lerp_timer.isActive():
+                self.lerp_timer.start()
+
+            return
+            
+        self.lerp_timer.stop()
+        self.update_actual_position(x)
+
+    def lerp_step(self) -> None:
+        current_x = self.x()
+        target_x  = self.target_x
+        
+        lerp_factor = 0.22
+        new_x       = current_x + (target_x - current_x) * lerp_factor
+        
+        if abs(target_x - new_x) < 0.1:
+            new_x = target_x
+            self.lerp_timer.stop()
+
+            logger.debug(f"Playhead reached target: {new_x:.2f} | Timer stopped")
+        
+        self.update_actual_position(new_x)
+
+    def update_actual_position(
+            self,
+            x: float
+        ) -> None:
+        
+        self.setPos(x, 0)
+        
+        if self.conductor.total_content_width > 0:
+            self.conductor.playhead_moved.emit(x / self.conductor.total_content_width)
 
 class MarqueeItem(QGraphicsObject):
     def __init__(
@@ -892,13 +965,18 @@ class MarqueeItem(QGraphicsObject):
         
         super().__init__()
 
-        self.player      = player
-        self.bpm         = 120.0
-        self.start_position   = QPointF()
-        self.marquee_pen = QPen(
+        self.player         = player
+        self.bpm            = 120.0
+        self.start_position = QPointF()
+
+        self.cached_brush_color = QColor(255, 0, 0)
+        self.cached_brush       = QBrush(self.cached_brush_color)
+
+        self.cached_pen         = QPen(
             QColor(215, 20, 31), 1,
             Qt.PenStyle.DashLine
         )
+        self.cached_pen_color   = QColor(self.cached_pen.color())
 
         self.setup_animations()
         self.setCacheMode(QGraphicsItem.CacheMode.NoCache)
@@ -908,14 +986,9 @@ class MarqueeItem(QGraphicsObject):
     # Setup
 
     def setup_animations(self) -> None:
-        self.bpm_animation_timer = Basic.Timer(
-            FPS_30,
-            self.bpm_tick,
-            single_shot = True,
-            parent = self
-        )
+        Player.bpm_informer.beat_4.connect(self.bpm_tick)
 
-        self.animation_engine = LoomEngine.AnimationEngine("pyqt5")
+        self.animation_engine = LoomEngine.AnimationEngine("PyQt6")
         self.animation_engine.updated.connect(self.on_animation_updated)
 
         self.animation_engine.add_properties(
@@ -928,19 +1001,6 @@ class MarqueeItem(QGraphicsObject):
             ]
         )
     
-    # Events
-    
-    def itemChange(
-        self,
-        change: QGraphicsItem.GraphicsItemChange,
-        value:  any
-    ) -> any:
-        if change == QGraphicsItem.GraphicsItemChange.ItemVisibleHasChanged:
-            if value:
-                self.bpm_animation_timer.start(FPS_30)
-
-        return super().itemChange(change, value)
-
     # Geometry
 
     def boundingRect(self) -> QRectF:
@@ -978,18 +1038,17 @@ class MarqueeItem(QGraphicsObject):
         rect   = QRectF(self.start_position, mouse_point).normalized()
         radius = min((rect.width() + rect.height()) / 12, 10)
 
-        brush_color = QColor(255, 0, 0)
-        brush_color.setAlpha(self.apply_bpm_to_alpha(50, brush_alpha))
-
-        pen_color = QColor(self.marquee_pen.color())
-        pen_color.setAlpha(int(200 * pen_alpha))
+        self.cached_brush_color.setAlpha(self.apply_bpm_to_alpha(50, brush_alpha))
+        self.cached_brush = QBrush(self.cached_brush_color)
         
-        pen = QPen(self.marquee_pen)
-        pen.setColor(pen_color)
+        self.cached_pen_color.setAlpha(int(200 * pen_alpha))
+        self.cached_pen.setColor(self.cached_pen_color)
 
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(pen)
-        painter.setBrush(QBrush(brush_color))
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        painter.setPen(self.cached_pen)
+        painter.setBrush(self.cached_brush)
+
         painter.drawRoundedRect(rect, radius, radius)
 
     # Animations
@@ -1017,7 +1076,7 @@ class MarqueeItem(QGraphicsObject):
         )
 
     def fade_out(self) -> None:
-        if not CURRENT_SETTINGS["marquee_hide_animation"]:
+        if not Constants.current_settings["marquee_hide_animation"]:
             self.animation_engine.set_property_base_value("brush_opacity", 0.0)
             self.animation_engine.set_property_base_value("pen_opacity",   0.0)
             
@@ -1042,7 +1101,6 @@ class MarqueeItem(QGraphicsObject):
 
     def finish_and_hide(self) -> None:
         self.animation_engine.pause()
-        self.bpm_animation_timer.stop()
         self.hide()
 
     # API
@@ -1058,14 +1116,26 @@ class MarqueeItem(QGraphicsObject):
         self.fade_in()
         self.show()
 
-        if CURRENT_SETTINGS["bpm_animations"]:
-            self.bpm_tick()
-
     def end_marquee(self) -> None:
         self.fade_out()
 
-    def update_end_point(self, point: QPointF) -> None:
-        self.animation_engine.set_target_value("mouse_point", point, 150, LoomEngine.Easing.ease_out_cubic)
+    def update_end_point(
+            self,
+            point:   QPointF,
+            animate: bool = True
+        ) -> None:
+        
+        if animate:
+            self.animation_engine.set_target_value(
+                "mouse_point",
+                point,
+                150,
+                LoomEngine.Easing.ease_out_cubic
+            )
+        
+        else:
+            self.animation_engine.set_property_base_value("mouse_point", point)
+            self.on_animation_updated()
 
         path = QPainterPath()
         path.addRect(QRectF(self.start_position, point).normalized())
@@ -1074,7 +1144,7 @@ class MarqueeItem(QGraphicsObject):
         
         selection_operation = (
             Qt.ItemSelectionOperation.AddToSelection
-            if modifiers & Qt.ControlModifier
+            if modifiers & Qt.KeyboardModifier.ControlModifier
             else Qt.ItemSelectionOperation.ReplaceSelection
         )
 
@@ -1093,16 +1163,15 @@ class MarqueeItem(QGraphicsObject):
 
     def bpm_tick(self) -> None:
         if not self.player.is_playing:
-            return self.bpm_animation_timer.start(FPS_30)
+            return
         
         if not self.isVisible():
             return
         
         if self.player.get_current_audio_level() < 0.08:
-            return self.bpm_animation_timer.start(FPS_30)
+            return
 
-        speed       = self.player.speed or 1.0
-        interval_ms = int(round(60000.0 / (self.bpm * speed)))
+        interval_ms = Player.bpm_informer.get_interval(4)
 
         self.animation_engine.animate(
             "bpm_pulse",
@@ -1113,10 +1182,11 @@ class MarqueeItem(QGraphicsObject):
             interval_ms,
             LoomEngine.Easing.ease_out_cubic
         )
-        
-        self.bpm_animation_timer.start(interval_ms)
 
 class GlyphItem(QGraphicsObject):
+    STACK_LABEL_FONT  = Utils.NType(9)
+    STACK_LABEL_COLOR = QColor(0, 0, 0)
+
     def __init__(
         self,
         glyph_id:      int,
@@ -1131,18 +1201,39 @@ class GlyphItem(QGraphicsObject):
         self.glyph_id  = glyph_id
         self.conductor = conductor
 
-        self.fixed_y           = self.calculate_y_pos()
-        self.was_clicked       = False
-        self.is_despawning     = False
-        self.border_width      = 2.5
-        self.resize_margin     = 10
-        self.drag_start_position    = QPointF()
-        self.interaction_mode  = None
+        self.fixed_y             = self.calculate_y_pos()
+        self.was_clicked         = False
+        self.border_width        = 2
+        self.is_despawning       = False
+        self.resize_margin       = 10
+        self.interaction_mode    = None
+        self.drag_start_position = QPointF()
+
+        self.cached_width        = -1.0
+        self.cached_radius       = 0.0
+        self.cached_border_pen   = QPen()
+        self.cached_stack_label  = ""
+        self.cached_stack_colors = []
+
+        self.cached_fade_pen         = QPen()
+        self.cached_fade_brush       = QBrush()
+        self.cached_border_color     = QColor(255, 0, 0, 255)
+        self.cached_stack_color_pool = [QColor(220, 220, 220), QColor(220, 220, 220), QColor(220, 220, 220)]
+
+        self.cached_border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        self.cached_border_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        self.cached_border_pen.setWidthF(self.border_width)
+        
+        self.cached_fade_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        self.cached_fade_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        self.cached_fade_pen.setWidthF(self.keyframe_line_width if hasattr(self, 'keyframe_line_width') else 4)
 
         self.setup_animations()
         self.setup_flags()
         self.setup_timers()
         self.setup_keyframes()
+        
+        self.cached_fade_pen.setWidthF(self.keyframe_line_width)
 
         self.dirty_rect = self.boundingRect()
 
@@ -1204,11 +1295,11 @@ class GlyphItem(QGraphicsObject):
 
     def setup_flags(self) -> None:
         self.setFlags(
-            QGraphicsItem.ItemIsSelectable |
-            QGraphicsItem.ItemSendsGeometryChanges
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable |
+            QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
         )
         
-        self.setCacheMode(QGraphicsItem.ItemCoordinateCache)
+        self.setCacheMode(QGraphicsItem.CacheMode.ItemCoordinateCache)
         self.setAcceptHoverEvents(True)
 
     def setup_timers(self) -> None:
@@ -1240,6 +1331,9 @@ class GlyphItem(QGraphicsObject):
 
         self.border_opacity                = 0.0
 
+        self.stack_y_offset                = 0.0
+        self.stack_depth                   = 0
+
         self.despawn_duration_ms           = None
         self.despawn_start_ms              = None
 
@@ -1263,15 +1357,6 @@ class GlyphItem(QGraphicsObject):
 
     def px_to_ms(self, px: float) -> float:
         return px * 1000.0 / self.conductor.px_per_sec
-    
-    def opaqueArea(self) -> QPainterPath:
-        path = QPainterPath()
-        path.addRect(self.boundingRect())
-        
-        return path
-
-    def shape(self) -> QPainterPath:
-        return self.opaqueArea()
 
     def boundingRect(self) -> QRectF:
         margin = self.animation_margin + self.border_width
@@ -1297,10 +1382,6 @@ class GlyphItem(QGraphicsObject):
         option:  QStyleOptionGraphicsItem,
         widget:  QWidget = None
     ) -> None:
-        
-        if self.isObscured():
-            return
-        
         width_px     = self.ms_to_px(self.duration_ms)
         height       = Styles.Metrics.Tracks.BoxHeight
 
@@ -1340,23 +1421,74 @@ class GlyphItem(QGraphicsObject):
             painter.setTransform(transform * painter.transform())
 
         painter.translate(-center_x, -center_y)
+    
+    def update_radius(self, width: float) -> None:
+        if width == self.cached_width:
+            return
+
+        self.cached_width  = width
+        self.cached_radius = (
+            2.4
+            + max(0.0, min((width - 10) * 0.2, 2.0))
+            + max(0.0, min((width - 20) * 0.48, 4.8))
+        )
+
+    def update_border_pen(self) -> None:
+        opacity = max(0.0, min(1.0, self.border_opacity))
+        r = int(255 * opacity)
+        
+        self.cached_border_color.setRed(r)
+        self.cached_border_pen.setColor(self.cached_border_color)
+
+    def update_stack_cache(self) -> None:
+        depth = min(self.stack_depth, 3)
+        
+        for i in range(depth):
+            alpha = max(30, 90 - (i + 1) * 25)
+            self.cached_stack_color_pool[i].setAlpha(alpha)
+        
+        self.cached_stack_colors = self.cached_stack_color_pool[:depth]
+        self.cached_stack_label  = f"+{self.stack_depth}"
 
     def draw_base_shape(
-        self,
-        painter:      QPainter,
-        width_px:     float,
-        height:       float
-    ) -> None:
+            self,
+            painter: QPainter,
+            width:   float,
+            height:  float
+        ) -> None:
         
-        color      = QColor(int(255 * self.border_opacity), 0, 0)
-        border_pen = QPen(color, self.border_width)
-        border_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        has_stack = self.stack_depth > 0 and abs(self.stack_y_offset) < 1.0
 
-        radius = 3 + max(0, min((width_px - 10) / 10 * 2.5, 2.5)) + max(0, min((width_px - 20) / 10 * 6, 6))
+        self.update_radius(width)
+        self.update_border_pen()
+        radius    = self.cached_radius
+        base_rect = QRectF(0, 0, width, height)
 
-        painter.setPen(border_pen)
-        painter.setBrush(QBrush(QColor(255, 255, 255)))
-        painter.drawRoundedRect(QRectF(0, 0, width_px, height), radius, radius)
+        if has_stack:
+            painter.setPen(Qt.PenStyle.NoPen)
+            
+            for step, color in enumerate(reversed(self.cached_stack_colors), start = 1):
+                ox, oy = step * 3.0, step * 4.0
+                
+                painter.setBrush(color)
+                painter.drawRoundedRect(
+                    QRectF(ox, oy, max(0.0, width - ox), max(0.0, height - oy)),
+                    radius, radius
+                )
+
+        painter.setPen(self.cached_border_pen)
+        painter.setBrush(Qt.GlobalColor.white)
+        painter.drawRoundedRect(base_rect, radius, radius)
+
+        if has_stack and width > 24:
+            painter.setFont(self.STACK_LABEL_FONT)
+            painter.setPen(self.STACK_LABEL_COLOR)
+
+            painter.drawText(
+                QRectF(0, 0, 30, 42),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignCenter,
+                self.cached_stack_label
+            )
 
     def draw_fade_keyframes(
         self,
@@ -1365,15 +1497,13 @@ class GlyphItem(QGraphicsObject):
         height:       float
     ) -> None:
         
-        color        = QColor(int(255 * self.border_opacity), 0, 0)
+        self.cached_fade_pen.setColor(self.cached_border_color)
+
         inner_width  = width_px - 2 * self.keyframe_line_padding
         inner_height = height       - 2 * self.border_width
 
-        fade_pen = QPen(color, self.keyframe_line_width)
-        fade_pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        fade_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-        
-        painter.setPen(fade_pen)
+        self.cached_fade_pen.setColor(self.cached_border_color)
+        painter.setPen(self.cached_fade_pen)
 
         fade_path = QPainterPath()
 
@@ -1389,8 +1519,9 @@ class GlyphItem(QGraphicsObject):
 
         painter.drawPath(fade_path)
 
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        self.cached_fade_brush.setColor(self.cached_border_color)
+        painter.setBrush(self.cached_fade_brush)
 
         for fraction_x, fraction_y in self.pending_fade_keyframes[1:-1]:
             pixel_x = fraction_x * inner_width + self.keyframe_line_padding
@@ -1405,7 +1536,7 @@ class GlyphItem(QGraphicsObject):
         keyframes: list,
         property:  bytes,
         duration:  int,
-        curve:     QEasingCurve = QEasingCurve.OutCubic,
+        curve:     QEasingCurve = QEasingCurve.Type.OutCubic,
         loop:      bool         = False
     ) -> QPropertyAnimation:
 
@@ -1431,7 +1562,7 @@ class GlyphItem(QGraphicsObject):
         self.animation_group = QParallelAnimationGroup(self)
 
         if multiplier == 1.0:
-            multiplier = float(CURRENT_SETTINGS["animation_multiplier"])
+            multiplier = float(Constants.current_settings["animation_multiplier"])
 
         for animation in animations:
             if multiplier != 1.0:
@@ -1487,7 +1618,7 @@ class GlyphItem(QGraphicsObject):
         if not animate:
             return
         
-        if not CURRENT_SETTINGS["glyph_spawn_animation"]:
+        if not Constants.current_settings["glyph_spawn_animation"]:
             return
         
         self.set_animating(True)
@@ -1552,7 +1683,7 @@ class GlyphItem(QGraphicsObject):
         self.marquee_scale_animation.start()
 
     def press_animation(self, position: QPointF) -> None:
-        if not CURRENT_SETTINGS["glyph_tilt_animation"]:
+        if not Constants.current_settings["glyph_tilt_animation"]:
             return
 
         target_tilt_x, target_tilt_y = self.calculate_target_tilt(position)
@@ -1596,6 +1727,7 @@ class GlyphItem(QGraphicsObject):
     @borderOpacity.setter
     def borderOpacity(self, value: float) -> None:
         self.border_opacity = value
+        self.update_border_pen()
         self.update()
 
     @pyqtProperty(float)
@@ -1643,6 +1775,17 @@ class GlyphItem(QGraphicsObject):
         self.marquee_selection_scale = value
         self.update()
 
+    @pyqtProperty(float)
+    def stackYOffset(self) -> float:
+        return self.stack_y_offset
+    
+    @stackYOffset.setter
+    def stackYOffset(self, value: float) -> None:
+        self.stack_y_offset = value
+        self.setPos(self.pos().x(), self.fixed_y + value)
+
+        self.update()
+
     # Events
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
@@ -1682,7 +1825,7 @@ class GlyphItem(QGraphicsObject):
         value:  any
     ) -> any:
         
-        if change != QGraphicsItem.ItemSelectedHasChanged:
+        if change != QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             return super().itemChange(change, value)
 
         if value:
@@ -1692,16 +1835,41 @@ class GlyphItem(QGraphicsObject):
             self.was_clicked = False
             
             self.fade_in_animation()
-            self.setCacheMode(QGraphicsItem.NoCache)
+            self.setCacheMode(QGraphicsItem.CacheMode.NoCache)
         
         else:
             self.fade_out_animation()
 
         return super().itemChange(change, value)
+    
+    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        if self.is_despawning:
+            return
+
+        controller = self.conductor.glyph_controller
+
+        if controller.expanded_stack and self.glyph_id in controller.expanded_stack:
+            controller.collapse_stack()
+            event.accept()
+
+            return
+
+        if len(controller.get_overlapping_group(self.glyph_id)) > 1:
+            controller.expand_stack(self.glyph_id)
+            event.accept()
+
+            return
+
+        super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if self.is_despawning:
             return
+
+        controller = self.conductor.glyph_controller
+
+        if controller.expanded_stack and self.glyph_id not in controller.expanded_stack:
+            controller.collapse_stack()
         
         self.was_clicked = True
         self.hover_timer.stop()
@@ -1712,11 +1880,11 @@ class GlyphItem(QGraphicsObject):
             self.standard_press(event)
             return
 
-        if event.button() == Qt.RightButton and event.modifiers() & Qt.AltModifier:
+        if event.button() == Qt.MouseButton.RightButton and event.modifiers() & Qt.KeyboardModifier.AltModifier:
             self.handle_fade_delete(event)
             return
 
-        if event.modifiers() & Qt.AltModifier:
+        if event.modifiers() & Qt.KeyboardModifier.AltModifier:
             self.handle_fade_press(event)
             return
 
@@ -1918,30 +2086,38 @@ class GlyphItem(QGraphicsObject):
 
     def update_geometry(self) -> None:
         self.prepareGeometryChange()
-        
+
         if not self.data and self.despawn_duration_ms is None:
             return
-        
+
         self.pending_fade_keyframes = self.keyframes
         self.fixed_y                = self.calculate_y_pos()
-        
-        self.setPos(self.ms_to_px(self.start_ms), self.fixed_y)
+
+        self.setPos(self.ms_to_px(self.start_ms), self.fixed_y + self.stack_y_offset)
         self.update()
 
     def remove_glyph(self, animate: bool = True) -> None:
         self.prepare_for_despawn()
         self.is_despawning = True
 
-        if CURRENT_SETTINGS["glyph_spawn_animation"] and animate:
+        if Constants.current_settings["glyph_spawn_animation"] and animate:
             self.despawn_animation()
         
         else:
             self.on_despawn_finished()
+    
+    def set_stack_depth(self, depth: int) -> None:
+        if self.stack_depth == depth:
+            return
+
+        self.stack_depth = depth
+        self.update_stack_cache()
+        self.update()
 
     # Callbacks
 
     def fade_out_callback(self) -> None:
-        self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+        self.setCacheMode(QGraphicsItem.CacheMode.DeviceCoordinateCache)
         
         if self.is_animating:
             self.set_animating(False)
@@ -1974,6 +2150,15 @@ class TrimmingWaveformWidget(QWidget):
 
         self.setMinimumHeight(80)
         self.setFixedWidth(690)
+
+        wave_color = QColor(Styles.Colors.Waveform.MainColor)
+        
+        self.cached_wave_pen      = QPen(wave_color, 2.5)
+        self.cached_accent_pen    = QPen(QColor(Styles.Colors.NothingAccent), 2)
+        self.cached_wave_brush    = QBrush(wave_color)
+        self.cached_trim_brush    = QBrush(QColor(255, 255, 255, 30))
+        self.cached_accent_brush  = QBrush(QColor(Styles.Colors.NothingAccent))
+        self.cached_loading_color = QColor("#888")
 
     # Data
 
@@ -2041,11 +2226,11 @@ class TrimmingWaveformWidget(QWidget):
         count      = len(amplitudes)
 
         pixmap  = QPixmap(width, height)
-        pixmap.fill(QColor(Styles.Colors.Floating.Background))
+        pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
 
-        if CURRENT_SETTINGS["antialiasing"]:
-            painter.setRenderHint(QPainter.Antialiasing)
+        if Constants.current_settings["antialiasing"]:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         x_step    = width / count
         clamp_max = height
@@ -2069,13 +2254,11 @@ class TrimmingWaveformWidget(QWidget):
 
         path.closeSubpath()
 
-        color = QColor(Styles.Colors.Waveform.MainColor)
-
-        painter.setPen(QPen(color, 2.5))
-        painter.setBrush(Qt.NoBrush)
+        painter.setPen(self.cached_wave_pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
-        painter.setBrush(QBrush(color))
+        painter.setBrush(self.cached_wave_brush)
         painter.setPen(QPen(QColor(255, 255, 255, 160), 0.7))
         painter.drawPath(path)
 
@@ -2089,14 +2272,15 @@ class TrimmingWaveformWidget(QWidget):
         super().paintEvent(event)
         
         painter = QPainter(self)
-        
-        if CURRENT_SETTINGS["antialiasing"]:
-            painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+
+        if Constants.current_settings["antialiasing"]:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         if self.is_loading:
-            painter.setPen(QColor("#888"))
+            painter.setPen(self.cached_loading_color)
             painter.setFont(Utils.NType(15))
-            painter.drawText(self.rect(), Qt.AlignLeft, "Loading the audio...")
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignLeft, "Loading the audio...")
             
             return
 
@@ -2111,24 +2295,22 @@ class TrimmingWaveformWidget(QWidget):
         start_x = to_x(self.start_time)
         end_x   = to_x(self.end_time)
 
-        painter.setBrush(QColor(255, 255, 255, 30))
-        painter.setPen(Qt.NoPen)
+        painter.setBrush(self.cached_trim_brush)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(
             QRectF(QPointF(start_x, 0), QPointF(end_x, self.height())),
             10,
             10
         )
 
-        accent = QColor(Styles.Colors.NothingAccent)
-        
-        painter.setPen(QPen(accent, 2))
+        painter.setPen(self.cached_accent_pen)
         painter.drawLine(int(start_x), 10, int(start_x), self.height() - 10)
         painter.drawLine(int(end_x),   10, int(end_x),   self.height() - 10)
 
         playhead_x = to_x(self.playback_position)
         
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(accent)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self.cached_accent_brush)
         painter.drawRect(QRectF(playhead_x - 1.0, 0, 2.0, self.height()))
 
     # Events
@@ -2188,7 +2370,7 @@ class ContentCanvas(QWidget):
 
         self.layout_manager = QVBoxLayout(self)
         self.layout_manager.setContentsMargins(0, 0, 0, 0)
-        self.layout_manager.setSpacing(15)
+        self.layout_manager.setSpacing(12)
         self.layout_manager.setSizeConstraint(QVBoxLayout.SetMinimumSize)
 
     def sizeHint(self) -> QSize:
@@ -2213,20 +2395,20 @@ class ElasticScrollArea(QScrollArea):
         self.canvas          = QWidget(self.viewport())
         self.layout_manager  = QVBoxLayout(self.canvas)
 
-        self.layout_manager.setContentsMargins(0, 10, 0, 10)
-        self.layout_manager.setSpacing(15)
-        self.layout_manager.setAlignment(Qt.AlignTop)
+        self.layout_manager.setContentsMargins(0, 8, 0, 8)
+        self.layout_manager.setSpacing(12)
+        self.layout_manager.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     def setup_timers(self) -> None:
         self.idle_timer = Basic.Timer(
-            USER_SCROLL_IDLE_TIMEOUT,
+            Constants.USER_SCROLL_IDLE_TIMEOUT,
             self.handle_scroll_finished,
             single_shot = True,
             parent = self
         )
 
         self.animation_timer = Basic.Timer(
-            ANIMATION_TICK_INTERVAL,
+            Constants.ANIMATION_TICK_INTERVAL,
             self.process_animation_tick,
             parent = self
         )
@@ -2264,10 +2446,10 @@ class ElasticScrollArea(QScrollArea):
         limit      = self.calculate_maximum_scroll()
         resistance = self.calculate_resistance(limit)
 
-        self.velocity_speed     -= (delta * WHEEL_SCROLL_SENSITIVITY / 8.0) * resistance
+        self.velocity_speed     -= (delta * Constants.WHEEL_SCROLL_SENSITIVITY / 8.0) * resistance
         self.scrolling_is_active = True
 
-        self.idle_timer.start(USER_SCROLL_IDLE_TIMEOUT)
+        self.idle_timer.start(Constants.USER_SCROLL_IDLE_TIMEOUT)
 
         if not self.animation_timer.isActive():
             self.animation_timer.start()
@@ -2328,7 +2510,7 @@ class ElasticScrollArea(QScrollArea):
         else:
             excess = self.raw_scroll_position - limit
 
-        resistance = max(0.05, 1.0 / (1.0 + excess / (VISUAL_RESISTANCE_STRENGTH * 0.5))) * 0.3
+        resistance = max(0.05, 1.0 / (1.0 + excess / (Constants.VISUAL_RESISTANCE_STRENGTH * 0.5))) * 0.3
         
         return resistance
 
@@ -2343,24 +2525,24 @@ class ElasticScrollArea(QScrollArea):
 
     def update_velocity(self, overshoot: float) -> None:
         if overshoot == 0.0:
-            self.velocity_speed *= INERTIA_DECELERATION_RATE
+            self.velocity_speed *= Constants.INERTIA_DECELERATION_RATE
             return
 
         if self.scrolling_is_active:
             self.velocity_speed *= 0.8
         
         else:
-            spring_force = - overshoot * SPRING_STIFFNESS
-            damping_force = - self.velocity_speed * SPRING_DAMPING_FACTOR
+            spring_force  = -overshoot           * Constants.SPRING_STIFFNESS
+            damping_force = -self.velocity_speed * Constants.SPRING_DAMPING_FACTOR
 
             self.velocity_speed += spring_force + damping_force
 
     def calculate_position(self, raw: float, limit: float) -> float:
         if raw < 0.0:
-            return raw / (1.0 + abs(raw) / VISUAL_RESISTANCE_STRENGTH)
+            return raw / (1.0 + abs(raw) / Constants.VISUAL_RESISTANCE_STRENGTH)
 
         if raw > limit:
             excess = raw - limit
-            return limit + (excess / (1.0 + excess / VISUAL_RESISTANCE_STRENGTH))
+            return limit + (excess / (1.0 + excess / Constants.VISUAL_RESISTANCE_STRENGTH))
 
         return raw
