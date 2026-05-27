@@ -2,7 +2,7 @@ def make_button_style(
         bg_color:          str,
         hover_color:       str,
         border:            str = None,
-        rounding:          int = 16,
+        rounding:          int = 13,
         deactivated_color: str = "#777777"
     ) -> str:
     
@@ -10,7 +10,7 @@ def make_button_style(
         QPushButton {{
             background-color: {bg_color};
             color: {Colors.FontColor};
-            padding: 0px 15px;
+            padding: 0px 12px;
             border-radius: {rounding}px;
             outline: none;
             {f"border: {border};" if border else ""}
@@ -72,33 +72,33 @@ class Colors:
         TrackNameColor      = "#bbbbbb"
 
 class Roundings:
-    Button          = 16
-    Slider          = 3
-    SliderHandle    = 4
+    Button          = 13
+    Slider          = 2
+    SliderHandle    = 3
 
-    RmbMenu         = 16
-    RmbMenuItem     = 12
+    RmbMenu         = 13
+    RmbMenuItem     = 10
 
-    Selection       = 10
+    Selection       = 8
 
 class Metrics:
-    ElementHeight   = 50
-    GlassBorderThick = 1.5
+    ElementHeight   = 40
+    GlassBorderThick = 1.2
 
-    SliderHeight    = 6
-    HandleSize      = 14
+    SliderHeight    = 5
+    HandleSize      = 11
 
-    CheckboxSize    = 16
+    CheckboxSize    = 13
 
     class Tracks:
-        RulerHeight = 30
-        RowHeight   = 50
-        LabelWidth  = 50
-        BoxHeight   = 40
-        BoxSpacing  = 4
+        RulerHeight = 24
+        RowHeight   = 40
+        LabelWidth  = 40
+        BoxHeight   = 32
+        BoxSpacing  = 3
 
     class Waveform:
-        Height      = 150
+        Height      = 120
 
 class Buttons:
     NothingStyledButton = make_button_style(
@@ -121,28 +121,28 @@ class Buttons:
         Colors.NormalButton,
         Colors.NormalButtonSecond,
         f"{Metrics.GlassBorderThick}px solid {Colors.GlassBorder}",
-        12
+        10
     )
 
     class MainMenu:
         AccentButton = make_button_style(
             Colors.NothingAccent,
             Colors.NothingAccentHover,
-            rounding          = 20,
+            rounding          = 16,
             deactivated_color = Colors.NothingAccent
         )
 
         NormalButton = make_button_style(
             Colors.MainMenu.Button,
             Colors.MainMenu.ButtonHover,
-            rounding          = 20,
+            rounding          = 16,
             deactivated_color = Colors.MainMenu.Button
         )
 
         SmallButton = make_button_style(
             Colors.MainMenu.SmallButton,
             Colors.MainMenu.SmallButtonHover,
-            rounding          = 14,
+            rounding          = 11,
             deactivated_color = Colors.MainMenu.SmallButton
         )
 
@@ -150,13 +150,13 @@ class Buttons:
         CategoryInactiveButton = make_button_style(
             "transparent",
             Colors.NormalButtonSecond,
-            rounding = 18
+            rounding = 14
         )
 
         CategoryActiveButton = make_button_style(
             Colors.NothingAccent,
             Colors.NothingAccentHover,
-            rounding = 18
+            rounding = 14
         )
 
 class Other:
@@ -166,7 +166,7 @@ class Other:
         QLabel {{
             background-color: {Colors.SecondaryBackground};
             color: {Colors.FontColor};
-            padding: 0px 10px;
+            padding: 0px 8px;
             border-radius: {Roundings.Button}px;
             min-height: {Metrics.ElementHeight}px;
         }}
@@ -189,7 +189,7 @@ class Other:
 
 class Controls:
     SegmentedButton = f"""
-        QWidget {{ background-color: transparent; border-radius: 10px; }}
+        QWidget {{ background-color: transparent; border-radius: 8px; }}
 
         QPushButton#segmentedButton {{
             color: {Colors.FontColor};
@@ -214,7 +214,7 @@ class Controls:
         QWidget {{
             background-color: transparent;
             border-radius: {Roundings.Button}px;
-            border: 1.5px solid {Colors.GlassBorder};
+            border: 1.2px solid {Colors.GlassBorder};
         }}
 
         QPushButton#segmentedButton {{
@@ -243,32 +243,32 @@ class Controls:
     TextBoxNoBorder = f"""
         background-color: {Colors.Floating.Background};
         color: #fff;
-        padding: 8px 12px;
+        padding: 6px 10px;
         border-radius: {Roundings.Button}px;
     """
 
     FloatingTextBox = f"""
         background-color: {Colors.Floating.Background};
         color: #fff;
-        padding: 8px 12px;
-        border-radius: 15px;
-        border: 1.5px solid {Colors.GlassBorder}
+        padding: 6px 10px;
+        border-radius: 11px;
+        border: 1.2px solid {Colors.GlassBorder}
     """
 
     FloatingSearchTextBox = f"""
         background-color: transparent;
         color: #fff;
-        padding: 8px 12px;
-        border-radius: 20px;
+        padding: 6px 10px;
+        border-radius: 16px;
         border: none
     """
 
     FloatingTextBoxRound = f"""
         background-color: {Colors.Floating.Background};
         color: #fff;
-        padding: 8px 12px;
-        border-radius: 16px;
-        border: 1.5px solid {Colors.GlassBorder}
+        padding: 6px 10px;
+        border-radius: 13px;
+        border: 1.2px solid {Colors.GlassBorder}
     """
 
     AudioSetupper = f"""
@@ -288,7 +288,7 @@ class Controls:
         QSpinBox {{
             background-color: transparent;
             border: none;
-            padding: 5px;
+            padding: 4px;
             color: {Colors.FontColor};
         }}
         
@@ -296,7 +296,7 @@ class Controls:
             background-color: {Colors.SecondaryBackground};
             color: {Colors.FontColor};
             border: none;
-            padding: 5px;
+            padding: 4px;
         }}
 
         QComboBox::down-arrow {{ image: none; }}
@@ -329,8 +329,8 @@ class Controls:
 
     EffectSetupper = f"""
         QWidget {{background-color: {Colors.EffectMenu.Standard}; color: {Colors.FontColor}}}
-        QLabel {{padding: 5px}}
-        QCheckBox {{margin-left: 5px}}
+        QLabel {{padding: 4px}}
+        QCheckBox {{margin-left: 4px}}
     """
 
     SliderBackground = f"""
@@ -363,7 +363,7 @@ class Controls:
         QSlider::handle:horizontal {{
             width: {Metrics.HandleSize};
             height: {Metrics.HandleSize};
-            margin: -5px 0;
+            margin: -4px 0;
             background: {Colors.NothingAccent};
             border: none;
             border-radius: {Roundings.SliderHandle}px;
@@ -417,14 +417,14 @@ class Controls:
 
     Checkbox = f"""
         QCheckBox {{
-            spacing: 8px;
+            spacing: 6px;
             color: {Colors.FontColor};
         }}
 
         QCheckBox::indicator {{
             width: {Metrics.CheckboxSize};
             height: {Metrics.CheckboxSize};
-            border-radius: 5px;
+            border-radius: 4px;
             background-color: {Colors.EffectMenu.Hover};
             border: {Metrics.GlassBorderThick} solid #555;
         }}
@@ -441,7 +441,7 @@ class Controls:
 
     DialogBackground = """
         background-color: rgba(20, 20, 20, 220);
-        border-radius: 16px;
+        border-radius: 13px;
     """
 
 
@@ -452,12 +452,12 @@ class Menus:
             color: {Colors.FontColor};
             border: {Metrics.GlassBorderThick} solid {Colors.GlassBorder};
             border-radius: {Roundings.RmbMenu}px;
-            padding: 4px;
+            padding: 3px;
         }}
 
         QMenu::item {{
             {Other.Transparent}
-            padding: 5px 15px;
+            padding: 4px 12px;
             margin: 2px;
             border-radius: {Roundings.RmbMenuItem}px;
         }}
@@ -469,7 +469,7 @@ class Menus:
         QMenu::separator {{
             height: {Metrics.GlassBorderThick};
             background-color: {Colors.GlassBorder};
-            margin: 4px 15px;
+            margin: 3px 12px;
         }}
     """
 
@@ -479,12 +479,12 @@ class Menus:
             color: {Colors.FontColor};
             border: {Metrics.GlassBorderThick} solid {Colors.GlassBorder};
             border-radius: {Roundings.RmbMenu}px;
-            padding: 4px;
+            padding: 3px;
         }}
 
         QMenu::item {{
             {Other.Transparent}
-            padding: 5px 15px;
+            padding: 4px 12px;
             margin: 2px;
             border-radius: {Roundings.RmbMenuItem}px;
         }}
@@ -496,6 +496,6 @@ class Menus:
         QMenu::separator {{
             height: {Metrics.GlassBorderThick};
             background-color: {Colors.GlassBorder};
-            margin: 4px 15px;
+            margin: 3px 12px;
         }}
     """
