@@ -11,7 +11,8 @@ from loguru import (
 )
 
 from System.Common import (
-    Utils
+    Utils,
+    Constants
 )
 
 from System.Interface import (
@@ -26,20 +27,11 @@ from System.Services import (
     RealTimeVisualizer
 )
 
-from System.Common.Constants import (
-    DEVICES,
-    FFMPEG_PATH,
-    FFPROBE_PATH,
-    NUMBER_TO_CODE,
-    DEFAULT_DURATION,
-    DEFAULT_BRIGHTNESS
-)
-
 # Utility Functions
 
 def get_audio_duration_ms(file_path: str) -> int:
     cmd = [
-        FFPROBE_PATH,
+        Constants.FFPROBE_PATH,
         "-v", "error",
         "-show_entries", "format=duration",
         "-of", "json",
@@ -58,7 +50,7 @@ def get_audio_duration_ms(file_path: str) -> int:
 
 def get_metadata(file_path: str) -> tuple[str | None, str]:
     cmd = [
-        FFPROBE_PATH,
+        Constants.FFPROBE_PATH,
         "-v", "error",
         "-show_entries", "format_tags=title,artist,TITLE,ARTIST",
         "-of", "json",
@@ -385,7 +377,7 @@ class BaseComposition:
         afilter = ",".join(filters)
 
         cmd = [
-            FFMPEG_PATH,
+            Constants.FFMPEG_PATH,
             "-y",
             "-v", "error",
             "-i", input_path,
@@ -478,8 +470,8 @@ class BaseComposition:
         
         self.export(watermark)
 
-        for model in DEVICES[self.model].port_variants:
-            self.export(watermark, NUMBER_TO_CODE[model])
+        for model in Constants.DEVICES[self.model].port_variants:
+            self.export(watermark, Constants.NUMBER_TO_CODE[model])
 
         Utils.open_file(Utils.get_user_path(str(self.id), "Cassette/Songs"))
 
@@ -507,9 +499,9 @@ class Composition(BaseComposition):
             self.version = file.read()
 
         self.song_path      = audiofile_path
-        self.brightness     = DEFAULT_BRIGHTNESS
-        self.duration_ms    = DEFAULT_DURATION
-        self.track_number   = DEVICES[self.model].base_tracks
+        self.brightness     = Constants.DEFAULT_BRIGHTNESS
+        self.duration_ms    = Constants.DEFAULT_DURATION
+        self.track_number   = Constants.DEVICES[self.model].base_tracks
         self.save_version   = settings.get("version", self.version)
         self.default_effect = "none"
 
@@ -709,7 +701,7 @@ class MinimalComposition(BaseComposition):
         super().__init__(id, settings)
 
         if not os.path.exists(self.full_song_path):
-            Windows.ErrorWindow("Corrupted!", "This save is corrupted.").exec_()
+            Windows.ErrorWindow("Corrupted!", "This save is corrupted.").exec()
             return
 
         if self.needs_cropped_audio():

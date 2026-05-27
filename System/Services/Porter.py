@@ -1,12 +1,6 @@
 import random
 
-from loguru import logger
-
-from System.Common.Constants import (
-    DEVICES,
-    PortMaps
-)
-
+from System.Common import Constants
 from System.Services import GlyphEffects
 
 # Segment Utilities
@@ -114,7 +108,7 @@ def get_target_track(
     ) -> list:
 
     glyph_track = glyph["track"]
-    model_map   = PortMaps[port_from]["to"][port_to]
+    model_map   = Constants.PortMaps[port_from]["to"][port_to]
     track_data  = model_map[glyph_track]
 
     if "effect" in glyph:
@@ -173,8 +167,8 @@ def convert_effect_to_ported_glyphs(
     output_glyphs = []
 
     if "segments" in effect:
-        segment_source      = DEVICES[composition_model].segments_map[effect["track"]]
-        segment_destination = DEVICES[port_to].segments_map[target_tracks[0]]
+        segment_source      = Constants.DEVICES[composition_model].segments_map[effect["track"]]
+        segment_destination = Constants.DEVICES[port_to].segments_map[target_tracks[0]]
         
         ported_segments = port_segments_function(segment_source, segment_destination, effect["segments"])
 
@@ -219,8 +213,8 @@ def convert_single_to_ported_glyphs(
         return output_glyphs
 
     chosen_target       = target_tracks[0]
-    port_segments_from  = DEVICES[composition_model].segments_map[single["track"]]
-    port_segments_to    = DEVICES[port_to].segments_map[chosen_target]
+    port_segments_from  = Constants.DEVICES[composition_model].segments_map[single["track"]]
+    port_segments_to    = Constants.DEVICES[port_to].segments_map[chosen_target]
     
     ported_segments     = port_segments_function(port_segments_from, port_segments_to, single["segments"])
     

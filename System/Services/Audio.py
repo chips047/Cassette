@@ -9,12 +9,10 @@ from loguru import logger
 
 from pathlib import Path
 
-from System.Common.Constants import (
-    FFMPEG_PATH,
-    FFPROBE_PATH
+from System.Common import (
+    Utils,
+    Constants
 )
-
-from System.Common import Utils
 
 class NoAudioStreams(Exception):
     pass
@@ -27,29 +25,34 @@ class CorruptedFileError(Exception):
 
 def probe_audio(path: str) -> dict:
     cmd = [
-        FFPROBE_PATH,
+        Constants.FFPROBE_PATH,
         "-v", "error",
         "-print_format", "json",
         "-show_streams",
         "-show_format",
-        path,
+        path
     ]
 
     try:
+        logger.debug(f"Probing audio file: {path}")
         result = Utils.run_hidden(cmd)
     
     except FileNotFoundError:
+        logger.error("FFprobe was not found. Please ensure it is included with the application.")
         raise FileNotFoundError("FFprobe was not found.")
 
     if result.returncode != 0:
+        logger.error(f"FFprobe error: {result.stderr}")
         raise CorruptedFileError(
             "The audio file is corrupted or in an unsupported format."
         )
 
     try:
+        logger.debug("Parsing FFprobe output")
         return json.loads(result.stdout)
     
     except json.JSONDecodeError:
+        logger.error("Failed to parse FFprobe output. The audio file may be corrupted or in an unsupported format.")
         raise CorruptedFileError(
             "The audio file is corrupted or in an unsupported format."
         )
@@ -94,7 +97,7 @@ def ensure_wav(path: str) -> str:
     temp_file.close()
 
     cmd = [
-        FFMPEG_PATH,
+        Constants.FFMPEG_PATH,
         "-y",
         "-v", "error",
         "-i", path,
@@ -105,6 +108,7 @@ def ensure_wav(path: str) -> str:
     ]
 
     try:
+        logger.debug(f"Converting audio to WAV: {path} -> {temp_path}")
         result = Utils.run_hidden(cmd)
 
         if result.returncode != 0:
@@ -137,6 +141,8 @@ def analyze_bpm_and_beats(
     except Exception:
         return 0.0, []
 
+    logger.debug(f"Analyzing BPM and beats for: {audio_path}")
+    
     samplerate = source.samplerate or 44100
     detector   = aubio.tempo("default", window_size, hop_size, samplerate)
     detector.set_silence(-40)
@@ -171,11 +177,14 @@ def analyze_bpm_and_beats(
 
     formatted_beats = [round(float(b), 3) for b in beats]
 
+    logger.debug(f"Estimated BPM: {bpm}")
+
     return bpm, formatted_beats
 
 def load_audio(path: str) -> tuple[numpy.ndarray, int]:
     try:
         data, sample_rate = soundfile.read(path, dtype="float32")
+        logger.info(f"Loaded audio file: {path} (Sample Rate: {sample_rate}, Channels: {data.shape[1] if data.ndim > 1 else 1})")
         return data, sample_rate
     
     except soundfile.LibsndfileError:

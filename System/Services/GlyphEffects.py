@@ -1,6 +1,6 @@
 import random
 
-from System.Common.Constants import DEVICES
+from System.Common import Constants
 
 from loguru import logger
 
@@ -42,7 +42,7 @@ def extract_glyph_data(
     total_segments     = None
     active_segments    = glyph.get("segments")
 
-    model = DEVICES.get(model)
+    model = Constants.DEVICES.get(model)
 
     if not model:
         total_segments = 30

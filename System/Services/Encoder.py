@@ -8,16 +8,12 @@ from loguru import logger
 
 from mutagen.oggopus import OggOpus
 
-from System.Common import Utils
-from System.Services import GlyphEffects
-
-from System.Common.Constants import (
-    DEVICES,
-    DOT_FONT,
-    FFMPEG_PATH,
-    DeviceConfig,
-    VISUAL_EASINGS
+from System.Common import (
+    Utils,
+    Constants
 )
+
+from System.Services import GlyphEffects
 
 TIME_STEP_MS = 16.666  # 60 FPS
 
@@ -29,7 +25,7 @@ def glyphs_to_ogg(
         watermark:     str = "Cassette"
     ) -> None:
 
-    device = DEVICES.get(model_code)
+    device = Constants.DEVICES.get(model_code)
 
     if not device:
         raise ValueError(f"Unsupported device model: {model_code}")
@@ -84,7 +80,7 @@ def get_audio_duration(path_to_audio: str) -> float:
     audio = OggOpus(path_to_audio)
     return audio.info.length
 
-def parse_glyphs(glyphs: dict, device: DeviceConfig) -> list[dict]:
+def parse_glyphs(glyphs: dict, device: Constants.DeviceConfig) -> list[dict]:
     parsed = []
 
     for glyph in glyphs:
@@ -144,7 +140,7 @@ def is_glyph_within_time_range(
 
 def apply_glyphs_to_author(
         parsed_glyphs: list[dict],
-        author_data:   list[list[int]],
+        author_data:   list[list[int]]
     ) -> list[list[int]]:
 
     for glyph in parsed_glyphs:
@@ -177,7 +173,7 @@ def get_glyph_brightness(
         return parsed_glyph["brightness"]
 
     keyframes   = parsed_glyph["keyframes"]
-    easing_func = VISUAL_EASINGS[parsed_glyph["easing"]]
+    easing_func = Constants.VISUAL_EASINGS[parsed_glyph["easing"]]
     progress    = step_index / (total_steps - 1) if total_steps > 1 else 1.0
 
     if progress <= keyframes[0][0]:
@@ -220,7 +216,7 @@ def generate_point_list(
     return points_list, matrix
 
 def get_text_matrix(text: str, min_width: int = 24) -> list[list[int]]:
-    font          = DOT_FONT
+    font          = Constants.DOT_FONT
     matrix_height = 5
     raw_matrix    = [[] for _ in range(matrix_height)]
 
@@ -242,7 +238,7 @@ def get_text_matrix(text: str, min_width: int = 24) -> list[list[int]]:
     ]
 
 def prepare_nglyph_data(
-        device:       DeviceConfig,
+        device:       Constants.DeviceConfig,
         author_data:  list[list[int]],
         custom1_data: list[str]
     ) -> dict:
@@ -286,7 +282,7 @@ def decode_author_data(author_b64: str) -> list[list[int]]:
     return author_data
 
 def prepare_metadata(
-        device:         DeviceConfig,
+        device:         Constants.DeviceConfig,
         author_base64:  str,
         custom1_base64: str
     ) -> dict:
@@ -431,7 +427,7 @@ def bngc_to_glyphs(
 
     target_config, model_name = next(
         (
-            (config, name) for name, config in DEVICES.items()
+            (config, name) for name, config in Constants.DEVICES.items()
             if config.total_tracks_with_segments == total_tracks or total_tracks in config.legacy_tracks
         ),
         (None, "UNKNOWN")
@@ -509,7 +505,7 @@ def labels_to_glyphs(
         ), None
     )
 
-    config = DEVICES.get(model_name)
+    config = Constants.DEVICES.get(model_name)
 
     if not config:
         raise LabelsNoModelError(f"Unknown model: {model_name}")
@@ -668,7 +664,7 @@ def trim_glyphs_ogg(
     )
 
     cmd = [
-        FFMPEG_PATH,
+        Constants.FFMPEG_PATH,
         "-y",
         "-v", "error",
         "-ss", str(start_ms / 1000.0),
