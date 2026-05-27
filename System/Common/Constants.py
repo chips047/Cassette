@@ -2,26 +2,18 @@ from loguru import logger
 
 from System.Common import Utils
 
-from PyQt5.QtCore import QSettings
+from PyQt6.QtCore import QSettings
 
 from dataclasses import (
     field,
     dataclass
 )
 
-CURRENT_SETTINGS: dict[str, object] = {}
+current_settings = Utils.SettingsController("chips047", "Cassette")
 
 def load_settings() -> None:
-    qsettings_cache = QSettings("chips047", "Cassette")
-
     logger.debug(f"Loaded settings from chips047/Cassette")
-
-    CURRENT_SETTINGS.clear()
-    CURRENT_SETTINGS.update(
-        {
-            k: Utils.auto_cast(qsettings_cache.value(k)) for k in qsettings_cache.allKeys()
-        }
-    )
+    current_settings.load()
 
 def get_default_value(parameters: dict[str, object]) -> int | str | bool | None:
     element_type = parameters.get("type", "")
@@ -38,17 +30,16 @@ def get_default_value(parameters: dict[str, object]) -> int | str | bool | None:
     return None
 
 def prepare_default_settings(setting_components: dict[str, list]) -> None:
-    settings       = QSettings("chips047", "Cassette")
+    settings       = current_settings.instance
     existing_keys  = set(settings.allKeys())
     new_keys       = set()
-    protected_keys = {"tutorial_shown", "new_user"}
 
     for components in setting_components.values():
         for parameters in components:
             key = parameters["key"]
             new_keys.add(key)
 
-            if settings.contains(key):
+            if key in existing_keys:
                 continue
 
             default_val = get_default_value(parameters)
@@ -56,12 +47,14 @@ def prepare_default_settings(setting_components: dict[str, list]) -> None:
                 settings.setValue(key, default_val)
 
     for key in (existing_keys - new_keys):
-        if key in protected_keys:
+        if key.startswith("_"):
             continue
 
         settings.remove(key)
 
     settings.sync()
+
+    logger.success("Default settings prepared and synced.")
 
 # Models and Related
 
@@ -932,6 +925,13 @@ SettingsDict = {
             "title": "Glyph 3D Tilt",
             "description": "Enables 3D tilt when resizing or moving a glyph.",
             "key": "glyph_tilt_animation",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Playhead Animations",
+            "description": "Enables animations on the playhead.",
+            "key": "playhead_animations",
             "default": True
         },
         {
