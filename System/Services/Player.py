@@ -1201,7 +1201,7 @@ class UISoundManager:
             output_format    = miniaudio.SampleFormat.SIGNED16,
             nchannels        = self.channels,
             sample_rate      = self.sample_rate,
-            buffersize_msec  = 30,
+            buffersize_msec  = 15,
             callback_periods = 4,
             thread_prio      = miniaudio.ThreadPriority.HIGHEST
         )
