@@ -797,10 +797,14 @@ class ApplicationWindow(QMainWindow):
 def main() -> None:
     logger.debug("Configuring OpenGL surface format")
 
+    QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL)
+
     surface_format = QSurfaceFormat()
     surface_format.setVersion(4, 1)
     surface_format.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
     surface_format.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
+    surface_format.setSwapBehavior(QSurfaceFormat.SwapBehavior.TripleBuffer)
+    surface_format.setSwapInterval(1)
 
     logger.debug("Configuring application settings")
 
