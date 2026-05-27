@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from loguru import logger
 
-from PyQt5.QtGui import QIcon
+from PyQt6.QtGui import QIcon
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     pyqtSignal
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QLabel,
     QWidget,
     QHBoxLayout,
@@ -46,8 +46,8 @@ class CompositorWidget(QWidget):
         self.playback_manager = Player.player
 
         self.overall_layout = QVBoxLayout(self)
-        self.overall_layout.setContentsMargins(10, 10, 10, 10)
-        self.overall_layout.setSpacing(10)
+        self.overall_layout.setContentsMargins(8, 8, 8, 8)
+        self.overall_layout.setSpacing(8)
 
         self.build_controls()
         self.setup_layout()
@@ -60,7 +60,7 @@ class CompositorWidget(QWidget):
         self.top_control_bar_widget = QWidget()
         self.top_control_bar_layout = QHBoxLayout(self.top_control_bar_widget)
         self.top_control_bar_layout.setContentsMargins(0, 0, 0, 0)
-        self.top_control_bar_layout.setSpacing(10)
+        self.top_control_bar_layout.setSpacing(8)
 
         self.eject_button        = Basic.Button("Eject")
         self.export_button       = Basic.NothingButton("Export")
@@ -92,7 +92,7 @@ class CompositorWidget(QWidget):
             ]
         )
 
-        self.top_status_label.setFont(Utils.NDot(14))
+        self.top_status_label.setFont(Utils.NDot(11))
         self.top_status_label.setMinimumHeight(Styles.Metrics.ElementHeight)
         self.top_status_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.top_status_label.setStyleSheet(Styles.Other.StatusBar)
@@ -129,15 +129,17 @@ class CompositorWidget(QWidget):
             if child is self.content_widget:
                 continue
             
-            child.setFocusPolicy(Qt.NoFocus)
+            child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        self.content_widget.setFocusPolicy(Qt.StrongFocus)
+        self.content_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     # Lifecycle
 
     def load_composition(self, composition: ProjectSaver.Composition) -> None:
         path = composition.get_playback_audio_path()
+        Player.bpm_informer.set_bpm(composition.bpm)
         self.playback_manager.load_audio(path)
+        
         self.content_widget.load_composition(composition)
 
         self.content_widget.playhead_moved.connect(self.mini_preview_widget.set_playhead_position)
@@ -160,7 +162,8 @@ class CompositorWidget(QWidget):
 
         self.content_widget.playhead_moved.disconnect(self.mini_preview_widget.set_playhead_position)
 
-        self.mini_preview_widget.audio_data = None
+        self.mini_preview_widget.audio = None
+        self.mini_preview_widget.set_playhead_position(0.0)
 
         self.default_effect.reset()
         self.playspeed_button.reset()
@@ -172,9 +175,8 @@ class CompositorWidget(QWidget):
     def export_ringtone(self) -> None:
         Windows.ExportDialogWindow(
             self.content_widget.composition,
-            self.content_widget.composition.bpm,
             self.playback_manager
-        ).exec_()
+        ).exec()
 
     def on_elements_changed(self) -> None:
         has_glyphs = bool(self.content_widget.glyph_controller.glyph_items)
@@ -182,4 +184,4 @@ class CompositorWidget(QWidget):
 
     @staticmethod
     def open_playground_window() -> None:
-        Windows.Playground().exec_()
+        Windows.Playground().exec()
