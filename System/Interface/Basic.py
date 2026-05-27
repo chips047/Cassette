@@ -51,6 +51,10 @@ class Timer(QTimer):
         self.setInterval(interval)
         self.setSingleShot(single_shot)
 
+        if interval < 15:
+            logger.debug(f"Creating {interval}ms timer with precise profile")
+            self.setTimerType(Qt.TimerType.PreciseTimer)
+
         if callback:
             self.timeout.connect(callback)
 
