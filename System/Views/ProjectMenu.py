@@ -8,7 +8,7 @@ import webbrowser
 
 from loguru import logger
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     QTimer,
     pyqtSignal,
@@ -16,7 +16,7 @@ from PyQt5.QtCore import (
     QPropertyAnimation
 )
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
     QIcon,
     QBrush,
     QColor,
@@ -29,7 +29,7 @@ from PyQt5.QtGui import (
     QLinearGradient
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QFrame,
     QLabel,
     QWidget,
@@ -45,12 +45,8 @@ from PyQt5.QtWidgets import (
 
 from System.Common import (
     Utils,
-    Styles
-)
-
-from System.Common.Constants import (
-    DEVICES,
-    SettingsDict
+    Styles,
+    Constants
 )
 
 from System.Interface import (
@@ -153,7 +149,7 @@ def get_projects_info(songs_folder: str) -> dict[str, dict[str, object]]:
         try:
             audio_data = save_data["audio"]
             model_code = save_data["model"]
-            model_info = DEVICES[model_code]
+            model_info = Constants.DEVICES[model_code]
 
             title  = audio_data["title"]
             artist = audio_data["artist"]
@@ -190,21 +186,21 @@ class TrackItemWidget(QWidget):
         self.project_id = project_id
         self.main_menu  = main_menu
 
-        self.setMinimumWidth(300)
-        self.setFixedHeight(150)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(240)
+        self.setFixedHeight(120)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self.background_frame = QFrame(self)
         self.background_frame.setStyleSheet(
             f"""
                 QFrame {{
                     background-color: {Styles.Colors.SecondaryBackground};
-                    border-radius: 30px;
+                    border-radius: 24px;
                 }}
             """
         )
 
-        self.background_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.background_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(0)
@@ -212,20 +208,20 @@ class TrackItemWidget(QWidget):
         main_layout.addWidget(self.background_frame)
 
         content_layout = QVBoxLayout(self.background_frame)
-        content_layout.setContentsMargins(20, 20, 20, 20)
-        content_layout.setSpacing(5)
+        content_layout.setContentsMargins(16, 16, 16, 16)
+        content_layout.setSpacing(4)
 
         top_layout  = QHBoxLayout()
         info_layout = QVBoxLayout()
 
-        info_layout.setSpacing(5)
+        info_layout.setSpacing(4)
 
         title_label = QLabel(title)
-        title_label.setFont(Utils.NType(14))
+        title_label.setFont(Utils.NType(11.5))
         title_label.setStyleSheet(Styles.Other.Font)
 
         artist_label = QLabel(f"{artist}  {subtitle}")
-        artist_label.setFont(Utils.NType(11))
+        artist_label.setFont(Utils.NType(9))
         artist_label.setStyleSheet(Styles.Other.SecondFont)
 
         info_layout.addWidget(title_label)
@@ -236,10 +232,10 @@ class TrackItemWidget(QWidget):
         top_layout.addStretch()
 
         bottom_layout = QHBoxLayout()
-        bottom_layout.setContentsMargins(0, 20, 0, 0)
+        bottom_layout.setContentsMargins(0, 16, 0, 0)
 
         icons_layout = QHBoxLayout()
-        icons_layout.setSpacing(5)
+        icons_layout.setSpacing(4)
 
         icons_data = [
             ("Delete.png", self.on_delete_clicked),
@@ -267,7 +263,7 @@ class TrackItemWidget(QWidget):
     def on_delete_clicked(self) -> None:
         dialog = Windows.DialogWindow("Remove?")
 
-        if not dialog.exec_():
+        if not dialog.exec():
             return
 
         shutil.rmtree(
@@ -279,7 +275,7 @@ class TrackItemWidget(QWidget):
 
     def on_export_clicked(self) -> None:
         composition = ProjectSaver.MinimalComposition(self.project_id)
-        Windows.ExportDialogWindow(composition).exec_()
+        Windows.ExportDialogWindow(composition).exec()
 
 class FadeOverlay(QWidget):
     def __init__(
@@ -295,11 +291,11 @@ class FadeOverlay(QWidget):
         self.is_top        = is_top
         self.opacity_value = 1.0
 
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setOpacity(self.opacity_value)
 
         gradient = QLinearGradient(0, 0, 0, self.height())
@@ -345,15 +341,15 @@ class FadeScrollArea(QScrollArea):
         self.animations:  dict[FadeOverlay, QPropertyAnimation] = {}
 
         self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.NoFrame)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self.top_fade    = FadeOverlay(self.fade_color, True, self)
         self.bottom_fade = FadeOverlay(self.fade_color, False, self)
 
-        self.top_fade.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.bottom_fade.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.top_fade.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.bottom_fade.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
         self.verticalScrollBar().valueChanged.connect(self.update_fade_visibility)
 
@@ -407,10 +403,12 @@ class MainMenu(QWidget):
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
 
-        self.projects_info: dict[str, dict[str, object]] = {}
-        self.track_widgets: dict[str, TrackItemWidget]   = {}
-        self.search_box:    Inputs.Textbox | None        = None
-        self.tracks_widget: QWidget | None               = None
+        self.projects_info:   dict[str, dict[str, object]] = {}
+        self.track_widgets:   dict[str, TrackItemWidget]   = {}
+        self.search_box:      Inputs.Textbox | None        = None
+        self.tracks_widget:   QWidget        | None        = None
+        
+        self.drag_loop_sound: Player.UISound | None        = None
 
         self.container = QFrame(self)
         self.container.setObjectName("container")
@@ -418,7 +416,7 @@ class MainMenu(QWidget):
             f"""
                 #container {{
                     background-color: {Styles.Colors.Background};
-                    border-radius: 40px;
+                    border-radius: 32px;
                 }}
             """
         )
@@ -432,13 +430,13 @@ class MainMenu(QWidget):
     
     def setup_ui(self) -> None:
         container_layout = QVBoxLayout(self.container)
-        container_layout.setContentsMargins(15, 15, 15, 15)
-        container_layout.setSpacing(15)
+        container_layout.setContentsMargins(12, 12, 12, 12)
+        container_layout.setSpacing(12)
 
         card_style = f"""
             QFrame {{
                 background-color: {Styles.Colors.SecondaryBackground};
-                border-radius: 25px;
+                border-radius: 20px;
             }}
         """
 
@@ -446,10 +444,10 @@ class MainMenu(QWidget):
         title_container.setStyleSheet(card_style)
 
         title_layout = QVBoxLayout(title_container)
-        title_layout.setContentsMargins(25, 20, 25, 20)
+        title_layout.setContentsMargins(20, 16, 20, 16)
 
         title_label = QLabel(Utils.get_time())
-        title_label.setFont(Utils.NType(24))
+        title_label.setFont(Utils.NType(19))
         title_label.setStyleSheet("background-color: transparent; color: #ffffff;")
 
         title_layout.addWidget(title_label)
@@ -460,8 +458,8 @@ class MainMenu(QWidget):
         button_container.setStyleSheet(card_style)
 
         button_layout = QVBoxLayout(button_container)
-        button_layout.setContentsMargins(5, 5, 5, 5)
-        button_layout.setSpacing(10)
+        button_layout.setContentsMargins(4, 4, 4, 4)
+        button_layout.setSpacing(8)
 
         button_panel = self.create_button_panel()
         button_layout.addWidget(button_panel)
@@ -492,7 +490,7 @@ class MainMenu(QWidget):
                 QScrollArea {
                     border: none;
                     background: transparent;
-                    border-radius: 30px;
+                    border-radius: 24px;
                 }
                 QScrollBar:vertical {
                     width: 0px;
@@ -505,22 +503,22 @@ class MainMenu(QWidget):
 
         self.tracks_grid_widget = QWidget()
         self.tracks_grid_layout = QGridLayout(self.tracks_grid_widget)
-        self.tracks_grid_layout.setSpacing(15)
+        self.tracks_grid_layout.setSpacing(12)
         self.tracks_grid_layout.setContentsMargins(0, 0, 0, 0)
         
         self.tracks_grid_widget.setSizePolicy(
-            QSizePolicy.Expanding,
-            QSizePolicy.Maximum
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Maximum
         )
         
-        self.tracks_layout.addWidget(self.tracks_grid_widget, alignment = Qt.AlignTop)
+        self.tracks_layout.addWidget(self.tracks_grid_widget, alignment = Qt.AlignmentFlag.AlignTop)
 
     def create_button_panel(self) -> QWidget:
         panel  = QWidget()
         layout = QHBoxLayout(panel)
 
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         version_path = Utils.get_resource_path("version")
         version      = "0.0.0"
@@ -669,7 +667,7 @@ class MainMenu(QWidget):
     def process_new_composition(self, file_path: str) -> None:
         window = Windows.AudioSetupDialog(file_path)
 
-        if window.exec_():
+        if window.exec():
             composition = ProjectSaver.Composition(
                 file_path,
                 window.settings
@@ -678,9 +676,26 @@ class MainMenu(QWidget):
             self.composition_created.emit(composition)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if not self.drag_loop_sound:
+            self.drag_loop_sound = Player.ui_player.play_sound(
+                "DragDrop/Loop",
+                loop = True
+            )
+
         event.acceptProposedAction()
 
+    def dragLeaveEvent(self, event: object) -> None:
+        if self.drag_loop_sound:
+            self.drag_loop_sound.stop()
+            self.drag_loop_sound = None
+
+        event.accept()
+
     def dropEvent(self, event: QDropEvent) -> None:
+        if self.drag_loop_sound:
+            self.drag_loop_sound.stop()
+            self.drag_loop_sound = None
+
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
             mime_type = mimetypes.guess_type(file_path)[0]
@@ -701,13 +716,13 @@ class MainMenu(QWidget):
 
     def on_settings(self) -> None:
         settings_dialog = Windows.Settings()
-        settings_dialog.init_settings(SettingsDict)
-        settings_dialog.exec_()
+        settings_dialog.init_settings(Constants.SettingsDict)
+        settings_dialog.exec()
 
     def on_import(self) -> None:
         window = Windows.ImportWindow()
 
-        if window.exec_():
+        if window.exec():
             composition = ProjectSaver.Composition(
                 window.audio_path,
                 window.settings
@@ -719,10 +734,10 @@ class MainMenu(QWidget):
         modifiers = QApplication.keyboardModifiers()
 
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            Windows.ByteBeatWindow().exec_()
+            Windows.ByteBeatWindow().exec()
             return
 
-        Windows.About().exec_()
+        Windows.About().exec()
 
     def on_glyphtones(self) -> None:
         webbrowser.open("https://glyphtones.firu.dev/")
@@ -732,8 +747,7 @@ class MainMenu(QWidget):
         self.edit_requested.emit(project_id)
 
     def ask_for_file(self) -> str | None:
-        options  = QFileDialog.Options()
-        options |= QFileDialog.Option.ReadOnly
+        options = QFileDialog.Option.ReadOnly
 
         dialog = QFileDialog(
             self,
@@ -744,7 +758,7 @@ class MainMenu(QWidget):
 
         dialog.setOptions(options)
 
-        if dialog.exec_() != QFileDialog.Accepted:
+        if dialog.exec() != QFileDialog.DialogCode.Accepted:
             return None
 
         return dialog.selectedFiles()[0]
@@ -764,4 +778,4 @@ class MainMenu(QWidget):
         if not file_path:
             return
 
-        Windows.GlyphtoneEditor(file_path).exec_()
+        Windows.GlyphtoneEditor(file_path).exec()
