@@ -1,4 +1,5 @@
 import os
+import re
 import math
 import numpy
 import random
@@ -6,10 +7,11 @@ import traceback
 import mimetypes
 import webbrowser
 
+from pathlib import Path
 from loguru import logger
 from collections.abc import Callable
 
-from PyQt5.QtGui import (
+from PyQt6.QtGui import (
     QIcon,
     QCursor,
     QPixmap,
@@ -20,7 +22,7 @@ from PyQt5.QtGui import (
     QSurfaceFormat
 )
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     Qt,
     QRect,
     QSize,
@@ -34,7 +36,7 @@ from PyQt5.QtCore import (
     QElapsedTimer
 )
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QLabel,
     QWidget,
     QHBoxLayout,
@@ -44,32 +46,19 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QFileDialog,
     QApplication,
-    QOpenGLWidget,
     QStackedWidget,
     QGraphicsOpacityEffect
 )
+
+from PyQt6.QtOpenGLWidgets import QOpenGLWidget
 
 from OpenGL import GL
 from OpenGL.GL import shaders
 
 from System.Common import (
     Utils,
-    Styles
-)
-
-from System.Common.Constants import (
-    FPS_30,
-    FPS_60,
-    DEVICES,
-    GLYPH_FS,
-    GLYPH_VS,
-    GITHUB_LINK,
-    load_settings,
-    VISUAL_EASINGS,
-    NUMBER_TO_CODE,
-    CURRENT_SETTINGS,
-    FLOATING_WINDOW_FS,
-    FLOATING_WINDOW_VS
+    Styles,
+    Constants
 )
 
 from System.Services import (
@@ -106,15 +95,15 @@ def build_column(
 def make_time_textbox() -> Inputs.Textbox:
     textbox = Inputs.Textbox(":time", max_length = 5)
     textbox.setStyleSheet(Styles.Controls.FloatingTextBox)
-    textbox.setFixedHeight(40)
-    textbox.setFixedWidth(70)
+    textbox.setFixedHeight(32)
+    textbox.setFixedWidth(56)
     
     return textbox
 
 def make_fade_textbox(placeholder: str) -> Inputs.Textbox:
     textbox = Inputs.Textbox("number", 0, 5000, placeholder = placeholder)
     textbox.setStyleSheet(Styles.Controls.FloatingTextBox)
-    textbox.setFixedHeight(40)
+    textbox.setFixedHeight(32)
     
     return textbox
 
@@ -130,7 +119,6 @@ class FloatingWindowGPU(QOpenGLWidget):
             margin:                          int                    | None = None,
             dialog:                          bool                          = True,
             stays_on_top:                    bool                          = True,
-            bpm:                             int                    | None = None,
             player:                          Player.PlaybackManager        = None,
             max_tilt_angle:                  int                           = 20,
             animation_style:                 str                    | None = None,
@@ -139,15 +127,16 @@ class FloatingWindowGPU(QOpenGLWidget):
             enable_tilt:                     bool                          = True,
             enable_open_animation:           bool                          = True,
             enable_close_animation:          bool                          = True,
-            start_position:                  QPoint                 | None = None
+            start_position:                  QPoint                 | None = None,
+            show_fps:                        bool                          = False
         ):
 
         super().__init__(parent)
 
-        self.bpm                   = bpm
         self.player                = player
         self.enable_tilt           = enable_tilt
         self.max_tilt_angle        = max_tilt_angle
+        self.show_fps              = show_fps
 
         self.result                = None
         self.event_loop            = None
@@ -157,8 +146,11 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.is_closing            = False
         self.was_cancelled         = False
         self.start_position        = start_position
+        
+        self.shake_frequency_ms    = 80
+        self.shake_deviation       = 2.0
 
-        self.animation_style       = animation_style or CURRENT_SETTINGS["animation_style"]
+        self.animation_style       = animation_style or Constants.current_settings["animation_style"]
 
         self.enable_open_animation              = enable_open_animation
         self.enable_close_animation             = enable_close_animation
@@ -168,9 +160,14 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.margin_x = margin or 300
         self.margin_y = margin or 300
 
-        self.tilt_animation_timer = None
-        self.bpm_timer            = None
         self.anim_group           = None
+
+        self.frame_count = 0
+        self.fps_timer   = QElapsedTimer()
+
+        if self.show_fps:
+            self.fps_timer.start()
+            self.frameSwapped.connect(self.on_frame_swapped)
 
         self.prepare_fmt()
         self.apply_attributes(dialog, stays_on_top)
@@ -190,8 +187,8 @@ class FloatingWindowGPU(QOpenGLWidget):
         surface_format.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         surface_format.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
 
-        if CURRENT_SETTINGS.get("msaa"):
-            surface_format.setSamples(CURRENT_SETTINGS["msaa"])
+        if Constants.current_settings.get("msaa"):
+            surface_format.setSamples(Constants.current_settings["msaa"])
 
         self.setFormat(surface_format)
 
@@ -201,20 +198,20 @@ class FloatingWindowGPU(QOpenGLWidget):
             stays_on_top: bool
         ) -> None:
 
-        flags = self.windowFlags() | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
+        flags = self.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint
 
         if dialog:
-            flags |= Qt.Dialog
+            flags |= Qt.WindowType.Dialog
         
         else:
-            flags |= Qt.Tool
+            flags |= Qt.WindowType.Tool
 
         if stays_on_top:
-            flags |= Qt.WindowStaysOnTopHint
+            flags |= Qt.WindowType.WindowStaysOnTopHint
 
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WA_PaintOnScreen, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, False)
 
     def setup_layout(self, title: str) -> None:
         main_layout = QVBoxLayout(self)
@@ -222,11 +219,11 @@ class FloatingWindowGPU(QOpenGLWidget):
         main_layout.setSpacing(0)
 
         self.content_widget = QWidget(self)
-        self.content_widget.setAttribute(Qt.WA_TranslucentBackground)
+        self.content_widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(20, 20, 20, 20)
-        self.content_layout.setSpacing(15)
+        self.content_layout.setContentsMargins(16, 16, 16, 16)
+        self.content_layout.setSpacing(12)
 
         main_layout.addWidget(self.content_widget)
 
@@ -242,22 +239,26 @@ class FloatingWindowGPU(QOpenGLWidget):
     def setup_animation_properties(self) -> None:
         self.close_attempt_count = 0
 
-        self.scale               = 1.0
-        self.rotation            = QQuaternion()
-        self.rotation_x          = 0.0
-        self.rotation_y          = 0.0
-        self.rotation_z          = 0.0
-        self.current_tilt_x      = 0.0
-        self.current_tilt_y      = 0.0
-        self.target_tilt_x       = 0.0
-        self.target_tilt_y       = 0.0
-        self.opacity_content     = 1.0
-        self.opacity_background  = 1.0
-        self.x_offset            = 0.0
-        self.y_offset            = 0.0
-        self.z_offset            = 0.0
-        self.tilt_smoothing      = float(CURRENT_SETTINGS["window_hover_smoothing"])
-        self.bpm_peak_scale      = 1.03
+        self.scale                = 1.0
+        self.rotation             = QQuaternion()
+        self.rotation_x           = 0.0
+        self.rotation_y           = 0.0
+        self.rotation_z           = 0.0
+        self.current_tilt_x       = 0.0
+        self.current_tilt_y       = 0.0
+        self.target_tilt_x        = 0.0
+        self.target_tilt_y        = 0.0
+        self.opacity_content      = 1.0
+        self.opacity_background   = 1.0
+        self.x_offset             = 0.0
+        self.y_offset             = 0.0
+        self.z_offset             = 0.0
+        self.tilt_smoothing       = float(Constants.current_settings["window_hover_smoothing"])
+        self.bpm_peak_scale       = 1.03
+        self.is_pulsing           = False
+        self.pulse_original_speed = 1.0
+
+        self.animation_engine    = None
 
         if not self.animations_enabled:
             logger.debug("Not creating the animator since the animations are disabled")
@@ -267,8 +268,8 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.content_opacity_effect.setOpacity(0.0)
         self.content_widget.setGraphicsEffect(self.content_opacity_effect)
 
-        self.animation_engine = LoomEngine.AnimationEngine("pyqt5", 120)
-        self.animation_engine.set_multiplier(float(CURRENT_SETTINGS["animation_multiplier"]))
+        self.animation_engine = LoomEngine.AnimationEngine("PyQt6", 120)
+        self.animation_engine.set_multiplier(float(Constants.current_settings["animation_multiplier"]))
 
         properties = [
             ("rotation_x",          0.0,     LoomEngine.MixMode.ADD,      self.sync_rotation_x),
@@ -286,7 +287,35 @@ class FloatingWindowGPU(QOpenGLWidget):
         ]
 
         self.animation_engine.add_properties(properties)
-        self.animation_engine.updated.connect(self.update)
+        self.animation_engine.updated.connect(self.animation_cycle)
+    
+    def animation_cycle(self):
+        if (
+            self.max_tilt_angle <= 0 or
+            self.tilt_smoothing <= 0 or
+            not self.enable_tilt
+        ):
+            return self.update()
+
+        local_pos   = self.mapFromGlobal(QCursor.pos())
+        widget_rect = self.content_widget.rect()
+        
+        content_rect_local = widget_rect.translated(self.content_widget.pos())
+    
+        if content_rect_local.contains(local_pos):
+            center_x = self.width() / 2
+            center_y = self.height() / 2
+    
+            x_norm = -(local_pos.x() - center_x) / center_x
+            y_norm =  (local_pos.y() - center_y) / center_y
+    
+            self.target_tilt_x = y_norm * self.max_tilt_angle
+            self.target_tilt_y = -x_norm * self.max_tilt_angle
+    
+        self.current_tilt_x += (self.target_tilt_x - self.current_tilt_x) * self.tilt_smoothing
+        self.current_tilt_y += (self.target_tilt_y - self.current_tilt_y) * self.tilt_smoothing
+
+        self.update()
 
     def sync_rotation_x(self, value: float) -> None:
         self.rotation_x = value
@@ -325,14 +354,11 @@ class FloatingWindowGPU(QOpenGLWidget):
             self.title_label.rotation = value
 
     def setup_timers(self) -> None:
-        if self.animations_enabled and self.enable_tilt and self.tilt_smoothing > 0:
-            self.tilt_animation_timer = Basic.Timer(
-                FPS_60,
-                self.tilt_rotation_update,
-                parent = self
-            )
-
-            self.tilt_animation_timer.start()
+        self.shake_timer = Basic.Timer(
+            self.shake_frequency_ms,
+            self.apply_shake_step,
+            parent = self
+        )
 
         if self.bpm_animations_enabled:
             if self.enable_advanced_beat_animations:
@@ -340,25 +366,17 @@ class FloatingWindowGPU(QOpenGLWidget):
                 self.player.beat_normal.connect(self.beat_normal_animation)
             
             else:
-                self.bpm_timer = Basic.Timer(
-                    FPS_30,
-                    self.bpm_tick_animation,
-                    single_shot = True,
-                    parent = self
-                )
-
-                if self.bpm:
-                    self.bpm_timer.start(FPS_30)
+                Player.bpm_informer.beat_4.connect(self.bpm_tick_animation)
 
     # Properties
 
     @property
     def animations_enabled(self) -> bool:
-        return CURRENT_SETTINGS.get("floating_window_animations", True)
+        return Constants.current_settings.get("floating_window_animations", True)
 
     @property
     def bpm_animations_enabled(self) -> bool:
-        return self.animations_enabled and CURRENT_SETTINGS.get("bpm_animations", True) and self.player is not None
+        return self.animations_enabled and Constants.current_settings.get("bpm_animations", True) and self.player is not None
 
     # Animations
 
@@ -368,7 +386,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             duration:   int   = 100
         ) -> None:
 
-        if not self.animations_enabled or not self.animation_engine:
+        if not self.animation_engine:
             return
 
         self.animation_engine.animate(
@@ -388,6 +406,10 @@ class FloatingWindowGPU(QOpenGLWidget):
             target_width:  int,
             target_height: int
         ) -> None:
+
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
+            self.resize(target_width + self.margin_x, target_height + self.margin_y)
+            return
 
         self.animation_engine.set_target_value(
             "geometry",
@@ -759,21 +781,18 @@ class FloatingWindowGPU(QOpenGLWidget):
 
     def bpm_tick_animation(self) -> None:
         if not self.player.is_playing:
-            self.bpm_timer.start(FPS_30)
             return
 
         audio_level = self.player.get_current_audio_level()
 
         if audio_level < 0.08:
-            self.bpm_timer.start(FPS_30)
             return
 
-        speed       = self.player.speed or 0.01
-        interval_ms = int(round(60000.0 / (self.bpm * speed)))
+        interval_ms = Player.bpm_informer.get_interval(4)
 
         QApplication.setCursorFlashTime(interval_ms)
 
-        if CURRENT_SETTINGS.get("window_bpm_animation_style") == "pulse":
+        if Constants.current_settings.get("window_bpm_animation_style") == "pulse":
             keyframes = [
                 (0.0, 1.0),
                 (0.5, self.bpm_peak_scale + self.squish(audio_level)),
@@ -794,8 +813,6 @@ class FloatingWindowGPU(QOpenGLWidget):
             do_not_multiply_duration = True
         )
 
-        self.bpm_timer.start(interval_ms)
-
     def beat_normal_animation(self, strength: float) -> None:
         self.animation_engine.animate(
             "rotation_z",
@@ -809,7 +826,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def beat_heavy_animation(self, strength: float) -> None:
-        if not self.animations_enabled or not self.animation_engine:
+        if not self.animation_engine:
             return
 
         self.animation_engine.animate(
@@ -825,7 +842,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def move_start_animation(self) -> None:
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             return
 
         self.animation_engine.animate(
@@ -841,7 +858,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.animation_title_scale(1.15, 500)
 
     def move_end_animation(self) -> None:
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             return
 
         self.animation_engine.animate(
@@ -854,8 +871,42 @@ class FloatingWindowGPU(QOpenGLWidget):
             LoomEngine.Easing.ease_out_cubic
         )
 
+    def start_shake(self) -> None:
+        if not self.animation_engine:
+            return
+
+        self.shake_timer.start()
+
+    def stop_shake(self) -> None:
+        if not self.animation_engine:
+            return
+
+        self.shake_timer.stop()
+
+        self.animation_engine.set_target_value("rotation_x", 0.0, 400, LoomEngine.Easing.ease_out_cubic)
+        self.animation_engine.set_target_value("rotation_y", 0.0, 400, LoomEngine.Easing.ease_out_cubic)
+
+    def apply_shake_step(self) -> None:
+        deviation = self.shake_deviation
+        target_x  = random.uniform(-deviation, deviation)
+        target_y  = random.uniform(-deviation, deviation)
+        
+        self.animation_engine.set_target_value(
+            "rotation_x",
+            target_x,
+            self.shake_frequency_ms,
+            LoomEngine.Easing.ease_out_cubic
+        )
+        
+        self.animation_engine.set_target_value(
+            "rotation_y",
+            target_y,
+            self.shake_frequency_ms,
+            LoomEngine.Easing.ease_out_cubic
+        )
+
     def wobble(self) -> None:
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             return
 
         self.animation_engine.animate(
@@ -969,7 +1020,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def animation_random_rotate(self) -> None:
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             return
 
         self.animation_engine.animate(
@@ -987,7 +1038,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         if not self.enable_close_animation:
             return
 
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             self.really_close()
             return
 
@@ -1004,7 +1055,7 @@ class FloatingWindowGPU(QOpenGLWidget):
     def start_disturbe_animation(self) -> None:
         self.disturbe_sound()
 
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             return
 
         {
@@ -1023,7 +1074,7 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         size = self.get_window_size()
 
-        if not CURRENT_SETTINGS["floating_window_animations"]:
+        if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
             return
 
         {
@@ -1036,26 +1087,6 @@ class FloatingWindowGPU(QOpenGLWidget):
 
     # Physics
 
-    def tilt_rotation_update(self) -> None:
-        global_pos          = QCursor.pos()
-        local_pos           = self.mapFromGlobal(global_pos)
-        center_x            = self.width() / 2
-        center_y            = self.height() / 2
-
-        widget_rect         = self.content_widget.rect()
-        top_left_global     = self.content_widget.mapToGlobal(widget_rect.topLeft())
-        content_rect_global = QRect(top_left_global, widget_rect.size())
-
-        if content_rect_global.contains(global_pos):
-            x_norm = -(local_pos.x() - center_x) / center_x
-            y_norm =  (local_pos.y() - center_y) / center_y
-
-            self.target_tilt_x = y_norm * self.max_tilt_angle
-            self.target_tilt_y = -x_norm * self.max_tilt_angle
-
-        self.current_tilt_x += (self.target_tilt_x - self.current_tilt_x) * self.tilt_smoothing
-        self.current_tilt_y += (self.target_tilt_y - self.current_tilt_y) * self.tilt_smoothing
-
     # Render
 
     def initializeGL(self) -> None:
@@ -1064,8 +1095,8 @@ class FloatingWindowGPU(QOpenGLWidget):
         GL.glClearColor(0, 0, 0, 0)
 
         if not self.shared_shader_program:
-            vertex_shader   = shaders.compileShader(FLOATING_WINDOW_VS, GL.GL_VERTEX_SHADER)
-            fragment_shader = shaders.compileShader(FLOATING_WINDOW_FS, GL.GL_FRAGMENT_SHADER)
+            vertex_shader   = shaders.compileShader(Constants.FLOATING_WINDOW_VS, GL.GL_VERTEX_SHADER)
+            fragment_shader = shaders.compileShader(Constants.FLOATING_WINDOW_FS, GL.GL_FRAGMENT_SHADER)
             
             self.__class__.shared_shader_program = shaders.compileProgram(
                 vertex_shader,
@@ -1163,7 +1194,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         visible_height_at_z = 2.0 * math.tan(math.radians(fov / 2.0)) * z_dist
         pixel_unit          = visible_height_at_z / self.height()
 
-        if self.animations_enabled:
+        if self.animation_engine:
             rotation = QQuaternion.fromEulerAngles(
                 self.rotation_x + self.current_tilt_x,
                 self.rotation_y + self.current_tilt_y,
@@ -1216,7 +1247,7 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.start_disturbe_animation()
 
     def mousePressEvent(self, event) -> None:
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
             return
 
         if self.title_label:
@@ -1230,16 +1261,14 @@ class FloatingWindowGPU(QOpenGLWidget):
             if not self.content_widget.geometry().contains(event.pos()):
                 return
         
-        self.drag_pos = event.globalPos() - self.frameGeometry().topLeft()
+        self.drag_pos = event.pos() - self.frameGeometry().topLeft()
         self.move_start_animation()
-
-        QTimer.singleShot(0, self.window().windowHandle().startSystemMove)
     
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        if event.buttons() == Qt.LeftButton and self.drag_pos:
-            self.move(event.globalPos() - self.drag_pos)
+        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos:
+            self.move(event.pos() - self.drag_pos)
             event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -1320,6 +1349,24 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         self.close_sound()
         self.start_exit_animation()
+    
+    def on_frame_swapped(self) -> None:
+        self.frame_count += 1
+        elapsed_time      = self.fps_timer.elapsed()
+
+        if elapsed_time < 1000:
+            return
+
+        frames_per_second = self.frame_count / (elapsed_time / 1000.0)
+        fps_text          = f"FPS: {frames_per_second:.2f}"
+
+        if self.title_label:
+            self.title_label.setText(fps_text)
+
+        self.setWindowTitle(fps_text)
+
+        self.frame_count = 0
+        self.fps_timer.restart()
 
     def adjustSize(self) -> None:
         if not self.is_ready:
@@ -1328,24 +1375,6 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         size = self.content_widget.sizeHint()
         self.animate_resize(size.width(), size.height())
-
-    def update_bpm(self, bpm: int | None = None) -> None:
-        if not bpm:
-            return
-
-        if bpm >= 200:
-            self.bpm = int(bpm / 2)
-
-        elif bpm <= 80:
-            self.bpm = int(bpm * 2)
-
-        else:
-            self.bpm = int(bpm)
-
-        if self.bpm_animations_enabled and not self.enable_advanced_beat_animations:
-            self.bpm_timer.stop()
-            self.bpm_timer.setInterval(60000 // self.bpm)
-            self.bpm_timer.start()
 
     def set_bpm_peak_size(self, coefficient: float) -> None:
         self.bpm_peak_scale = coefficient
@@ -1385,16 +1414,27 @@ class FloatingWindowGPU(QOpenGLWidget):
             duration:         int   = 300,
             pulse_peak_speed: float = 1.2
         ) -> None:
-        
-        start_speed   = self.player.speed
-        duration_half = int(duration / 2)
+
+        if self.is_pulsing:
+            return
+
+        self.is_pulsing           = True
+        self.pulse_original_speed = self.player.speed
+        duration_half             = int(duration / 2)
 
         self.player.set_speed(pulse_peak_speed, duration_half)
         
         QTimer.singleShot(
             duration_half,
-            lambda: self.player.set_speed(start_speed, duration_half)
+            lambda: self.player.set_speed(
+                self.pulse_original_speed,
+                duration_half,
+                on_finish = self.finish_pulse
+            )
         )
+
+    def finish_pulse(self) -> None:
+        self.is_pulsing = False
 
     def open_sound(self) -> None:
         if self.enable_transition_audio_effects and self.player and self.player.is_playing:
@@ -1452,16 +1492,13 @@ class FloatingWindowGPU(QOpenGLWidget):
         return 1.0 + (1.0 - coefficient)
 
     def really_close(self) -> None:
-        if self.animations_enabled:
+        if self.animation_engine:
             self.animation_engine.clear()
             self.animation_engine.updated.disconnect()
             self.animation_engine = None
 
-            if self.bpm_animations_enabled and not self.enable_advanced_beat_animations and self.bpm_timer:
-                self.bpm_timer.stop()
-
-            if self.enable_tilt and self.tilt_smoothing > 0 and self.tilt_animation_timer:
-                self.tilt_animation_timer.stop()
+            if self.bpm_animations_enabled and not self.enable_advanced_beat_animations:
+                Player.bpm_informer.beat_4.disconnect(self.bpm_tick_animation)
 
         self.allow_exit = True
         self.close()
@@ -1469,12 +1506,12 @@ class FloatingWindowGPU(QOpenGLWidget):
         if self.event_loop:
             self.event_loop.quit()
 
-    def exec_(self) -> bool:
-        self.setWindowModality(Qt.ApplicationModal)
+    def exec(self) -> bool:
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.show()
 
         self.event_loop = QEventLoop()
-        self.event_loop.exec_()
+        self.event_loop.exec()
 
         self.deleteLater()
         return not self.was_cancelled
@@ -1501,14 +1538,13 @@ class DialogInputWindow(FloatingWindowGPU):
             max_number:  int                    = 100,
             max_length:  int                    = 100,
             input_type:  str                    = "number",
-            bpm:         int | None             = None,
             player:      Player.PlaybackManager = None
         ):
 
-        super().__init__(title, bpm = bpm, player = player)
+        super().__init__(title, player = player)
 
         self.input_field = Inputs.Textbox(input_type, min_number, max_number, max_length)
-        self.input_field.setMinimumWidth(200)
+        self.input_field.setMinimumWidth(160)
         self.input_field.setPlaceholderText(placeholder)
 
         self.button_row = Basic.ButtonRow(
@@ -1540,20 +1576,18 @@ class ExportDialogWindow(FloatingWindowGPU):
     def __init__(
             self,
             composition: ProjectSaver.Composition,
-            bpm:         int | None             = None,
             player:      Player.PlaybackManager = None
         ):
 
         super().__init__(
             "Export?",
-            bpm = bpm,
             player = player
         )
 
         self.composition = composition
 
-        original_model = DEVICES[composition.model].short_name
-        choices        = DEVICES[composition.model].port_variants + [original_model]
+        original_model = Constants.DEVICES[composition.model].short_name
+        choices        = Constants.DEVICES[composition.model].port_variants + [original_model]
 
         self.combobox          = Inputs.Selector(choices, default_index = -1)
         self.watermark_textbox = Inputs.Textbox("text", max_length = 12, placeholder = "Dot Watermark")
@@ -1576,7 +1610,7 @@ class ExportDialogWindow(FloatingWindowGPU):
 
         self.composition.export(
             watermark,
-            NUMBER_TO_CODE[model],
+            Constants.NUMBER_TO_CODE[model],
             open_folder = True
         )
 
@@ -1607,11 +1641,10 @@ class SegmentEditor(FloatingWindowGPU):
             title:       str,
             segment_num: int | None  = None,
             defaults                 = None,
-            bpm:         int | None  = None,
             player                   = None
         ):
 
-        super().__init__(title, bpm = bpm, player = player)
+        super().__init__(title, player = player)
 
         self.segmented_bar = Widgets.SegmentedBar(segment_num, defaults)
 
@@ -1649,7 +1682,7 @@ class ErrorWindow(FloatingWindowGPU):
         super().__init__(title)
 
         ok_button         = Basic.NothingButton(button_text)
-        description_label = Basic.DescriptionLabel(description)
+        description_label = Basic.DescriptionLabel(description, 600)
 
         self.content_layout.addWidget(description_label)
         self.content_layout.addWidget(ok_button)
@@ -1690,6 +1723,34 @@ class ErrorWindow(FloatingWindowGPU):
 
 # Fun Windows
 
+class UpdateWindow(FloatingWindowGPU):
+    def __init__(
+            self,
+            version:   str,
+            changelog: str,
+            url:       str = Constants.GITHUB_LINK
+        ) -> None:
+
+        super().__init__(f"Cassette {version}")
+
+        changelog = re.sub(r'(?m)^### \*\*Cassette v\d+\.\d+\.\d+\*\*\s*\r?\n', '',      changelog)
+        changelog = re.sub(r'(?m)^>\s*(.*?)\s*$',                               r'`\1`', changelog)
+        changelog = re.sub(r'### \*\*(.*?)\*\*',                                r'`\1`', changelog)
+        changelog = re.sub(r'\*\*(.*?)\*\*',                                    r'`\1`', changelog)
+        changelog = re.sub(r'(?m)^-\s+',                                        '`•` ',  changelog)
+
+        self.update_label = Basic.DescriptionLabel("`A new update on GitHub.`\n" + changelog, 700)
+
+        self.close_button  = Basic.NothingButton("Cool")
+        self.github_button = Basic.ButtonWithOutline("Check it out on GitHub")
+        
+        self.close_button.clicked.connect(self.on_ok)
+        self.github_button.clicked.connect(lambda: webbrowser.open(url))
+
+        self.content_layout.addWidget(self.update_label)
+        self.content_layout.addWidget(self.github_button)
+        self.content_layout.addWidget(self.close_button)
+
 class About(FloatingWindowGPU):
     def __init__(self):
         super().__init__(f"Cassette {open(Utils.get_resource_path('version')).read()} by chips047")
@@ -1705,8 +1766,8 @@ class About(FloatingWindowGPU):
 
         self.image_pixmap = QPixmap("System/Assets/Image/Version.png").scaled(
             500, 500,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation
         )
 
         self.image_label = QLabel()
@@ -1724,7 +1785,7 @@ class About(FloatingWindowGPU):
         self.content_layout.addWidget(ok_button)
 
     def on_github(self) -> None:
-        github = GITHUB_LINK
+        github = Constants.GITHUB_LINK
 
         if random.random() < 0.95:
             webbrowser.open(github)
@@ -1780,7 +1841,7 @@ class WalterWindow(FloatingWindowGPU):
     def spam_errors(self) -> None:
         for i in range(12):
             msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
+            msg.setIcon(QMessageBox.Icon.Critical)
             msg.setWindowTitle("walthu")
             msg.setText("waltuyh")
             msg.setInformativeText("the waltuh")
@@ -1789,7 +1850,7 @@ class WalterWindow(FloatingWindowGPU):
 
         for i in range(12):
             msg = QMessageBox()
-            msg.setIcon(QMessageBox.Critical)
+            msg.setIcon(QMessageBox.Icon.Critical)
             msg.setWindowTitle("walthu")
             msg.setText("waltuyh")
             msg.setInformativeText("the waltuh")
@@ -1822,14 +1883,14 @@ class Settings(FloatingWindowGPU):
 
     def setup_navigation(self) -> QWidget:
         navigation_widget = QWidget()
-        navigation_widget.setFixedHeight(50)
-        navigation_widget.setStyleSheet(f"background: {Styles.Colors.ThirdBackground}; border-radius: 23px;")
+        navigation_widget.setFixedHeight(40)
+        navigation_widget.setStyleSheet(f"background: {Styles.Colors.ThirdBackground}; border-radius: 18px;")
 
         navigation_layout = QHBoxLayout(navigation_widget)
 
-        navigation_layout.setContentsMargins(5, 5, 5, 5)
-        navigation_layout.setSpacing(8)
-        navigation_layout.setAlignment(Qt.AlignLeft)
+        navigation_layout.setContentsMargins(4, 4, 4, 4)
+        navigation_layout.setSpacing(6)
+        navigation_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         self.nav_layout = navigation_layout
 
@@ -1879,7 +1940,7 @@ class Settings(FloatingWindowGPU):
         ) -> QWidget:
 
         page_area = Widgets.ElasticScrollArea(self)
-        page_area.setFixedHeight(450)
+        page_area.setFixedHeight(360)
 
         navigation_button = Basic.NavButton(page_name)
         navigation_button.clicked.connect(lambda _, w = page_area: self.change_page(w))
@@ -1976,9 +2037,8 @@ class Settings(FloatingWindowGPU):
             self.save_widget_value(key, widget)
 
         self.settings.sync()
-
-        load_settings()
-
+        Constants.load_settings()
+        
         self.on_ok()
 
     def save_widget_value(self, key: str, widget: QWidget) -> None:
@@ -2001,13 +2061,11 @@ class GlyphVisualizer(FloatingWindowGPU):
             self,
             parent: QObject,
             model:  str,
-            player: Player.PlaybackManager = None,
-            bpm:    int | None             = None
+            player: Player.PlaybackManager = None
         ):
 
         super().__init__(
             None,
-            bpm                     = bpm,
             player                  = player,
             margin                  = 50,
             max_tilt_angle          = 9,
@@ -2016,7 +2074,7 @@ class GlyphVisualizer(FloatingWindowGPU):
         )
 
         self.parent            = parent
-        self.map_data          = DEVICES[model].visualization_map
+        self.map_data          = Constants.DEVICES[model].visualization_map
         self.map_w, self.map_h = self.map_data["size"]
 
         self.visual_scale:    float = 1.0
@@ -2043,7 +2101,7 @@ class GlyphVisualizer(FloatingWindowGPU):
         )
 
         self.timer = Basic.Timer(
-            FPS_60,
+            Constants.FPS_60,
             self.process_schedule,
             parent = self
         )
@@ -2156,8 +2214,8 @@ class GlyphVisualizer(FloatingWindowGPU):
         GL.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE)
 
         self.prog = shaders.compileProgram(
-            shaders.compileShader(GLYPH_VS, GL.GL_VERTEX_SHADER),
-            shaders.compileShader(GLYPH_FS, GL.GL_FRAGMENT_SHADER)
+            shaders.compileShader(Constants.GLYPH_VS, GL.GL_VERTEX_SHADER),
+            shaders.compileShader(Constants.GLYPH_FS, GL.GL_FRAGMENT_SHADER)
         )
 
         self.uniform_locations = {
@@ -2200,7 +2258,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             GL.glMultiDrawArrays(GL.GL_TRIANGLE_STRIP, glyph["starts"], glyph["counts"], len(glyph["starts"]))
 
     def scale_in(self) -> None:
-        if not self.animations_enabled:
+        if not self.animation_engine:
             return
 
         self.animation_engine.animate(
@@ -2217,7 +2275,7 @@ class GlyphVisualizer(FloatingWindowGPU):
         self.animation_engine.set_property_base_value("opacity_background", 1.0)
 
     def scale_out(self, cleanup: bool) -> None:
-        if not self.animations_enabled:
+        if not self.animation_engine:
             if cleanup:
                 self.really_close()
             
@@ -2271,7 +2329,7 @@ class GlyphVisualizer(FloatingWindowGPU):
         progress = (now - start) / duration if duration > 0 else 1.0
 
         easing_name = item.get("easing", "linear")
-        easing_func = VISUAL_EASINGS[easing_name]
+        easing_func = Constants.VISUAL_EASINGS[easing_name]
 
         return self.interpolate_keyframes(item["keyframes"], progress, easing_func)
 
@@ -2351,6 +2409,7 @@ class GlyphVisualizer(FloatingWindowGPU):
         self.animate_resize(new_w, new_h)
 
     def exit(self, cleanup: bool = True) -> None:
+        self.allow_exit = True
         self.stop_all()
         self.resize_timer.stop()
         self.scale_out(cleanup)
@@ -2360,7 +2419,6 @@ class GlyphVisualizer(FloatingWindowGPU):
 class Tutorial(FloatingWindowGPU):
     def __init__(
             self,
-            bpm:  int,
             path: str
         ):
 
@@ -2369,7 +2427,6 @@ class Tutorial(FloatingWindowGPU):
 
         super().__init__(
             "Tutorial",
-            bpm                        = bpm,
             player                     = self.player,
             enable_audioplayer_effects = False
         )
@@ -2394,7 +2451,8 @@ class Tutorial(FloatingWindowGPU):
                     "`Space` to play / pause.\n"
                     "`1, 2, 3, 4, 5, 6, 7, 8, 9, 0, Minus` to place a glyph. "
                     "`Del / Backspace` to delete it. `Ctrl + / -` or `Command + / -` to zoom. "
-                    "`B`, `S`, `D` to quickly change the brightness, speed and duration."
+                    "`B`, `S`, `D` to quickly change the brightness, speed and duration.",
+                    "`Alt + LMB` to edit keyframes."
                 )
             },
             {
@@ -2433,9 +2491,9 @@ class Tutorial(FloatingWindowGPU):
         self.max_stage = len(self.pages)
 
     def initialize_ui(self) -> None:
-        self.text_label = Basic.DescriptionLabel("Hello mazafaka белка")
-        self.text_label.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
-        self.text_label.setMinimumWidth(400)
+        self.text_label = Basic.DescriptionLabel("Hello.")
+        self.text_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        self.text_label.setMinimumWidth(320)
 
         self.next_button = Basic.NothingButton("Next?")
         self.next_button.clicked.connect(self.next_button_callback)
@@ -2447,19 +2505,18 @@ class Tutorial(FloatingWindowGPU):
         self.is_audio_small = self.player.duration_ms < 30000
 
         if not self.is_audio_small:
-            self.player.set_midpass()
-            self.player.set_bitcrush(6, 8)
-            self.player.set_speed(0)
+            self.player.play()
+            self.player.set_passes([3000], duration_ms = 2000)
+            self.player.set_speed(0.0)
             self.player.set_speed(0.8, 3000)
 
         def stage_one():
             self.player.set_speed(0.95, 1000)
-            self.player.set_midpass(mix = 0.5, duration_ms = 1000)
-            self.player.set_bitcrush(bits = 24, downsample = 1, duration_ms = 2000)
+            self.player.set_passes([1000], duration_ms = 1000)
 
         def stage_two():
             self.player.set_speed(1.0, duration_ms = 1000)
-            self.player.set_midpass(mix = 0.0, duration_ms = 1000)
+            self.player.set_passes([1000], mix = 0.0, duration_ms = 1000)
 
         def stage_three():
             self.set_bpm_peak_size(1.04)
@@ -2635,7 +2692,7 @@ class AudioLoadingDialog(FloatingWindowGPU):
         self.load_worker.finished.connect(self.load_worker.deleteLater)
         self.load_thread.finished.connect(self.load_thread.deleteLater)
 
-        self.load_thread.start(QThread.LowPriority)
+        self.load_thread.start(QThread.Priority.LowPriority)
 
     def on_load_finished(self, result: tuple) -> None:
         pass
@@ -2643,7 +2700,7 @@ class AudioLoadingDialog(FloatingWindowGPU):
     def on_load_failed(self, message: str) -> None:
         window = ErrorWindow("Load Error", message)
         window.destroyed.connect(self.reject_callback)
-        window.exec_()
+        window.exec()
 
     def cleanup_threads(self, threads: list) -> None:
         threads_to_wait = []
@@ -2672,7 +2729,13 @@ class AudioLoadingDialog(FloatingWindowGPU):
         self.safe_delete_cache()
 
     def safe_delete_cache(self) -> None:
-        if not self.cached_wav or self.cached_wav == self.audio_path:
+        if not self.cached_wav:
+            return
+
+        cached_wav_normalized = str(Path(self.cached_wav).resolve())
+        audio_path_normalized = str(Path(self.audio_path).resolve()) if self.audio_path else None
+
+        if cached_wav_normalized == audio_path_normalized:
             return
 
         try:
@@ -2698,11 +2761,11 @@ class AudioEditorBase(AudioLoadingDialog):
         self.play_button = QPushButton()
         self.play_button.setStyleSheet("background-color: transparent; border: none;")
         self.play_button.setIcon(self.play_icon)
-        self.play_button.setIconSize(QSize(45, 45))
-        self.play_button.setFixedSize(45, 45)
+        self.play_button.setIconSize(QSize(36, 36))
+        self.play_button.setFixedSize(36, 36)
         self.play_button.setEnabled(False)
 
-        self.playback_timer = Basic.Timer(FPS_60, self.update_playback, parent = self)
+        self.playback_timer = Basic.Timer(Constants.FPS_60, self.update_playback, parent = self)
 
         self.trim_widget.regionChanged.connect(self.update_textboxes)
         self.end_time_textbox.safeTextChanged.connect(self.edit_end_time)
@@ -2738,7 +2801,7 @@ class AudioEditorBase(AudioLoadingDialog):
             self.on_audio_ready()
 
         except Exception:
-            ErrorWindow("Load Error", traceback.format_exc()).exec_()
+            ErrorWindow("Load Error", traceback.format_exc()).exec()
 
     def on_audio_ready(self) -> None:
         pass
@@ -2882,20 +2945,24 @@ class BPMEditorBase(AudioEditorBase):
         self.snapped_times         = None
 
         self.bpm_input = Inputs.Textbox("number", 1, 400, placeholder = "Counting BPM... 120")
-        self.bpm_input.setMaximumWidth(220)
+        self.bpm_input.setMaximumWidth(176)
         self.bpm_input.setFixedHeight(Styles.Metrics.ElementHeight)
         self.bpm_input.setStyleSheet(Styles.Controls.FloatingTextBoxRound)
 
         self.bpm_animation_timer = Basic.Timer(
-            FPS_30,
+            Constants.FPS_30,
             self.animate_bpm_spinbox,
             auto_start = True,
             parent     = self
         )
 
-        self.bpm_remove_timer = Basic.Timer(0, self.bpm_remove_step, parent = self)
+        self.bpm_remove_timer = Basic.Timer(
+            0,
+            self.bpm_remove_step,
+            parent = self
+        )
 
-        if self.animations_enabled:
+        if self.animation_engine:
             self.animation_engine.add_property(
                 "bpm_textbox_width",
                 self.bpm_input.width(),
@@ -2918,20 +2985,20 @@ class BPMEditorBase(AudioEditorBase):
         self.bpm_thread.started.connect(self.bpm_worker.run)
 
         self.bpm_worker.finished.connect(self.on_bpm_finished)
-        self.bpm_worker.error.connect(lambda message: ErrorWindow("BPM error", message).exec_())
+        self.bpm_worker.error.connect(lambda message: ErrorWindow("BPM error", message).exec())
 
         self.bpm_worker.finished.connect(self.bpm_thread.quit)
         self.bpm_worker.finished.connect(self.bpm_worker.deleteLater)
         self.bpm_thread.finished.connect(self.bpm_thread.deleteLater)
 
-        self.bpm_thread.start(QThread.LowPriority)
+        self.bpm_thread.start(QThread.Priority.LowPriority)
 
     def on_bpm_finished(self, bpm: float, peaks) -> None:
         try:
             self.bpm_ready(bpm, peaks)
 
         except Exception:
-            ErrorWindow("BPM Error", traceback.format_exc()).exec_()
+            ErrorWindow("BPM Error", traceback.format_exc()).exec()
 
     def bpm_ready(self, bpm: float, snapped_times) -> None:
         self.snapped_times = snapped_times
@@ -2967,7 +3034,7 @@ class BPMEditorBase(AudioEditorBase):
         return round(text_width + 33)
 
     def shrink_bpm_input(self) -> None:
-        if not self.animations_enabled:
+        if not self.animation_engine:
             return
 
         self.animation_engine.set_target_value(
@@ -2977,7 +3044,7 @@ class BPMEditorBase(AudioEditorBase):
             LoomEngine.Easing.ease_out_cubic
         )
 
-        QTimer.singleShot(300, self.on_bpm_animation_end)
+        QTimer.singleShot(290, self.on_bpm_animation_end)
 
     def on_bpm_animation_end(self) -> None:
         self.bpm_input.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -2997,29 +3064,29 @@ class BPMEditorBase(AudioEditorBase):
 
         self.bpm_input.setPlaceholderText(f"Counting BPM {self.bpm_animation_current}")
 
-    def bpm_remove_step(self) -> None:
-        if self.bpm_text:
-            self.bpm_text = self.bpm_text[1:]
-            self.bpm_input.setPlaceholderText(f"{self.bpm_text}{self.bpm_number_string}")
-            return
-
-        self.bpm_remove_timer.stop()
-
+    def finalize_bpm_placeholder(self) -> None:
         if self.bpm_number_string:
             self.bpm_input.setText(self.bpm_number_string)
 
         self.bpm_input.setPlaceholderText("BPM")
+
+    def bpm_remove_step(self) -> None:
+        if self.bpm_text:
+            self.bpm_text = self.bpm_text[1:]
+            self.bpm_input.setPlaceholderText(f"{self.bpm_text}{self.bpm_number_string}")
+            
+            return
+
+        self.bpm_remove_timer.stop()
+
+        self.finalize_bpm_placeholder()
         self.shrink_bpm_input()
 
     def on_bpm_changed(self, value: int) -> None:
         if not value or int(value) < 1:
             return
 
-        self.bpm_animation_timer.stop()
-        self.bpm_animation_timer.setInterval(60000 // int(value) // 4)
-        self.bpm_animation_timer.start()
-
-        self.update_bpm(int(value))
+        Player.bpm_informer.set_bpm(int(value))
 
     # Settings
 
@@ -3078,20 +3145,19 @@ class AudioSetupDialog(BPMEditorBase):
         self.setup_trim_section()
         self.setup_bpm_section()
 
-        self.beat_count = 0
-        self.beat_timer = Basic.Timer(0, self.update_title_beat, parent = self)
+        self.beat_counter = 0
 
         self.model_selector = Inputs.Selector(["1", "2", "2a", "3a", "4a"])
         self.cancel_button  = Basic.ButtonWithOutline("Cancel")
         self.ok_button      = Basic.NothingButton("Ok")
 
-        self.ok_button.setMaximumWidth(70)
-        self.cancel_button.setMaximumWidth(100)
-        self.model_selector.setMinimumWidth(300)
+        self.ok_button.setMaximumWidth(56)
+        self.cancel_button.setMaximumWidth(80)
+        self.model_selector.setMinimumWidth(240)
         self.ok_button.setEnabled(False)
 
         settings_layout = QHBoxLayout()
-        settings_layout.setSpacing(10)
+        settings_layout.setSpacing(8)
         settings_layout.addWidget(self.bpm_input)
         settings_layout.addWidget(self.model_selector)
         settings_layout.addStretch()
@@ -3100,6 +3166,8 @@ class AudioSetupDialog(BPMEditorBase):
 
         self.ok_button.clicked.connect(self.accept_callback)
         self.cancel_button.clicked.connect(self.reject_callback)
+
+        Player.bpm_informer.beat_16.connect(self.update_title_beat)
 
         self.content_layout.addWidget(self.trim_widget)
         self.content_layout.addLayout(self.build_playback_row())
@@ -3117,39 +3185,35 @@ class AudioSetupDialog(BPMEditorBase):
         else:
             self.play_selection()
 
-    def play_selection(self) -> None:
-        super().play_selection()
-
-        self.beat_count   = 0
-        beat_interval     = int(60000 / self.get_bpm_value() / 4)
-
-        self.beat_timer.stop()
-        self.beat_timer.setInterval(beat_interval)
-        self.beat_timer.start()
-
     def stop_playback(self) -> None:
         super().stop_playback()
-        self.beat_timer.stop()
-        self.beat_count = 0
+        self.beat_counter = 0
 
     def update_title_beat(self) -> None:
-        position_ms = f"{round(self.player.get_position() / 1000, 4):.3f}"
-        self.title_label.setText(position_ms)
+        if not self.player.is_playing:
+            return
+
+        current_position_seconds = self.player.get_position() / 1000
+        self.title_label.setText(f"{current_position_seconds:.3f}")
 
         audio_level = self.player.get_current_audio_level()
-
+        
         if audio_level < 0.03:
             return
 
-        self.beat_count += 1
+        self.beat_counter = (self.beat_counter + 1) % 4
 
-        if self.beat_count % 4 == 0:
+        if self.beat_counter == 0:
             self.animation_title_scale(peak_scale = 1.4, duration = 200)
         
         else:
             self.animation_title_scale(peak_scale = 1.1, duration = 120)
 
     # Settings
+
+    def really_close(self) -> None:
+        Player.bpm_informer.beat_16.disconnect(self.update_title_beat)
+        super().really_close()
 
     def accept_callback(self) -> None:
         if not self.validate_trim():
@@ -3164,12 +3228,8 @@ class AudioSetupDialog(BPMEditorBase):
     def get_settings(self) -> dict:
         return {
             "audio": {**self.get_trim_settings(), **self.get_bpm_settings()},
-            "model": NUMBER_TO_CODE[self.model_selector.currentText()]
+            "model": Constants.NUMBER_TO_CODE[self.model_selector.currentText()]
         }
-
-    def cleanup_audio(self) -> None:
-        self.beat_timer.stop()
-        super().cleanup_audio()
 
 # Glyphtone Editor
 
@@ -3202,7 +3262,7 @@ class GlyphtoneEditor(AudioEditorBase):
         self.ok_button.setEnabled(False)
 
         bottom_layout = QHBoxLayout()
-        bottom_layout.setSpacing(10)
+        bottom_layout.setSpacing(8)
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.cancel_button)
         bottom_layout.addWidget(self.ok_button)
@@ -3257,8 +3317,10 @@ class ImportWindow(BPMEditorBase):
         self.save_path  = None
         self.cached_wav = None
 
-        self.prepare_thread = None
-        self.load_thread    = None
+        self.prepare_thread   = None
+        self.load_thread      = None
+        
+        self.drag_loop_sound  = None
 
         super().__init__(
             "Import",
@@ -3278,8 +3340,7 @@ class ImportWindow(BPMEditorBase):
             type_name: str
         ):
         
-        options   = QFileDialog.Options()
-        options  |= QFileDialog.Option.ReadOnly
+        options = QFileDialog.Option.ReadOnly
 
         file_path = None
     
@@ -3292,7 +3353,7 @@ class ImportWindow(BPMEditorBase):
         
         dialog.setOptions(options)
 
-        if dialog.exec_() == QFileDialog.Accepted:
+        if dialog.exec() == QFileDialog.DialogCode.Accepted:
             file_path = dialog.selectedFiles()[0]
         
         return file_path
@@ -3336,8 +3397,8 @@ class ImportWindow(BPMEditorBase):
         self.audio_path_button = Basic.ButtonWithOutlineSlim("Audiofile", False)
         self.save_path_button  = Basic.ButtonWithOutlineSlim("Savefile",  False)
 
-        self.audio_path_button.setMinimumWidth(300)
-        self.save_path_button.setMinimumWidth(300)
+        self.audio_path_button.setMinimumWidth(240)
+        self.save_path_button.setMinimumWidth(240)
 
         self.cancel_button = Basic.ButtonWithOutline("Later, gator")
         self.import_button = Basic.NothingButton("Import!")
@@ -3345,12 +3406,12 @@ class ImportWindow(BPMEditorBase):
         self.import_button.setEnabled(False)
 
         path_row = QHBoxLayout()
-        path_row.setSpacing(10)
+        path_row.setSpacing(8)
         path_row.addWidget(self.audio_path_button)
         path_row.addWidget(self.save_path_button)
 
         bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(10)
+        bottom_row.setSpacing(8)
         bottom_row.addWidget(self.bpm_input)
         bottom_row.addStretch()
         bottom_row.addWidget(self.cancel_button)
@@ -3372,15 +3433,33 @@ class ImportWindow(BPMEditorBase):
     # Drag and Drop
 
     def dragEnterEvent(self, event) -> None:
-        Player.ui_player.play_sound("App/DragDrop", speed = 1.03)
+        Player.ui_player.play_sound("DragDrop/DragDrop", speed = 1.03)
+
+        if not self.drag_loop_sound:
+            self.drag_loop_sound = Player.ui_player.play_sound(
+                "DragDrop/Loop",
+                loop = True
+            )
+
         self.move_start_animation()
+        self.start_shake()
         event.acceptProposedAction()
 
     def dragLeaveEvent(self, event) -> None:
-        Player.ui_player.play_sound("App/DragDrop", speed = 0.94)
+        Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.94)
+
+        if self.drag_loop_sound:
+            self.drag_loop_sound.stop()
+            self.drag_loop_sound = None
+
         self.move_end_animation()
+        self.stop_shake()
 
     def dropEvent(self, event) -> None:
+        if self.drag_loop_sound:
+            self.drag_loop_sound.stop()
+            self.drag_loop_sound = None
+
         for url in event.mimeData().urls():
             file_path    = url.toLocalFile()
             mime_type, _ = mimetypes.guess_type(file_path)
@@ -3401,6 +3480,7 @@ class ImportWindow(BPMEditorBase):
                 self.refresh_import_button()
 
         self.move_end_animation()
+        self.stop_shake()
         self.refresh_import_button()
     
     def on_audio_ready(self):
@@ -3427,15 +3507,15 @@ class ImportWindow(BPMEditorBase):
             )
 
         except Encoder.ZeroGlyphsError:
-            ErrorWindow("No glyphs?", "The save file doesn't contain any valid glyphs. File may be corrupted.").exec_()
+            ErrorWindow("No glyphs?", "The save file doesn't contain any valid glyphs. File may be corrupted.").exec()
             return
 
         except Encoder.LabelsNoModelError:
-            ErrorWindow("Woops.", "Unable to determine the model from the save file. File may be corrupted.").exec_()
+            ErrorWindow("Woops.", "Unable to determine the model from the save file. File may be corrupted.").exec()
             return
 
         except Encoder.UnknownFileFormatError:
-            ErrorWindow("Woops.", "Unknown file format. Make sure you are importing a valid save file.").exec_()
+            ErrorWindow("Woops.", "Unknown file format. Make sure you are importing a valid save file.").exec()
             return
 
         bpm_settings = self.get_bpm_settings()
@@ -3459,192 +3539,507 @@ class ImportWindow(BPMEditorBase):
 # Playground
 
 class Playground(FloatingWindowGPU):
-    def __init__(self):
-        super().__init__("GPU Engine Master Tuner")
+    def __init__(self) -> None:
+        super().__init__(
+            "GPU Engine Master Tuner",
+            dialog                         = True,
+            stays_on_top                   = True,
+            max_tilt_angle                 = 20,
+            animation_style                = Constants.current_settings["animation_style"],
+            enable_audioplayer_effects     = True,
+            enable_advanced_beat_animations = False,
+            enable_tilt                    = True,
+            enable_open_animation          = True,
+            enable_close_animation         = True,
+            show_fps                       = False
+        )
 
-        self.content_widget.setMinimumWidth(1400)
+        self.content_widget.setMinimumWidth(720)
+        self.content_widget.setMinimumHeight(480)
 
-        self.main_row = QHBoxLayout()
-        self.main_row.setSpacing(20)
-        self.content_layout.addLayout(self.main_row)
+        self.scroll_area = Widgets.ElasticScrollArea(self)
+        self.content_layout.addWidget(self.scroll_area)
 
-        self.setup_audio_column()
-        self.setup_filter_column()
-        self.setup_style_column()
-        self.setup_engine_properties()
-
+        self.setup_controls()
         self.bind_logic()
         self.adjustSize()
 
-    def setup_audio_column(self) -> None:
-        self.volume_slider           = Inputs.SliderWithLabel("Volume",     0,  100, 100)
-        self.player_speed_slider     = Inputs.SliderWithLabel("Speed (%)", 10,  300, 100)
-        self.bitcrush_mix_slider     = Inputs.SliderWithLabel("BC Mix",     0,  100,   0)
-        self.bitcrush_bits_slider    = Inputs.SliderWithLabel("BC Bits",    1,   24,  16)
-        self.bitcrush_down_slider    = Inputs.SliderWithLabel("Downsample", 1,   32,   1)
+    # Helpers
 
-        self.main_row.addLayout(
-            build_column(
-                "Audio",
-                [
-                    self.volume_slider,
-                    self.player_speed_slider,
-                    self.bitcrush_mix_slider,
-                    self.bitcrush_bits_slider,
-                    self.bitcrush_down_slider
-                ]
-            )
-        )
+    def add_section(
+            self,
+            title:   str,
+            widgets: list[QWidget]
+        ) -> None:
 
-    def setup_filter_column(self) -> None:
-        self.midpass_mix_slider     = Inputs.SliderWithLabel("Filt Mix",      0,     100,    0)
-        self.midpass_freq_slider    = Inputs.SliderWithLabel("Freq (Hz)",    100,  10000, 1000)
-        self.midpass_q_slider       = Inputs.SliderWithLabel("Resonance",     1,     100,   10)
-        self.delay_left_slider      = Inputs.SliderWithLabel("Delay L (ms)",  0,      50,    0)
-        self.delay_right_slider     = Inputs.SliderWithLabel("Delay R (ms)",  0,      50,    0)
-        self.beat_threshold_slider  = Inputs.SliderWithLabel("Beat Sens.",    0,     100,   38)
+        self.scroll_area.add_widget(Basic.DescriptionLabel(title))
 
-        self.main_row.addLayout(
-            build_column(
-                "Stereo",
-                [
-                    self.midpass_mix_slider,
-                    self.midpass_freq_slider,
-                    self.midpass_q_slider,
-                    self.delay_left_slider,
-                    self.delay_right_slider,
-                    self.beat_threshold_slider
-                ]
-            )
-        )
+        for widget in widgets:
+            self.scroll_area.add_widget(widget)
 
-    def setup_style_column(self) -> None:
+    def connect_change(
+            self,
+            control:  QWidget,
+            callback: Callable[[], None]
+        ) -> None:
+
+        if isinstance(control, Inputs.CheckboxWithLabel):
+            control.stateChanged.connect(lambda *_: callback())
+            return
+
+        if isinstance(control, Inputs.SliderWithLabel):
+            control.valueChanged.connect(lambda *_: callback())
+            return
+
+        if isinstance(control, Inputs.SelectorWithLabel):
+            control.selectionChanged.connect(lambda *_: callback())
+            return
+
+        if isinstance(control, Inputs.Selector):
+            control.selectionChanged.connect(lambda *_: callback())
+            return
+
+    # Setup
+
+    def setup_controls(self) -> None:
         animation_styles = ["bouncy", "smooth", "roll", "glitch", "classic"]
         default_index    = animation_styles.index(self.animation_style) if self.animation_style in animation_styles else 0
 
-        self.style_selector = Inputs.Selector(animation_styles, default_index)
-        self.style_selector.setMinimumWidth(400)
+        self.margin_slider                   = Inputs.SliderWithLabel("Margin", 0, 600, self.margin_x)
+        self.max_tilt_slider                 = Inputs.SliderWithLabel("Max Tilt Angle", 0, 45, self.max_tilt_angle)
+        self.shake_frequency_slider          = Inputs.SliderWithLabel("Shake Frequency (ms)", 10, 200, self.shake_frequency_ms)
+        self.shake_deviation_slider          = Inputs.SliderWithLabel("Shake Deviation", 0, 100, int(self.shake_deviation * 10))
+        self.tilt_smoothing_slider           = Inputs.SliderWithLabel("Tilt Smoothing", 0, 100, int(self.tilt_smoothing * 100))
+        self.bpm_peak_slider                 = Inputs.SliderWithLabel("BPM Peak", 100, 200, int(self.bpm_peak_scale * 100))
 
-        self.button_punch     = Basic.ButtonWithOutlineSlim("Title Punch")
-        self.button_wobble    = Basic.ButtonWithOutlineSlim("Window Wobble")
-        self.button_disturbe  = Basic.ButtonWithOutlineSlim("Disturbe FX")
-        self.button_test_open = Basic.ButtonWithOutlineSlim("Test Open")
+        self.start_position_enabled_check     = Inputs.CheckboxWithLabel("Start Position", "Use custom spawn position", self.start_position is not None)
+        self.start_position_x_slider          = Inputs.SliderWithLabel("Start X", 0, 4000, self.start_position.x() if self.start_position else 0)
+        self.start_position_y_slider          = Inputs.SliderWithLabel("Start Y", 0, 4000, self.start_position.y() if self.start_position else 0)
 
-        column = QVBoxLayout()
-        
-        column.addWidget(Basic.DescriptionLabel("Animations"))
-        column.addWidget(self.style_selector)
-        column.addWidget(Basic.DescriptionLabel("Animation Triggers"))
+        self.dialog_check                     = Inputs.CheckboxWithLabel("Dialog", "Use dialog window flags", True)
+        self.stays_on_top_check               = Inputs.CheckboxWithLabel("Stays On Top", "Stay above other windows", True)
+        self.show_fps_check                   = Inputs.CheckboxWithLabel("Show FPS", "Display frame rate in the title", self.show_fps)
+        self.enable_tilt_check                = Inputs.CheckboxWithLabel("Enable Tilt", "Mouse hover tilt", self.enable_tilt)
+        self.enable_open_animation_check      = Inputs.CheckboxWithLabel("Open Animation", "Animate on open", self.enable_open_animation)
+        self.enable_close_animation_check     = Inputs.CheckboxWithLabel("Close Animation", "Animate on close", self.enable_close_animation)
+        self.enable_audio_effects_check       = Inputs.CheckboxWithLabel("Transition Audio", "Use audio pulses on transitions", self.enable_transition_audio_effects)
+        self.enable_advanced_beat_check       = Inputs.CheckboxWithLabel("Advanced Beats", "Use heavy and normal beat hooks", self.enable_advanced_beat_animations)
+        self.enable_shake_animation_check     = Inputs.CheckboxWithLabel("Shake Animation", "Shake animation loop")
+        self.style_selector                   = Inputs.Selector(animation_styles, default_index)
+        self.apply_window_button              = Basic.ButtonWithOutlineSlim("Apply Window Settings")
 
-        for button in [self.button_punch, self.button_wobble, self.button_disturbe, self.button_test_open]:
-            column.addWidget(button)
+        self.volume_slider                    = Inputs.SliderWithLabel("Volume", 0, 100, 100)
+        self.player_speed_slider              = Inputs.SliderWithLabel("Speed (%)", 10, 300, 100)
 
-        column.addStretch()
-        self.main_row.addLayout(column)
+        self.bitcrush_mix_slider              = Inputs.SliderWithLabel("BC Mix", 0, 100, 0)
+        self.bitcrush_bits_slider             = Inputs.SliderWithLabel("BC Bits", 1, 24, 16)
+        self.bitcrush_downsample_slider       = Inputs.SliderWithLabel("Downsample", 1, 32, 1)
 
-    def setup_engine_properties(self) -> None:
-        properties_config = {
-            "rotation_x":         (-90,  90,  0,   1),
-            "rotation_y":         (-90,  90,  0,   1),
-            "rotation_z":         (-180, 180, 0,   1),
-            "scale":              (0,    200, 100, 100),
-            "opacity_background": (0,    100, 100, 100),
-            "opacity_content":    (0,    100, 100, 100),
-            "x_offset":           (-200, 200, 0,   100),
-            "y_offset":           (-200, 200, 0,   100),
-            "z_offset":           (-200, 200, 0,   100),
-            "title_scale":        (0,    200, 100, 100),
-            "title_rotation":     (-180, 180, 0,   1)
-        }
+        self.pass_mix_slider                  = Inputs.SliderWithLabel("Filter Mix", 0, 100, 0)
+        self.pass_freq_slider                 = Inputs.SliderWithLabel("Freq (Hz)", 100, 10000, 1000)
+        self.pass_q_slider                    = Inputs.SliderWithLabel("Resonance", 1, 100, 10)
+        self.pass_gain_slider                 = Inputs.SliderWithLabel("Gain", 0, 200, 100)
 
-        self.property_sliders = {}
+        self.eq_low_slider                    = Inputs.SliderWithLabel("EQ Low", 0, 200, 100)
+        self.eq_mid_slider                    = Inputs.SliderWithLabel("EQ Mid", 0, 200, 100)
+        self.eq_high_slider                   = Inputs.SliderWithLabel("EQ High", 0, 200, 100)
 
-        column = QVBoxLayout()
-        column.addWidget(Basic.DescriptionLabel("Engine"))
+        self.background_noise_slider          = Inputs.SliderWithLabel("Background Noise", 0, 100, 0)
+        self.reverb_mix_slider                = Inputs.SliderWithLabel("Reverb Mix", 0, 100, 0)
+        self.car_radio_checkbox               = Inputs.CheckboxWithLabel("Car Radio", "Apply radio effect preset", False)
 
-        for prop_name, (min_value, max_value, default_value, divider) in properties_config.items():
-            slider = Inputs.SliderWithLabel(
-                prop_name,
-                min_value,
-                max_value,
-                default_value
-            )
+        self.delay_left_slider                = Inputs.SliderWithLabel("Delay L (ms)", 0, 50, 0)
+        self.delay_right_slider               = Inputs.SliderWithLabel("Delay R (ms)", 0, 50, 0)
 
-            slider.setMinimumWidth(350)
+        self.radio_noise_intensity_slider     = Inputs.SliderWithLabel("Burst Intensity", 0, 100, 0)
+        self.radio_noise_mix_slider           = Inputs.SliderWithLabel("Noise Mix", 0, 100, 30)
+        self.radio_noise_color_selector       = Inputs.SelectorWithLabel("Noise Color", ["white", "pink", "brown"], default_text = "brown")
+        self.radio_noise_attack_slider        = Inputs.SliderWithLabel("Attack (ms)", 0, 1000, 100)
+        self.radio_noise_peak_slider          = Inputs.SliderWithLabel("Peak (ms)", 0, 1000, 180)
+        self.radio_noise_release_slider       = Inputs.SliderWithLabel("Release (ms)", 0, 1000, 250)
+        self.radio_noise_mute_slider          = Inputs.SliderWithLabel("Mute Audio", 0, 100, 45)
+        self.radio_noise_permanent_check      = Inputs.CheckboxWithLabel("Permanent", "Always active", False)
+        self.radio_noise_random_dur_check     = Inputs.CheckboxWithLabel("Randomize", "Variable burst duration", True)
 
-            self.property_sliders[prop_name] = (slider, divider)
+        self.tape_chew_intensity_slider       = Inputs.SliderWithLabel("Chew Intensity", 0, 100, 0)
+        self.tape_chew_jitter_slider          = Inputs.SliderWithLabel("Jitter (ms)", 0, 500, 8)
+        self.tape_chew_random_dur_check       = Inputs.CheckboxWithLabel("Randomize", "Variable burst duration", True)
 
-            column.addWidget(slider)
+        self.echo_mix_slider                  = Inputs.SliderWithLabel("Echo Mix", 0, 100, 0)
+        self.echo_delay_slider                = Inputs.SliderWithLabel("Delay (ms)", 1, 2000, 180)
+        self.echo_feedback_slider             = Inputs.SliderWithLabel("Feedback", 0, 98, 25)
+        self.echo_mode_selector               = Inputs.SelectorWithLabel("Echo Mode", ["constant", "random"], default_text = "constant")
+        self.echo_focus_selector              = Inputs.SelectorWithLabel("Echo Focus", ["all", "voice", "bass"], default_text = "all")
 
-            slider.slider.valueChanged.connect(
-                lambda value, name = prop_name, div = divider:
-                self.update_engine_property(name, value, div)
-            )
+        self.beat_threshold_slider            = Inputs.SliderWithLabel("Beat Sens.", 0, 100, 38)
 
-        column.addStretch()
-        self.main_row.addLayout(column)
+        self.button_punch                     = Basic.ButtonWithOutlineSlim("Title Punch")
+        self.button_wobble                    = Basic.ButtonWithOutlineSlim("Window Wobble")
+        self.button_disturbe                  = Basic.ButtonWithOutlineSlim("Disturbe FX")
+        self.button_test_open                 = Basic.ButtonWithOutlineSlim("Test Open")
 
-    def update_engine_property(
-            self,
-            property_name: str,
-            value:         int,
-            divider:       int
-        ) -> None:
-        
-        self.animation_engine.set_property_base_value(property_name, value / divider)
-        self.update()
+        self.play_button                      = Basic.ButtonWithOutlineSlim("Play")
+        self.close_button                     = Basic.ButtonWithOutline("Close")
+
+        self.add_section(
+            "Window",
+            [
+                self.margin_slider,
+                self.max_tilt_slider,
+                self.shake_frequency_slider,
+                self.shake_deviation_slider,
+                self.tilt_smoothing_slider,
+                self.bpm_peak_slider,
+                self.start_position_enabled_check,
+                self.start_position_x_slider,
+                self.start_position_y_slider,
+                self.dialog_check,
+                self.stays_on_top_check,
+                self.show_fps_check,
+                self.enable_tilt_check,
+                self.enable_open_animation_check,
+                self.enable_close_animation_check,
+                self.enable_audio_effects_check,
+                self.enable_advanced_beat_check,
+                self.enable_shake_animation_check,
+                self.style_selector,
+                self.apply_window_button
+            ]
+        )
+
+        self.add_section("Playback", [self.play_button])
+
+        self.add_section(
+            "Audio",
+            [
+                self.volume_slider,
+                self.player_speed_slider
+            ]
+        )
+
+        self.add_section(
+            "Bitcrush",
+            [
+                self.bitcrush_mix_slider,
+                self.bitcrush_bits_slider,
+                self.bitcrush_downsample_slider
+            ]
+        )
+
+        self.add_section(
+            "Passes Filter",
+            [
+                self.pass_mix_slider,
+                self.pass_freq_slider,
+                self.pass_q_slider,
+                self.pass_gain_slider
+            ]
+        )
+
+        self.add_section(
+            "Equalizer",
+            [
+                self.eq_low_slider,
+                self.eq_mid_slider,
+                self.eq_high_slider
+            ]
+        )
+
+        self.add_section(
+            "Presets & Effects",
+            [
+                self.reverb_mix_slider,
+                self.background_noise_slider,
+                self.car_radio_checkbox
+            ]
+        )
+
+        self.add_section(
+            "Stereo",
+            [
+                self.delay_left_slider,
+                self.delay_right_slider
+            ]
+        )
+
+        self.add_section(
+            "Radio Noise",
+            [
+                self.radio_noise_intensity_slider,
+                self.radio_noise_mix_slider,
+                self.radio_noise_color_selector,
+                self.radio_noise_attack_slider,
+                self.radio_noise_peak_slider,
+                self.radio_noise_release_slider,
+                self.radio_noise_mute_slider,
+                self.radio_noise_permanent_check,
+                self.radio_noise_random_dur_check
+            ]
+        )
+
+        self.add_section(
+            "Tape Chew",
+            [
+                self.tape_chew_intensity_slider,
+                self.tape_chew_jitter_slider,
+                self.tape_chew_random_dur_check
+            ]
+        )
+
+        self.add_section(
+            "Echo",
+            [
+                self.echo_mix_slider,
+                self.echo_delay_slider,
+                self.echo_feedback_slider,
+                self.echo_mode_selector,
+                self.echo_focus_selector
+            ]
+        )
+
+        self.add_section("Detection", [self.beat_threshold_slider])
+
+        self.add_section(
+            "Animation Triggers",
+            [
+                self.button_punch,
+                self.button_wobble,
+                self.button_disturbe,
+                self.button_test_open,
+                self.close_button
+            ]
+        )
+
+    # Binding
 
     def bind_logic(self) -> None:
-        self.volume_slider.slider.valueChanged.connect(
+        self.volume_slider.valueChanged.connect(
             lambda value: Player.player.set_volume(value / 100)
         )
-        
-        self.player_speed_slider.slider.valueChanged.connect(
+
+        self.player_speed_slider.valueChanged.connect(
             lambda value: Player.player.set_speed(value / 100, duration_ms = 3000)
         )
 
-        for slider in [self.bitcrush_mix_slider, self.bitcrush_bits_slider, self.bitcrush_down_slider]:
-            slider.slider.valueChanged.connect(self.update_bitcrush)
+        for control in [self.bitcrush_mix_slider, self.bitcrush_bits_slider, self.bitcrush_downsample_slider]:
+            self.connect_change(control, self.update_bitcrush)
 
-        for slider in [self.midpass_mix_slider, self.midpass_freq_slider, self.midpass_q_slider]:
-            slider.slider.valueChanged.connect(self.update_midpass)
+        for control in [self.pass_mix_slider, self.pass_freq_slider, self.pass_q_slider, self.pass_gain_slider]:
+            self.connect_change(control, self.update_passes)
 
-        self.delay_left_slider.slider.valueChanged.connect(self.update_delays)
-        self.delay_right_slider.slider.valueChanged.connect(self.update_delays)
+        for control in [self.eq_low_slider, self.eq_mid_slider, self.eq_high_slider]:
+            self.connect_change(control, self.update_eq)
 
-        self.beat_threshold_slider.slider.valueChanged.connect(
+        self.background_noise_slider.valueChanged.connect(
+            lambda value: Player.player.set_background_noise(mix = value / 100)
+        )
+
+        self.reverb_mix_slider.valueChanged.connect(
+            lambda value: Player.player.set_reverb(mix = value / 100)
+        )
+
+        self.car_radio_checkbox.stateChanged.connect(
+            lambda active: Player.player.set_car_radio(active)
+        )
+
+        self.delay_left_slider.valueChanged.connect(self.update_delays)
+        self.delay_right_slider.valueChanged.connect(self.update_delays)
+
+        for control in [
+            self.radio_noise_intensity_slider,
+            self.radio_noise_mix_slider,
+            self.radio_noise_color_selector,
+            self.radio_noise_attack_slider,
+            self.radio_noise_peak_slider,
+            self.radio_noise_release_slider,
+            self.radio_noise_mute_slider,
+            self.radio_noise_permanent_check,
+            self.radio_noise_random_dur_check
+        ]:
+            self.connect_change(control, self.update_radio_noise)
+
+        for control in [
+            self.tape_chew_intensity_slider,
+            self.tape_chew_jitter_slider,
+            self.tape_chew_random_dur_check
+        ]:
+            self.connect_change(control, self.update_tape_chew)
+
+        for control in [
+            self.echo_mix_slider,
+            self.echo_delay_slider,
+            self.echo_feedback_slider,
+            self.echo_mode_selector,
+            self.echo_focus_selector
+        ]:
+            self.connect_change(control, self.update_echo)
+
+        self.beat_threshold_slider.valueChanged.connect(
             lambda value: Player.player.onset_detector.set_threshold(value / 100)
         )
 
         self.style_selector.selectionChanged.connect(self.on_style_changed)
-        self.button_punch.clicked.connect(lambda: self.animation_title_punch(strength = 1.5))
+
+        self.apply_window_button.clicked.connect(self.apply_window_settings)
+
+        self.button_punch.clicked.connect(lambda: self.animation_title_scale(peak_scale = 1.5))
         self.button_wobble.clicked.connect(self.wobble)
         self.button_disturbe.clicked.connect(self.start_disturbe_animation)
         self.button_test_open.clicked.connect(self.start_open_animation)
 
-    def on_style_changed(self, index: int, name: str) -> None:
-        self.animation_style = name
+        self.play_button.clicked.connect(Player.player.toggle_playback)
+        self.close_button.clicked.connect(self.on_cancel)
+
+    def apply_window_settings(self) -> None:
+        logger.debug("Setting window settings.")
+
+        style = self.style_selector.currentText()
+
+        if style:
+            self.animation_style = style
+
+        self.max_tilt_angle                  = self.max_tilt_slider.value()
+        self.enable_tilt                     = self.enable_tilt_check.isChecked()
+        self.enable_open_animation           = self.enable_open_animation_check.isChecked()
+        self.enable_close_animation          = self.enable_close_animation_check.isChecked()
+        self.enable_advanced_beat_animations = self.enable_advanced_beat_check.isChecked()
+        self.enable_transition_audio_effects = self.enable_audio_effects_check.isChecked()
+        self.margin_x                        = self.margin_slider.value()
+        self.margin_y                        = self.margin_slider.value()
+        self.shake_frequency_ms              = self.shake_frequency_slider.value()
+        self.shake_deviation                 = self.shake_deviation_slider.value() / 10
+        self.tilt_smoothing                  = self.tilt_smoothing_slider.value() / 100
+        self.bpm_peak_scale                  = self.bpm_peak_slider.value() / 100
+        self.show_fps                        = self.show_fps_check.isChecked()
+
+        if self.start_position_enabled_check.isChecked():
+            self.start_position = QPoint(
+                self.start_position_x_slider.value(),
+                self.start_position_y_slider.value()
+            )
+
+        else:
+            self.start_position = None
+
+        if self.enable_shake_animation_check.isChecked():
+            self.start_shake()
+        
+        else:
+            self.stop_shake()
+
+        self.apply_attributes(
+            self.dialog_check.isChecked(),
+            self.stays_on_top_check.isChecked()
+        )
+
+        self.refresh_fps_connection()
+        self.refresh_bpm_connections()
+
+        self.adjustSize()
+
+        if self.start_position:
+            self.center_window()
+
+    def refresh_fps_connection(self) -> None:
+        try:
+            self.frameSwapped.disconnect(self.on_frame_swapped)
+        
+        except Exception:
+            pass
+
+        if not self.show_fps:
+            return
+
+        self.frame_count = 0
+        self.fps_timer.start()
+        self.frameSwapped.connect(self.on_frame_swapped)
+
+    def refresh_bpm_connections(self) -> None:
+        if not self.player:
+            return
+
+        try:
+            Player.bpm_informer.beat_4.disconnect(self.bpm_tick_animation)
+        
+        except Exception:
+            pass
+
+        try:
+            self.player.beat_heavy.disconnect(self.beat_heavy_animation)
+            self.player.beat_normal.disconnect(self.beat_normal_animation)
+        
+        except Exception:
+            pass
+
+        if not self.bpm_animations_enabled:
+            return
+
+        if self.enable_advanced_beat_animations:
+            self.player.beat_heavy.connect(self.beat_heavy_animation)
+            self.player.beat_normal.connect(self.beat_normal_animation)
+            return
+
+        Player.bpm_informer.beat_4.connect(self.bpm_tick_animation)
+
+    def on_style_changed(self, *_: object) -> None:
+        style = self.style_selector.currentData()
+
+        if style:
+            self.animation_style = style
+    
+    def update_radio_noise(self) -> None:
+        Player.player.set_noise(
+            intensity          = self.radio_noise_intensity_slider.value() / 100,
+            mix                = self.radio_noise_mix_slider.value()       / 100,
+            permanent          = self.radio_noise_permanent_check.isChecked(),
+            color              = self.radio_noise_color_selector.currentData(),
+            attack_ms          = self.radio_noise_attack_slider.value(),
+            peak_ms            = self.radio_noise_peak_slider.value(),
+            release_ms         = self.radio_noise_release_slider.value(),
+            mute_audio         = self.radio_noise_mute_slider.value()      / 100,
+            randomize_duration = self.radio_noise_random_dur_check.isChecked()
+        )
+
+    def update_tape_chew(self) -> None:
+        Player.player.set_tape_chew(
+            intensity          = self.tape_chew_intensity_slider.value() / 100,
+            jitter_ms          = float(self.tape_chew_jitter_slider.value()),
+            randomize_duration = self.tape_chew_random_dur_check.isChecked()
+        )
+
+    def update_echo(self) -> None:
+        Player.player.set_echo(
+            mix      = self.echo_mix_slider.value()   / 100,
+            delay_ms = self.echo_delay_slider.value(),
+            feedback = self.echo_feedback_slider.value() / 100,
+            mode     = self.echo_mode_selector.currentData(),
+            focus    = self.echo_focus_selector.currentData()
+        )
+
+    def update_passes(self) -> None:
+        Player.player.set_passes(
+            frequencies = [float(self.pass_freq_slider.value())],
+            q           = self.pass_q_slider.value()    / 10,
+            mix         = self.pass_mix_slider.value()  / 100,
+            gain        = self.pass_gain_slider.value() / 100
+        )
 
     def update_bitcrush(self) -> None:
         Player.player.set_bitcrush(
-            bits       = self.bitcrush_bits_slider.slider.value(),
-            downsample = self.bitcrush_down_slider.slider.value(),
-            mix        = self.bitcrush_mix_slider.slider.value() / 100
-        )
-
-    def update_midpass(self) -> None:
-        Player.player.set_midpass(
-            center_hz = self.midpass_freq_slider.slider.value(),
-            q         = self.midpass_q_slider.slider.value() / 10,
-            mix       = self.midpass_mix_slider.slider.value() / 100
+            bits       = self.bitcrush_bits_slider.value(),
+            downsample = self.bitcrush_downsample_slider.value(),
+            mix        = self.bitcrush_mix_slider.value() / 100
         )
 
     def update_delays(self) -> None:
         Player.player.set_channel_delay(
-            left_to_ms  = self.delay_left_slider.slider.value(),
-            right_to_ms = self.delay_right_slider.slider.value(),
+            left_to_ms  = self.delay_left_slider.value(),
+            right_to_ms = self.delay_right_slider.value(),
             duration_ms = 1000
         )
+
+    def update_eq(self) -> None:
+        Player.player.set_eq(low = self.eq_low_slider.value() / 100, mid = self.eq_mid_slider.value() / 100, high = self.eq_high_slider.value() / 100)
 
 class ByteBeatWindow(FloatingWindowGPU):
     def __init__(self):
@@ -3654,7 +4049,7 @@ class ByteBeatWindow(FloatingWindowGPU):
         self.bytebeat_player.play()
 
         self.textbox = Inputs.Textbox("text", placeholder = "Byte Beat?", max_length = 99999)
-        self.textbox.setMinimumWidth(500)
+        self.textbox.setMinimumWidth(400)
         self.textbox.safeTextChanged.connect(self.on_textbox_changed)
 
         examples = Basic.ButtonRow(
