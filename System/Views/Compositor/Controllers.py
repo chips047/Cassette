@@ -171,10 +171,12 @@ class KeyboardController(QObject):
             return
         
         tone = 1.0 + delta_px / 200
+
         Player.ui_player.play_sound(
             "Feedback/PlayheadMove",
             speed  = tone,
-            volume = 0.2
+            volume = 0.2,
+            setting_key = "playhead_sounds"
         )
 
         current_x = self.conductor.get_playhead_position_px()
@@ -193,6 +195,7 @@ class KeyboardController(QObject):
             return
 
         self.glyph_controller.copy_glyphs()
+        Player.ui_player.play_sound("Glyphs/Duplicate", setting_key = "glyph_duplication_sound")
         self.glyph_controller.paste_glyphs()
 
     def open_duration_editor(self) -> None:
@@ -207,6 +210,7 @@ class KeyboardController(QObject):
                 f"Signals/Warning/Warning{random.randint(1, 4)}",
                 lock_tag = lock_tag
             )
+
             self.conductor.tooltip.show_tooltip_at("No glyphs selected.", plan_hide = True)
 
             return False
@@ -224,7 +228,8 @@ class KeyboardController(QObject):
         Player.ui_player.play_sound(
             "Feedback/PlayheadForward",
             volume   = 0.5,
-            lock_tag = "playhead_home"
+            lock_tag = "playhead_home",
+            setting_key = "timeline_jump_sounds"
         )
 
         self.conductor.set_playhead_position_ms(0, True)
@@ -234,7 +239,8 @@ class KeyboardController(QObject):
         Player.ui_player.play_sound(
             "Feedback/PlayheadBackward",
             volume   = 0.5,
-            lock_tag = "playhead_end"
+            lock_tag = "playhead_end",
+            setting_key = "timeline_jump_sounds"
         )
 
         self.conductor.set_playhead_position_ms(self.playback_manager.duration_ms, True)
@@ -430,7 +436,7 @@ class GlyphController(QObject):
             self.elements_changed.emit()
 
             target_sound = f"Glyphs/Brightness/{'Lower' if delta < 0 else 'Higher'}"
-            Player.ui_player.play_sound(target_sound)
+            Player.ui_player.play_sound(target_sound, setting_key = "brightness_adjustment_sounds")
 
             if len(after_state) == 1:
                 target_glyph_id = next(iter(after_state))
@@ -542,6 +548,8 @@ class GlyphController(QObject):
 
         if push_undo and deleted_batch:
             self.push_action(Actions.ActionDelete(self, deleted_batch))
+
+        Player.ui_player.play_sound("Glyphs/Delete", setting_key = "glyph_deletion_sound")
 
         self.glyph_deleted.emit()
         self.elements_changed.emit()
@@ -945,7 +953,7 @@ class GlyphController(QObject):
 
         self.animate_stack_items(group, direction, step, group_size)
 
-        Player.ui_player.play_sound("Glyphs/Stack/Expand")
+        Player.ui_player.play_sound("Glyphs/Stack/Expand", setting_key = "glyph_stack_sounds")
     
     def collapse_stack_items(self, group: list[int]) -> None:
         COLLAPSE_DURATION = 220
@@ -980,7 +988,7 @@ class GlyphController(QObject):
 
         QTimer.singleShot(230, self.refresh_stack_indicators)
 
-        Player.ui_player.play_sound("Glyphs/Stack/Collapse")
+        Player.ui_player.play_sound("Glyphs/Stack/Collapse", setting_key = "glyph_stack_sounds")
 
 class AutoScroller:
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
@@ -1026,8 +1034,15 @@ class AutoScroller:
             sound_speed = min(max(abs(self.velocity / 14), 0.5), 1.7)
 
             if not self.is_dragging:
-                Player.ui_player.play_sound("Rewind/Start")
-                self.rewind_sound = Player.ui_player.play_sound("Rewind/Rewind2", True, sound_speed)
+                Player.ui_player.play_sound("Rewind/Start", setting_key = "rewind_sounds")
+                
+                self.rewind_sound = Player.ui_player.play_sound(
+                    "Rewind/Rewind2",
+                    True,
+                    sound_speed,
+                    setting_key = "rewind_sounds"
+                )
+
                 self.is_dragging  = True
             
             elif self.rewind_sound:
@@ -1044,7 +1059,7 @@ class AutoScroller:
 
         if self.rewind_sound:
             if not silent:
-                Player.ui_player.play_sound("Rewind/Stop")
+                Player.ui_player.play_sound("Rewind/Stop", setting_key = "rewind_sounds")
 
             self.rewind_sound.stop()
             self.rewind_sound = None

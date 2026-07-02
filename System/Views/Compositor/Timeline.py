@@ -953,7 +953,7 @@ class ScrollableContent(QGraphicsView):
             if not clicked_glyph:
                 return
 
-            Player.ui_player.play_sound("Menu/Open")
+            Player.ui_player.play_sound("Menu/Open", setting_key = "context_menu_sounds")
             self.update()
 
             effects, can_show_segments = self.resolve_effect_options(

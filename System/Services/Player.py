@@ -1219,10 +1219,10 @@ class UISoundManager:
         if data.ndim == 1:
             data = numpy.column_stack((data, data))
 
-        data = numpy.ascontiguousarray(data, dtype=numpy.float32)
+        data = numpy.ascontiguousarray(data, dtype = numpy.float32)
 
         if fs != self.sample_rate:
-            data = self.resample_data(data, fs, name)
+            data = self.resample_data(data, fs)
 
         self.preloaded[name] = data
         logger.success(f"{name} loaded")
@@ -1230,8 +1230,7 @@ class UISoundManager:
     def resample_data(
             self,
             data: numpy.ndarray,
-            fs:   int,
-            name: str
+            fs:   int
         ) -> numpy.ndarray:
         
         ratio        = self.sample_rate / fs
@@ -1256,7 +1255,8 @@ class UISoundManager:
             volume:                 float = 1.0,
             enable_tone_randomizer: bool  = True, 
             tone_spread:            float = 0.04,
-            lock_tag:               str   = None
+            lock_tag:               str   = None,
+            setting_key:            str   = None
         ) -> UISound:
 
         if lock_tag and lock_tag in self.locked_tags:
@@ -1268,6 +1268,9 @@ class UISoundManager:
         if Constants.current_settings["disable_sounds"]:
             return UISound(-1, self)
         
+        if setting_key and not Constants.current_settings.get(setting_key, True):
+            return UISound(-1, self)
+
         if lock_tag:
             with self.lock:
                 self.locked_tags.add(lock_tag)
@@ -1282,6 +1285,9 @@ class UISoundManager:
             speed = 1.0
 
         self.ensure_device()
+
+        master_volume = Constants.current_settings.get("sound_effect_volume", 100) / 100.0
+        volume = float(volume) * master_volume
 
         with self.lock:
             sound_id = self.next_sound_id

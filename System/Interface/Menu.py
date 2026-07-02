@@ -107,7 +107,7 @@ class ContextMenu(QMenu):
         menu.addAction(action)
     
     def close_sound(self) -> None:
-        Player.ui_player.play_sound("Menu/Close")
+        Player.ui_player.play_sound("Menu/Close", setting_key = "context_menu_sounds")
 
 class EffectPreviewWidget(QWidget):
     apply_requested: pyqtSignal = pyqtSignal(str, dict)
@@ -192,7 +192,7 @@ class EffectPreviewWidget(QWidget):
                 settings[key] = widget.value()
 
             elif isinstance(widget, Inputs.SelectorWithLabel):
-                settings[key] = widget.currentData()
+                settings[key] = widget.current_data()
 
         return settings
 

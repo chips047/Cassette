@@ -677,17 +677,28 @@ class MainMenu(QWidget):
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if not self.drag_loop_sound:
-            Player.ui_player.play_sound("DragDrop/DragDrop", speed = 1.1)
+            Player.ui_player.play_sound(
+                "DragDrop/DragDrop",
+                speed       = 1.1,
+                setting_key = "drag_drop_sounds"
+            )
+
             self.drag_loop_sound = Player.ui_player.play_sound(
                 "DragDrop/Loop",
-                loop = True
+                loop        = True,
+                setting_key = "drag_drop_sounds"
             )
 
         event.acceptProposedAction()
 
     def dragLeaveEvent(self, event: object) -> None:
         if self.drag_loop_sound:
-            Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.9)
+            Player.ui_player.play_sound(
+                "DragDrop/DragDrop",
+                speed = 0.9,
+                setting_key = "drag_drop_sounds"
+            )
+
             self.drag_loop_sound.stop()
             self.drag_loop_sound = None
 
@@ -729,8 +740,12 @@ class MainMenu(QWidget):
             )
         
         else:
-            Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.9)
-            
+            Player.ui_player.play_sound(
+                "DragDrop/DragDrop",
+                speed = 0.9,
+                setting_key = "drag_drop_sounds"
+            )
+
             self.process_new_composition(file_to_process)
             event.acceptProposedAction()
 
