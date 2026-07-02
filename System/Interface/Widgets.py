@@ -870,7 +870,6 @@ class SegmentedBar(BaseSegmentedBar):
         Player.ui_player.play_sound("Click/Toggle3")
 
 class PlayheadItem(QGraphicsObject):
-    
     def __init__(
         self,
         conductor,
@@ -2385,6 +2384,8 @@ class ElasticScrollArea(QScrollArea):
         self.velocity_speed        = 0.0
         self.scrolling_is_active   = False
 
+        self.setStyleSheet("background: transparent;")
+
         self.setup_canvas()
         self.setup_timers()
         self.viewport().installEventFilter(self)
@@ -2446,7 +2447,7 @@ class ElasticScrollArea(QScrollArea):
         limit      = self.calculate_maximum_scroll()
         resistance = self.calculate_resistance(limit)
 
-        self.velocity_speed     -= (delta * Constants.WHEEL_SCROLL_SENSITIVITY / 8.0) * resistance
+        self.velocity_speed     -= (delta * Constants.current_settings.get("wheel_scroll_sensitivity") / 8.0) * resistance
         self.scrolling_is_active = True
 
         self.idle_timer.start(Constants.USER_SCROLL_IDLE_TIMEOUT)
@@ -2455,6 +2456,10 @@ class ElasticScrollArea(QScrollArea):
             self.animation_timer.start()
 
         event.accept()
+    
+    def hideEvent(self, event):
+        self.animation_timer.stop()
+        super().hideEvent(event)
 
     # Animation
 
@@ -2525,7 +2530,7 @@ class ElasticScrollArea(QScrollArea):
 
     def update_velocity(self, overshoot: float) -> None:
         if overshoot == 0.0:
-            self.velocity_speed *= Constants.INERTIA_DECELERATION_RATE
+            self.velocity_speed *= Constants.current_settings.get("inertia_deceleration_factor", Constants.INERTIA_DECELERATION_RATE)
             return
 
         if self.scrolling_is_active:
