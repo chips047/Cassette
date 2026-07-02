@@ -29,7 +29,6 @@ from PyQt6.QtCore import (
     QRect,
     QTimer,
     pyqtSlot,
-    QSettings,
     pyqtSignal,
     pyqtProperty,
     QEasingCurve,
@@ -398,7 +397,7 @@ class StartupFadeOverlay(QWidget):
             
             Constants.current_settings.set_value("_new_user", False)
 
-            Player.ui_player.play_sound("App/Startup")
+            Player.ui_player.play_sound("App/Startup", setting_key = "startup_sound")
 
             QTimer.singleShot(
                 hold_time,
@@ -410,10 +409,7 @@ class StartupFadeOverlay(QWidget):
         startup_egg = WindowEffectManager.choose_startup_egg()
 
         if startup_egg is None:
-            Player.ui_player.play_sound(
-                "App/Startup",
-                enable_tone_randomizer = False,
-            )
+            Player.ui_player.play_sound("App/Startup", setting_key = "startup_sound")
 
             QTimer.singleShot(
                 hold_time,
@@ -474,7 +470,7 @@ class StartupFadeOverlay(QWidget):
             )
         
         else:
-            Player.ui_player.play_sound("App/Startup")
+            Player.ui_player.play_sound("App/Startup", setting_key = "startup_sound")
 
         QTimer.singleShot(
             hold_time,
@@ -738,7 +734,7 @@ class ApplicationWindow(QMainWindow):
         self.begin_shutdown()
 
     def play_exit_effects(self) -> bool:
-        Player.ui_player.play_sound("App/Close")
+        Player.ui_player.play_sound("App/Close", setting_key = "shutdown_sound")
 
         content = self.compositor_widget.content_widget
 
