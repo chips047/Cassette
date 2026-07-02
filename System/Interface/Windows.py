@@ -19,9 +19,8 @@ from PyQt6.QtGui import (
     QMatrix4x4,
     QQuaternion,
     QWheelEvent,
-    QDragEnterEvent,
-    QResizeEvent,
-    QSurfaceFormat
+    QSurfaceFormat,
+    QDragEnterEvent
 )
 
 from PyQt6.QtCore import (
@@ -30,6 +29,7 @@ from PyQt6.QtCore import (
     QSize,
     QPoint,
     QTimer,
+    QEvent,
     QObject,
     QThread,
     QSettings,
@@ -108,9 +108,6 @@ def make_fade_textbox(placeholder: str) -> Inputs.Textbox:
     textbox.setFixedHeight(32)
     
     return textbox
-
-# Core Window
-
 class FloatingWindowGPU(QOpenGLWidget):
     shared_shader_program = None
 
@@ -180,6 +177,13 @@ class FloatingWindowGPU(QOpenGLWidget):
         if self.enable_open_animation:
             QTimer.singleShot(0, self.start_open_animation)
 
+    def event(self, event):
+        if event.type() == QEvent.Type.LayoutRequest:
+            if self.sizeHint() != self.size():
+                self.adjustSize()
+
+        return super().event(event)
+
     # Setup
 
     def prepare_fmt(self) -> None:
@@ -188,6 +192,8 @@ class FloatingWindowGPU(QOpenGLWidget):
         surface_format.setVersion(4, 1)
         surface_format.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
         surface_format.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
+        surface_format.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
+        surface_format.setAlphaBufferSize(8)
 
         if Constants.current_settings.get("msaa"):
             surface_format.setSamples(Constants.current_settings["msaa"])
@@ -404,21 +410,21 @@ class FloatingWindowGPU(QOpenGLWidget):
         )
 
     def animate_resize(
-            self,
-            target_width:  int,
-            target_height: int
-        ) -> None:
+        self,
+        target_width:  int,
+        target_height: int
+    ) -> None:
 
         if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
-            self.resize(target_width + self.margin_x, target_height + self.margin_y)
+            self.resize(target_width + (self.margin_x * 2), target_height + (self.margin_y * 2))
             return
 
         self.animation_engine.set_target_value(
             "geometry",
             QRect(
                 self.x(), self.y(),
-                target_width  + self.margin_x,
-                target_height + self.margin_y
+                target_width  + (self.margin_x * 2),
+                target_height + (self.margin_y * 2)
             ),
             500,
             LoomEngine.Easing.ease_out_cubic
@@ -780,6 +786,84 @@ class FloatingWindowGPU(QOpenGLWidget):
 
         QTimer.singleShot(580, self.really_close)
         self.plan_timers(actions)
+    
+    def animation_open_electric(
+            self,
+            final_rect,
+            size: tuple[int, int]
+    ):
+
+        self.animation_engine.animate(
+            "scale",
+            [
+                (0.0, 1.0),
+                (0.2, 1.2),
+                (0.5, 1.4),
+                (1.0, 1.0)
+            ],
+            1200,
+            LoomEngine.Easing.ease_out_expo,
+            delay = 200
+        )
+
+        self.animation_engine.animate(
+            "rotation_z",
+            [
+                (0.0, self.period_randomizer((-50, -30), (30, 50))),
+                (1.0, 0)
+            ],
+            650,
+            LoomEngine.Easing.ease_out_expo
+        )
+
+        self.animation_engine.animate(
+            "opacity_content",
+            [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ],
+            300
+        )
+
+    def animation_close_electric(self, size: tuple[int, int]) -> None:
+        self.animation_engine.animate(
+            "scale",
+            [
+                (0.0, 1.0),
+                (0.5, 0.7),
+                (1.0, 1.1)
+            ],
+            1250,
+            LoomEngine.Easing.ease_out_expo
+        )
+
+        self.animation_engine.animate(
+            "rotation_z",
+            [
+                (0.0, 0),
+                (1.0, self.period_randomizer((-25, -10), (10, 25)))
+            ],
+            200
+        )
+
+        self.animation_engine.animate(
+            "opacity_content",
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ],
+            200
+        )
+
+        self.animation_engine.animate(
+            "opacity_background",
+            [
+                (0.0, 1.0),
+                (1.0, 0.0)
+            ],
+            400,
+            finished = self.really_close
+        )
 
     def bpm_tick_animation(self) -> None:
         if not self.player.is_playing:
@@ -1020,6 +1104,29 @@ class FloatingWindowGPU(QOpenGLWidget):
             600,
             LoomEngine.Easing.ease_out_expo
         )
+    
+    def animation_disturbe_electric(self) -> None:
+        self.animation_engine.animate(
+            "rotation_z",
+            [
+                (0.0, 0.0),
+                (0.8, random.choice([-25, 25])),
+                (1.0, 0.0)
+            ],
+            850,
+            LoomEngine.Easing.ease_out_expo
+        )
+
+        self.animation_engine.animate(
+            "scale",
+            [
+                (0.0, 1.0),
+                (0.8, 1.3),
+                (1.0, 1.0)
+            ],
+            850,
+            LoomEngine.Easing.ease_out_expo
+        )
 
     def animation_random_rotate(self) -> None:
         if not self.animation_engine or not Constants.current_settings["floating_window_animations"]:
@@ -1035,7 +1142,7 @@ class FloatingWindowGPU(QOpenGLWidget):
             350,
             LoomEngine.Easing.ease_out_cubic
         )
-
+    
     def start_exit_animation(self) -> None:
         if not self.enable_close_animation:
             return
@@ -1047,11 +1154,12 @@ class FloatingWindowGPU(QOpenGLWidget):
         size = self.get_window_size()
 
         {
-            "bouncy":  self.animation_close_bouncy,
-            "smooth":  self.animation_close_smooth,
-            "roll":    self.animation_close_roll,
-            "glitch":  self.animation_close_glitch,
-            "classic": self.animation_close_classic
+            "bouncy":   self.animation_close_bouncy,
+            "smooth":   self.animation_close_smooth,
+            "roll":     self.animation_close_roll,
+            "glitch":   self.animation_close_glitch,
+            "classic":  self.animation_close_classic,
+            "electric": self.animation_close_electric
         }.get(self.animation_style)(size)
 
     def start_disturbe_animation(self) -> None:
@@ -1061,11 +1169,12 @@ class FloatingWindowGPU(QOpenGLWidget):
             return
 
         {
-            "bouncy":  self.animation_disturbe_bouncy,
-            "smooth":  self.animation_disturbe_smooth,
-            "roll":    self.animation_disturbe_roll,
-            "glitch":  self.animation_disturbe_glitch,
-            "classic": self.animation_disturbe_classic
+            "bouncy":   self.animation_disturbe_bouncy,
+            "smooth":   self.animation_disturbe_smooth,
+            "roll":     self.animation_disturbe_roll,
+            "glitch":   self.animation_disturbe_glitch,
+            "classic":  self.animation_disturbe_classic,
+            "electric": self.animation_disturbe_electric
         }.get(self.animation_style)()
 
     def start_open_animation(self) -> None:
@@ -1080,11 +1189,12 @@ class FloatingWindowGPU(QOpenGLWidget):
             return
 
         {
-            "bouncy":  self.animation_open_bouncy,
-            "smooth":  self.animation_open_smooth,
-            "roll":    self.animation_open_roll,
-            "glitch":  self.animation_open_glitch,
-            "classic": self.animation_open_classic
+            "bouncy":   self.animation_open_bouncy,
+            "smooth":   self.animation_open_smooth,
+            "roll":     self.animation_open_roll,
+            "glitch":   self.animation_open_glitch,
+            "classic":  self.animation_open_classic,
+            "electric": self.animation_open_electric
         }.get(self.animation_style)(final_rect, size)
 
     # Physics
@@ -1370,13 +1480,17 @@ class FloatingWindowGPU(QOpenGLWidget):
         self.frame_count = 0
         self.fps_timer.restart()
 
-    def adjustSize(self) -> None:
-        if not self.is_ready:
-            super().adjustSize()
-            return
+    def adjustSize(self):
+        if self.is_ready:
+            size = self.content_widget.sizeHint()
+            
+            self.animate_resize(
+                size.width(),
+                size.height()
+            )
 
-        size = self.content_widget.sizeHint()
-        self.animate_resize(size.width(), size.height())
+        else:
+            return super().adjustSize()
 
     def set_bpm_peak_size(self, coefficient: float) -> None:
         self.bpm_peak_scale = coefficient
@@ -1443,39 +1557,51 @@ class FloatingWindowGPU(QOpenGLWidget):
             self.player_pulse()
             return
 
-        Player.ui_player.play_sound({
-            "bouncy":  "Packs/Bouncy/Open",
-            "smooth":  "Packs/Smooth/Open",
-            "roll":    "Packs/Smooth/Open",
-            "glitch":  "Packs/Glitch/Open",
-            "classic": "Packs/Classic/Open"
-        }.get(self.animation_style))
+        Player.ui_player.play_sound(
+            {
+                "bouncy":   "Packs/Bouncy/Open",
+                "smooth":   "Packs/Smooth/Open",
+                "roll":     "Packs/Smooth/Open",
+                "glitch":   "Packs/Glitch/Open",
+                "classic":  "Packs/Classic/Open",
+                "electric": "Packs/Electric/Open"
+            }.get(self.animation_style),
+            setting_key = "floating_window_sounds"
+        )
 
     def close_sound(self) -> None:
         if self.enable_transition_audio_effects and self.player and self.player.is_playing:
             self.player_pulse(400, 0.5)
             return
 
-        Player.ui_player.play_sound({
-            "bouncy":  "Packs/Bouncy/Close",
-            "smooth":  "Packs/Smooth/Close",
-            "roll":    "Packs/Smooth/Close",
-            "glitch":  "Packs/Glitch/Close",
-            "classic": "Packs/Classic/Close"
-        }.get(self.animation_style))
+        Player.ui_player.play_sound(
+            {
+                "bouncy":   "Packs/Bouncy/Close",
+                "smooth":   "Packs/Smooth/Close",
+                "roll":     "Packs/Smooth/Close",
+                "glitch":   "Packs/Glitch/Close",
+                "classic":  "Packs/Classic/Close",
+                "electric": "Packs/Electric/Close"
+            }.get(self.animation_style),
+            setting_key = "floating_window_sounds"
+        )
 
     def disturbe_sound(self) -> None:
         if self.enable_transition_audio_effects and self.player and self.player.is_playing:
             self.player_pulse(400, 2.0)
             return
 
-        Player.ui_player.play_sound({
-            "bouncy":  "Packs/Bouncy/Disturbe",
-            "smooth":  "Packs/Smooth/Disturbe",
-            "roll":    "Packs/Smooth/Disturbe",
-            "glitch":  f"Packs/Glitch/Disturbe{random.randint(1, 3)}",
-            "classic": "Packs/Classic/Disturbe"
-        }.get(self.animation_style))
+        Player.ui_player.play_sound(
+            {
+                "bouncy":   "Packs/Bouncy/Disturbe",
+                "smooth":   "Packs/Smooth/Disturbe",
+                "roll":     "Packs/Smooth/Disturbe",
+                "glitch":  f"Packs/Glitch/Disturbe{random.randint(1, 3)}",
+                "classic":  "Packs/Classic/Disturbe",
+                "electric": "Packs/Electric/Disturbe"
+            }.get(self.animation_style),
+            setting_key = "floating_window_sounds"
+        )
 
     def squish(self, x: float, power: float = 1.2) -> float:
         return 0.075 * (x ** power)
@@ -1591,14 +1717,14 @@ class ExportDialogWindow(FloatingWindowGPU):
         original_model = Constants.DEVICES[composition.model].short_name
         choices        = Constants.DEVICES[composition.model].port_variants + [original_model]
 
-        self.combobox          = Inputs.Selector(choices, default_index = -1)
+        self.combobox          = Inputs.Selector(choices, default_index = len(choices) - 1)
         self.watermark_textbox = Inputs.Textbox("text", max_length = 12, placeholder = "Dot Watermark")
 
         button_row = Basic.ButtonRow(
             [
-                (Basic.ButtonWithOutline, "Later",                self.on_cancel),
+                (Basic.ButtonWithOutline, "Later",                 self.on_cancel),
                 (Basic.ButtonWithOutline, "Export to every model", self.export_all),
-                (Basic.NothingButton,     "Tape it",              self.export)
+                (Basic.NothingButton,     "Tape it",               self.export)
             ]
         )
 
@@ -1607,7 +1733,9 @@ class ExportDialogWindow(FloatingWindowGPU):
         self.content_layout.addLayout(button_row)
 
     def export(self) -> None:
-        model     = self.combobox.currentText()
+        Player.ui_player.play_sound("App/ExportStart")
+
+        model     = self.combobox.current_text()
         watermark = self.watermark_textbox.text() or "Cassette"
 
         self.composition.export(
@@ -1684,14 +1812,25 @@ class ErrorWindow(FloatingWindowGPU):
         super().__init__(title)
 
         ok_button         = Basic.NothingButton(button_text)
-        description_label = Basic.DescriptionLabel(description, 600)
+        copy_button       = Basic.ButtonWithOutline("Copy error details")
+        
+        self.description_label = Basic.DescriptionLabel(description, 600)
 
-        self.content_layout.addWidget(description_label)
+        self.content_layout.addWidget(self.description_label)
+        self.content_layout.addWidget(copy_button)
         self.content_layout.addWidget(ok_button)
 
         ok_button.clicked.connect(self.on_ok)
+        copy_button.clicked.connect(self.copy_error_details)
+
+        self.content_widget.setMaximumSize(900, 800)
+
         self.title_label.start_glitch()
     
+    def copy_error_details(self) -> None:
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.description_label.text())
+
     def start_open_animation(self):
         if random.random() > 0.995:
             self.adjustSize()
@@ -1743,13 +1882,17 @@ class UpdateWindow(FloatingWindowGPU):
 
         self.update_label = Basic.DescriptionLabel("`A new update on GitHub.`\n" + changelog, 700)
 
+        scroll_area = Widgets.ElasticScrollArea(self)
+        scroll_area.setFixedSize(700, 400)
+        scroll_area.add_widget(self.update_label)
+
         self.close_button  = Basic.NothingButton("Cool")
         self.github_button = Basic.ButtonWithOutline("Check it out on GitHub")
         
         self.close_button.clicked.connect(self.on_ok)
         self.github_button.clicked.connect(lambda: webbrowser.open(url))
 
-        self.content_layout.addWidget(self.update_label)
+        self.content_layout.addWidget(scroll_area)
         self.content_layout.addWidget(self.github_button)
         self.content_layout.addWidget(self.close_button)
 
@@ -1908,8 +2051,8 @@ class Settings(FloatingWindowGPU):
         self.content_layout.addLayout(button_row)
 
     def connect_signals(self) -> None:
-        self.ok_button.pressed.connect(self.apply_and_close)
-        self.cancel_button.pressed.connect(self.on_cancel)
+        self.ok_button.clicked.connect(self.apply_and_close)
+        self.cancel_button.clicked.connect(self.on_cancel)
 
     # Pages
 
@@ -2051,7 +2194,7 @@ class Settings(FloatingWindowGPU):
             self.settings.setValue(key, widget.value())
         
         elif isinstance(widget, Inputs.SelectorWithLabel):
-            self.settings.setValue(key, widget.currentData())
+            self.settings.setValue(key, widget.current_data())
         
         elif isinstance(widget, Inputs.TextboxWithLabel):
             self.settings.setValue(key, widget.getValue())
@@ -2453,7 +2596,7 @@ class Tutorial(FloatingWindowGPU):
                     "`Space` to play / pause.\n"
                     "`1, 2, 3, 4, 5, 6, 7, 8, 9, 0, Minus` to place a glyph. "
                     "`Del / Backspace` to delete it. `Ctrl + / -` or `Command + / -` to zoom. "
-                    "`B`, `S`, `D` to quickly change the brightness, speed and duration.",
+                    "`B`, `S`, `D` to quickly change the brightness, speed and duration."
                     "`Alt + LMB` to edit keyframes."
                 )
             },
@@ -3149,7 +3292,7 @@ class AudioSetupDialog(BPMEditorBase):
 
         self.beat_counter = 0
 
-        self.model_selector = Inputs.Selector(["1", "2", "2a", "3a", "4a"])
+        self.model_selector = Inputs.Selector(["1", "2", "2a", "3a", "4a", "4b"])
         self.cancel_button  = Basic.ButtonWithOutline("Cancel")
         self.ok_button      = Basic.NothingButton("Ok")
 
@@ -3230,7 +3373,7 @@ class AudioSetupDialog(BPMEditorBase):
     def get_settings(self) -> dict:
         return {
             "audio": {**self.get_trim_settings(), **self.get_bpm_settings()},
-            "model": Constants.NUMBER_TO_CODE[self.model_selector.currentText()]
+            "model": Constants.NUMBER_TO_CODE[self.model_selector.current_text()]
         }
 
 # Glyphtone Editor
@@ -3396,11 +3539,12 @@ class ImportWindow(BPMEditorBase):
         self.setup_trim_section()
         self.setup_bpm_section()
 
-        self.audio_path_button = Basic.ButtonWithOutlineSlim("Audiofile", False)
-        self.save_path_button  = Basic.ButtonWithOutlineSlim("Savefile",  False)
+        self.audio_path_button = Basic.ButtonWithOutlineSlim("Audiofile")
+        self.save_path_button  = Basic.ButtonWithOutlineSlim("Savefile")
 
-        self.audio_path_button.setMinimumWidth(240)
-        self.save_path_button.setMinimumWidth(240)
+        for button in [self.audio_path_button, self.save_path_button]:
+            button.setMinimumWidth(240)
+            button.block_glitch_sound()
 
         self.cancel_button = Basic.ButtonWithOutline("Later, gator")
         self.import_button = Basic.NothingButton("Import!")
@@ -3435,12 +3579,17 @@ class ImportWindow(BPMEditorBase):
     # Drag and Drop
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        Player.ui_player.play_sound("DragDrop/DragDrop", speed = 1.03)
+        Player.ui_player.play_sound(
+            "DragDrop/DragDrop",
+            speed       = 1.03,
+            setting_key = "drag_drop_sounds"
+        )
 
         if not self.drag_loop_sound:
             self.drag_loop_sound = Player.ui_player.play_sound(
                 "DragDrop/Loop",
-                loop = True
+                loop        = True,
+                setting_key = "drag_drop_sounds"
             )
 
         self.move_start_animation()
@@ -3448,7 +3597,11 @@ class ImportWindow(BPMEditorBase):
         event.acceptProposedAction()
 
     def dragLeaveEvent(self, event: object) -> None:
-        Player.ui_player.play_sound("DragDrop/DragDrop", speed = 0.94)
+        Player.ui_player.play_sound(
+            "DragDrop/DragDrop",
+            speed       = 0.94,
+            setting_key = "drag_drop_sounds"
+        )
 
         if self.drag_loop_sound:
             self.drag_loop_sound.stop()
@@ -3458,6 +3611,12 @@ class ImportWindow(BPMEditorBase):
         self.stop_shake()
 
     def dropEvent(self, event: QDropEvent) -> None:
+        Player.ui_player.play_sound(
+            "DragDrop/DragDrop",
+            speed       = 0.94,
+            setting_key = "drag_drop_sounds"
+        )
+
         if self.drag_loop_sound:
             self.drag_loop_sound.stop()
             self.drag_loop_sound = None
@@ -3923,7 +4082,7 @@ class Playground(FloatingWindowGPU):
     def apply_window_settings(self) -> None:
         logger.debug("Setting window settings.")
 
-        style = self.style_selector.currentText()
+        style = self.style_selector.current_text()
 
         if style:
             self.animation_style = style
@@ -4012,7 +4171,7 @@ class Playground(FloatingWindowGPU):
         Player.bpm_informer.beat_4.connect(self.bpm_tick_animation)
 
     def on_style_changed(self, *_: object) -> None:
-        style = self.style_selector.currentData()
+        style = self.style_selector.current_data()
 
         if style:
             self.animation_style = style
@@ -4022,7 +4181,7 @@ class Playground(FloatingWindowGPU):
             intensity          = self.radio_noise_intensity_slider.value() / 100,
             mix                = self.radio_noise_mix_slider.value()       / 100,
             permanent          = self.radio_noise_permanent_check.isChecked(),
-            color              = self.radio_noise_color_selector.currentData(),
+            color              = self.radio_noise_color_selector.current_data(),
             attack_ms          = self.radio_noise_attack_slider.value(),
             peak_ms            = self.radio_noise_peak_slider.value(),
             release_ms         = self.radio_noise_release_slider.value(),
@@ -4042,8 +4201,8 @@ class Playground(FloatingWindowGPU):
             mix      = self.echo_mix_slider.value()   / 100,
             delay_ms = self.echo_delay_slider.value(),
             feedback = self.echo_feedback_slider.value() / 100,
-            mode     = self.echo_mode_selector.currentData(),
-            focus    = self.echo_focus_selector.currentData()
+            mode     = self.echo_mode_selector.current_data(),
+            focus    = self.echo_focus_selector.current_data()
         )
 
     def update_passes(self) -> None:
