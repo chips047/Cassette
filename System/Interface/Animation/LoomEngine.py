@@ -803,14 +803,16 @@ class AnimationInstance:
             keyframes:         list[tuple[float, object]],
             duration_ms:       int,
             easing_function:   Callable[[float], float],
+            delay_ms:          int                         = 0,
             finished_callback: Callable[[], object] | None = None,
-            loop:              bool = False,
-            tag:               str | None = None
+            loop:              bool                        = False,
+            tag:               str | None                  = None
         ) -> None:
 
         self.scheduler         = scheduler
         self.keyframes         = sorted(keyframes, key=lambda item: item[0])
         self.duration          = duration_ms
+        self.delay_ms          = delay_ms
         self.easing            = easing_function
         self.tag               = tag
         self.loop              = loop
@@ -823,14 +825,14 @@ class AnimationInstance:
         self.elapsed += delta_ms
         self.updated.emit()
 
-        if self.elapsed < self.duration:
+        if self.elapsed < self.delay_ms + self.duration:
             return
 
         if self.loop:
-            self.elapsed %= self.duration if self.duration > 0 else 1
+            self.elapsed %= (self.delay_ms + self.duration) if (self.delay_ms + self.duration) > 0 else 1
             return
 
-        self.elapsed     = self.duration
+        self.elapsed     = self.delay_ms + self.duration
         self.is_finished = True
 
         if self.finished_callback is None:
@@ -847,7 +849,10 @@ class AnimationInstance:
         if len(self.keyframes) == 1:
             return self.keyframes[0][1]
 
-        progress       = self.elapsed / self.duration if self.duration > 0 else 1.0
+        if self.elapsed < self.delay_ms:
+            return self.keyframes[0][1]
+
+        progress       = (self.elapsed - self.delay_ms) / self.duration if self.duration > 0 else 1.0
         eased_progress = self.easing(progress)
 
         if eased_progress <= self.keyframes[0][0]:
@@ -1054,6 +1059,9 @@ class PropertyNode:
 
         else:
             for animation in self.animations:
+                if animation.elapsed < animation.delay_ms:
+                    continue
+
                 value = animation.get_value()
 
                 if self.mode == MixMode.MULTIPLY:
@@ -1092,7 +1100,7 @@ class PropertyNode:
 
         self.animations.append(animation)
 
-        if not (snap_to_start and animation.keyframes):
+        if not (snap_to_start and animation.keyframes) or animation.delay_ms > 0:
             return
 
         first_value = animation.keyframes[0][1]
@@ -1316,7 +1324,8 @@ class AnimationEngine:
             do_not_multiply_duration: bool                        = False,
             snap_to_start:            bool                        = False,
             loop:                     bool                        = False,
-            tag:                      str | None                  = None
+            tag:                      str | None                  = None,
+            delay:                    int                         = 0,
         ) -> None:
 
         if name not in self.properties:
@@ -1324,11 +1333,13 @@ class AnimationEngine:
             return
 
         final_duration = duration if do_not_multiply_duration else int(duration * self.duration_multiplier)
+        final_delay    = delay    if do_not_multiply_duration else int(delay    * self.duration_multiplier)
 
         animation = AnimationInstance(
             scheduler         = self.backend.schedule_callback,
             keyframes         = keyframes,
             duration_ms       = final_duration,
+            delay_ms          = final_delay,
             easing_function   = easing_function,
             finished_callback = finished,
             loop              = loop,
