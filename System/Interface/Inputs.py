@@ -6,18 +6,26 @@ from loguru import logger
 
 from PyQt6.QtGui import (
     QIcon,
-    QMouseEvent
+    QBrush,
+    QColor,
+    QPainter,
+    QShowEvent,
+    QMouseEvent,
+    QPainterPath
 )
 
 from PyQt6.QtCore import (
     Qt,
+    QRectF,
     QEvent,
     QPoint,
     QTimer,
+    QObject,
     pyqtSignal,
+    pyqtProperty,
     QEasingCurve,
+    QPropertyAnimation,
     QAbstractAnimation,
-    QPropertyAnimation
 )
 
 from PyQt6.QtWidgets import (
@@ -103,7 +111,7 @@ class Textbox(QLineEdit):
         )
         
         self.glitch_timer = Basic.Timer(
-            26,
+            34,
             self.glitch_step,
             parent = self
         )
@@ -197,7 +205,11 @@ class Textbox(QLineEdit):
             position  = self.cursorPosition() + direction
             tone      = 0.85 + (position / len(current_text)) * 0.4
             
-            Player.ui_player.play_sound("Textbox/ArrowTick", speed = tone)
+            Player.ui_player.play_sound(
+                "Textbox/ArrowTick",
+                speed = tone,
+                setting_key = "textbox_sounds"
+            )
             
             self.arrow_pressed   = True
             self.arrow_direction = direction
@@ -448,7 +460,7 @@ class Textbox(QLineEdit):
             elif delta <= 1:
                 tone = 1.2
 
-        Player.ui_player.play_sound("Textbox/Tick", speed = tone)
+        Player.ui_player.play_sound("Textbox/Tick", speed = tone, setting_key = "textbox_sounds")
         
         if not self.animations_enabled:
             return
@@ -477,7 +489,7 @@ class Textbox(QLineEdit):
         self.glitchStarted.emit()
         
         if sound:
-            Player.ui_player.play_sound("Reject")
+            Player.ui_player.play_sound("Reject", setting_key = "textbox_sounds")
         
         if not Constants.current_settings["textbox_animations"]:
             return
@@ -559,123 +571,6 @@ class Textbox(QLineEdit):
         self.shake_animation.setEasingCurve(QEasingCurve.Type.Linear)
         self.shake_animation.start()
 
-class Selector(QWidget):
-    selectionChanged = pyqtSignal(int, str)
-    
-    def __init__(
-        self,
-        items:         list[str],
-        default_index: int = 0
-    ) -> None:
-        
-        super().__init__()
-        
-        self.setContentsMargins(0, 0, 0, 0)
-        self.setFixedHeight(40)
-        
-        self.setup_ui(items, default_index)
-    
-    def setup_ui(
-        self,
-        items:         list[str],
-        default_index: int
-    ) -> None:
-        
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
-        container = QFrame(self)
-        container.setStyleSheet(Styles.Controls.Selector)
-        
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-        
-        self.group = QButtonGroup(self)
-        self.group.setExclusive(True)
-        self.group.buttonClicked.connect(self.on_button_clicked)
-        
-        for idx, text in enumerate(items):
-            button = self.create_button(text, container)
-            layout.addWidget(button)
-            self.group.addButton(button, idx)
-        
-        self.group.buttons()[default_index].setChecked(True)
-        main_layout.addWidget(container)
-    
-    def create_button(
-        self,
-        text:   str,
-        parent: QWidget
-    ) -> QPushButton:
-        
-        button = QPushButton(text, parent, objectName = "segmentedButton")
-        
-        button.setFont(Utils.NType(11))
-        button.setCheckable(True)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        
-        return button
-    
-    def on_button_clicked(
-        self,
-        button: QPushButton
-    ) -> None:
-
-        count = len(self.group.buttons())
-        id    = self.group.id(button)
-        tone  = ((id + 1) / count) ** 0.5 if count > 0 else 1.0
-        
-        Player.ui_player.play_sound("Click/Toggle", speed = tone)
-        self.selectionChanged.emit(id, button.text())
-    
-    # API
-    
-    def currentIndex(self) -> int:
-        return self.group.checkedId()
-    
-    def setCurrentIndex(
-        self,
-        index: int
-    ) -> None:
-        
-        button = self.group.button(index)
-        
-        if button:
-            button.setChecked(True)
-    
-    def currentText(self) -> str:
-        button = self.group.checkedButton()
-        return button.text() if button else ""
-    
-    def setCurrentText(
-        self,
-        text: str
-    ) -> None:
-        
-        for button in self.group.buttons():
-            if button.text() != text:
-                continue
-            
-            button.setChecked(True)
-            break
-    
-    def setValue(
-        self,
-        value: int | str
-    ) -> None:
-        
-        if isinstance(value, int):
-            self.setCurrentIndex(value)
-        
-        else:
-            self.setCurrentText(str(value))
-    
-    def getValueAsText(self) -> str:
-        return self.currentText()
-
 class Checkbox(QCheckBox):
     def __init__(
         self,
@@ -692,8 +587,8 @@ class Checkbox(QCheckBox):
     def nextCheckState(self) -> None:
         super().nextCheckState()
         
-        tone = 1.0 if self.isChecked() else 0.9
-        Player.ui_player.play_sound("Click/Toggle", speed = tone)
+        tone = 1.0 if self.isChecked() else 0.82
+        Player.ui_player.play_sound("Click/Checkbox", setting_key = "checkbox_sounds", speed = tone)
 
 class BaseControlContainer(QWidget):
     def __init__(
@@ -736,134 +631,575 @@ class BaseControlContainer(QWidget):
         
         main_layout.addWidget(self.container_background)
 
+class SegmentedStrip(QWidget):
+    selectionChanged = pyqtSignal(int, str, object)
+
+    def __init__(
+        self,
+        items:            list[str] | dict,
+        default_text:     str | None       = None,
+        default_value:    object           = None,
+        pill_color:       object           = None,
+        hover_color:      object           = None,
+        button_font_size: int              = 10,
+        button_style:     str              = "",
+        stylesheet:       str              = ""
+    ) -> None:
+        
+        super().__init__()
+
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        self.pill_color = QColor(pill_color) if pill_color else QColor(Styles.Colors.NothingAccent)
+
+        if hover_color:
+            self.hover_color = QColor(hover_color)
+        
+        else:
+            fallback         = getattr(Styles.Colors, "ThirdBackground", None)
+            self.hover_color = QColor(fallback) if fallback else QColor(255, 255, 255, 20)
+
+        self.indicator_rectangle = QRectF()
+        self.has_indicator       = False
+        
+        self.hover_rectangle = QRectF()
+        self.hover_opacity   = 0.0
+
+        self.data_by_identifier: dict[int, object] = {}
+        self.buttons:            list[QPushButton] = []
+
+        self.setup_layout(
+            items,
+            button_font_size,
+            button_style
+        )
+
+        self.animation = QPropertyAnimation(self, b"indicatorRectangle")
+        
+        self.animation.setDuration(300)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutQuint)
+
+        self.hover_move_animation = QPropertyAnimation(self, b"hoverRectangle")
+        
+        self.hover_move_animation.setDuration(200)
+        self.hover_move_animation.setEasingCurve(QEasingCurve.Type.OutQuint)
+
+        self.hover_fade_animation = QPropertyAnimation(self, b"hoverOpacity")
+        
+        self.hover_fade_animation.setDuration(150)
+        self.hover_fade_animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+        
+        if stylesheet:
+            self.setStyleSheet(stylesheet)
+        else:
+            self.setStyleSheet(Styles.Controls.Selector)
+
+        if default_text is not None:
+            self.select_text(default_text, animated = False)
+            return
+            
+        if default_value is not None:
+            self.select_data(default_value, animated = False)
+            return
+            
+        if not self.group.buttons():
+            return
+            
+        self.group.buttons()[0].setChecked(True)
+        QTimer.singleShot(0, self.animate_entrance)
+
+    def setup_layout(
+        self,
+        items:            list[str] | dict,
+        button_font_size: int,
+        button_style:     str
+    ) -> None:
+        
+        self.layout = QHBoxLayout(self)
+        
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(4)
+
+        self.group = QButtonGroup(self)
+        
+        self.group.buttonClicked.connect(self.on_button_clicked)
+        self.group.setExclusive(True)
+
+        source = items.items() if isinstance(items, dict) else ((identifier, identifier) for identifier in items)
+
+        for index, (text, data) in enumerate(source):
+            button = QPushButton(text, self, objectName = "segmentedButton")
+            
+            button.setCheckable(True)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFont(Utils.NType(button_font_size))
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            button.setMinimumHeight(30)
+            
+            style_sheet = f"""
+                QPushButton#segmentedButton {{
+                    {button_style}
+                }}
+
+                QPushButton#segmentedButton,
+                QPushButton#segmentedButton:checked,
+                QPushButton#segmentedButton:hover,
+                QPushButton#segmentedButton:hover:checked {{
+                    background-color: transparent;
+                }}
+            """
+            
+            button.setStyleSheet(style_sheet)
+            button.installEventFilter(self)
+
+            self.layout.addWidget(button)
+            self.group.addButton(button, index)
+            
+            self.data_by_identifier[index] = data
+            self.buttons.append(button)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if not isinstance(watched, QPushButton):
+            return super().eventFilter(watched, event)
+
+        if event.type() == QEvent.Type.Enter:
+            target_rectangle = QRectF(watched.geometry())
+
+            if self.hover_opacity == 0.0 or self.hover_rectangle.isNull():
+                self.hover_rectangle = target_rectangle
+
+            self.hover_move_animation.stop()
+            self.hover_move_animation.setStartValue(self.hover_rectangle)
+            self.hover_move_animation.setEndValue(target_rectangle)
+            self.hover_move_animation.start()
+
+            self.hover_fade_animation.stop()
+            self.hover_fade_animation.setStartValue(self.hover_opacity)
+            self.hover_fade_animation.setEndValue(1.0)
+            self.hover_fade_animation.start()
+
+            button_count = len(self.buttons)
+            button_index = self.group.id(watched)
+
+            tone         = 0.8 + (button_index / (button_count - 1)) * 0.4 if button_count > 1 else 1.0
+
+            Player.ui_player.play_sound(
+                "Click/Selector/Hover",
+                speed = tone,
+                setting_key = "selector_sounds"
+            )
+
+        elif event.type() == QEvent.Type.Leave:
+            self.hover_fade_animation.stop()
+            self.hover_fade_animation.setStartValue(self.hover_opacity)
+            self.hover_fade_animation.setEndValue(0.0)
+            self.hover_fade_animation.start()
+
+        return super().eventFilter(watched, event)
+
+    def paintEvent(self, event: QEvent) -> None:
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        radius = 12
+
+        self.draw_hover_pill(painter, radius)
+        self.draw_main_pill(painter, radius)
+
+    def draw_hover_pill(self, painter: QPainter, radius: int) -> None:
+        if self.hover_opacity <= 0.0:
+            return
+
+        if self.hover_rectangle.isNull():
+            return
+
+        if self.hover_rectangle.width() <= 0 or self.hover_rectangle.height() <= 0:
+            return
+
+        painter.setOpacity(self.hover_opacity)
+        painter.setBrush(QBrush(self.hover_color))
+
+        path = QPainterPath()
+        
+        path.addRoundedRect(self.hover_rectangle, radius, radius)
+        painter.drawPath(path)
+
+    def draw_main_pill(self, painter: QPainter, radius: int) -> None:
+        if not self.has_indicator:
+            return
+
+        if self.indicator_rectangle.isNull():
+            return
+
+        if self.indicator_rectangle.width() <= 0 or self.indicator_rectangle.height() <= 0:
+            return
+
+        painter.setOpacity(1.0)
+        painter.setBrush(QBrush(self.pill_color))
+
+        path = QPainterPath()
+        
+        path.addRoundedRect(self.indicator_rectangle, radius, radius)
+        painter.drawPath(path)
+
+    def showEvent(self, event: QEvent) -> None:
+        super().showEvent(event)
+        
+        self.animation.setDuration(random.randint(200, 500))
+        QTimer.singleShot(0, self.animate_entrance)
+
+    def resizeEvent(self, event: QEvent) -> None:
+        super().resizeEvent(event)
+        
+        checked_identifier = self.group.checkedId()
+        
+        if checked_identifier == -1:
+            return
+            
+        self.move_indicator(checked_identifier, animated = False)
+
+    def on_button_clicked(self, button: QPushButton) -> None:
+        count = len(self.group.buttons())
+        index = self.group.id(button)
+        
+        multiplier = 1.75
+        tone       = 1.0 + (index / (count - 1)) * (multiplier - 1.0) if count > 1 else 1.0
+
+        Player.ui_player.play_sound(
+            "Click/Selector/Confirm",
+            speed = tone,
+            setting_key = "selector_sounds"
+        )
+        
+        self.select_index(
+            index,
+            animated = True,
+            emit     = True
+        )
+
+    def animate_entrance(self) -> None:
+        checked_button = self.group.checkedButton()
+        
+        if not checked_button:
+            return
+
+        index = self.group.id(checked_button)
+        
+        if index == -1:
+            return
+
+        target_rectangle = QRectF(checked_button.geometry())
+        start_rectangle  = QRectF(target_rectangle.translated(-self.width(), 0))
+
+        self.has_indicator       = True
+        self.indicator_rectangle = start_rectangle
+        
+        self.update()
+
+        self.animation.stop()
+        self.animation.setStartValue(start_rectangle)
+        self.animation.setEndValue(target_rectangle)
+        self.animation.start()
+
+    def move_indicator(
+        self,
+        index:    int,
+        animated: bool = True
+    ) -> None:
+        button = self.group.button(index)
+        
+        if not button:
+            return
+
+        target_rectangle = QRectF(button.geometry())
+
+        self.has_indicator = True
+
+        if not animated:
+            self.animation.stop()
+            self.indicator_rectangle = target_rectangle
+            self.update()
+            
+            return
+
+        self.animation.stop()
+        
+        if self.indicator_rectangle.isNull():
+            self.animation.setStartValue(target_rectangle)
+        else:
+            self.animation.setStartValue(self.indicator_rectangle)
+            
+        self.animation.setEndValue(target_rectangle)
+        self.animation.start()
+
+    def select_index(
+        self,
+        index:    int,
+        animated: bool = True,
+        emit:     bool = False
+    ) -> None:
+        
+        count = len(self.buttons)
+        if index < 0 and count > 0:
+            index = count + index
+        
+        button = self.group.button(index)
+        
+        if not button:
+            return
+
+        button.setChecked(True)
+        self.move_indicator(index, animated = animated)
+
+        if not emit:
+            return
+            
+        self.selectionChanged.emit(
+            index,
+            button.text(),
+            self.data_by_identifier.get(index)
+        )
+
+    def select_text(
+        self,
+        text:     str,
+        animated: bool = True,
+        emit:     bool = False
+    ) -> None:
+        for button in self.group.buttons():
+            if button.text() != text:
+                continue
+                
+            self.select_index(
+                self.group.id(button),
+                animated = animated,
+                emit     = emit
+            )
+            
+            return
+
+    def select_data(
+        self,
+        value:    object,
+        animated: bool = True,
+        emit:     bool = False
+    ) -> None:
+        
+        for index, data in self.data_by_identifier.items():
+            if str(data) != str(value):
+                continue
+                
+            self.select_index(
+                index,
+                animated = animated,
+                emit     = emit
+            )
+            
+            return
+
+    def current_index(self) -> int:
+        return self.group.checkedId()
+
+    def current_text(self) -> str:
+        checked_button = self.group.checkedButton()
+        
+        if not checked_button:
+            return ""
+            
+        return checked_button.text()
+
+    def current_data(self) -> object:
+        checked_identifier = self.group.checkedId()
+        
+        return self.data_by_identifier.get(checked_identifier)
+
+    def set_indicator_rectangle(self, rectangle: QRectF) -> None:
+        self.indicator_rectangle = QRectF(rectangle)
+        self.has_indicator       = True
+        
+        self.update()
+
+    def get_indicator_rectangle(self) -> QRectF:
+        return QRectF(self.indicator_rectangle)
+
+    indicatorRectangle = pyqtProperty(
+        QRectF,
+        fget = get_indicator_rectangle,
+        fset = set_indicator_rectangle
+    )
+
+    def set_hover_rectangle(self, rectangle: QRectF) -> None:
+        self.hover_rectangle = QRectF(rectangle)
+        self.update()
+
+    def get_hover_rectangle(self) -> QRectF:
+        return QRectF(self.hover_rectangle)
+
+    hoverRectangle = pyqtProperty(
+        QRectF,
+        fget = get_hover_rectangle,
+        fset = set_hover_rectangle
+    )
+
+    def set_hover_opacity(self, opacity: float) -> None:
+        self.hover_opacity = float(opacity)
+        self.update()
+
+    def get_hover_opacity(self) -> float:
+        return float(self.hover_opacity)
+
+    hoverOpacity = pyqtProperty(
+        float,
+        fget = get_hover_opacity,
+        fset = set_hover_opacity
+    )
+
+class Selector(QWidget):
+    selectionChanged = pyqtSignal(int, str)
+
+    def __init__(
+        self,
+        items:         list[str],
+        default_index: int = 0
+    ) -> None:
+        super().__init__()
+        
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.layout = QVBoxLayout(self)
+        
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
+
+        self.strip = SegmentedStrip(
+            items            = items,
+            pill_color       = Styles.Colors.NothingAccent,
+            button_font_size = 12,
+            button_style     = "background: transparent;"
+        )
+        
+        self.strip.selectionChanged.connect(self.on_selection_changed)
+        self.strip.setFixedHeight(40)
+
+        self.layout.addWidget(self.strip)
+        
+        if not items:
+            return
+            
+        self.set_current_index(default_index)
+
+    def on_selection_changed(
+        self,
+        index: int,
+        text:  str,
+        data:  object
+    ) -> None:
+        self.selectionChanged.emit(index, text)
+
+    def current_index(self) -> int:
+        return self.strip.current_index()
+
+    def set_current_index(self, index: int) -> None:
+        self.strip.select_index(
+            index,
+            animated = False,
+            emit     = False
+        )
+
+    def current_text(self) -> str:
+        return self.strip.current_text()
+
+    def set_current_text(self, text: str) -> None:
+        self.strip.select_text(
+            text,
+            animated = False,
+            emit     = False
+        )
+
+    def set_value(self, value: int | str) -> None:
+        if isinstance(value, int):
+            self.set_current_index(value)
+            return
+            
+        self.set_current_text(str(value))
+
+    def get_value_as_text(self) -> str:
+        return self.current_text()
+
 class SelectorWithLabel(BaseControlContainer):
     selectionChanged = pyqtSignal(int, str, object)
-    
+
     def __init__(
         self,
         description:   str,
         items:         list[str] | dict,
-        default_text:  str = None,
-        default_value: any = None
+        default_text:  str | None       = None,
+        default_value: object           = None
     ) -> None:
-        
         super().__init__()
-        
-        self.setFixedHeight(72)
+
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.inner_layout.setContentsMargins(12, 8, 12, 12)
-        
-        self.keys = {}
 
         self.setup_label(description)
-        self.setup_buttons(items, default_text, default_value)
-    
-    def setup_label(
-        self,
-        description: str
-    ) -> None:
         
+        self.setup_buttons(
+            items,
+            default_text,
+            default_value
+        )
+
+    def setup_label(self, description: str) -> None:
         self.label = QLabel(description, self.container_background)
+        
         self.label.setFont(Utils.NType(11))
         self.label.setStyleSheet(Styles.Other.Label)
+        
         self.inner_layout.addWidget(self.label)
-    
+
     def setup_buttons(
         self,
         items:         list[str] | dict,
-        default_text:  str       | None,
-        default_value: object    | None
+        default_text:  str | None,
+        default_value: object | None
     ) -> None:
+        self.strip = SegmentedStrip(
+            items         = items,
+            default_text  = default_text,
+            default_value = default_value
+        )
         
-        container = QWidget(self.container_background, objectName = "segmentedContainer")
-        container.setStyleSheet(Styles.Controls.SegmentedButton)
-        
-        layout = QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.group = QButtonGroup(self)
-        self.group.buttonClicked.connect(self.on_button_clicked)
-        
-        source = items.items() if isinstance(items, dict) else ((i, i) for i in items)
-        
-        for idx, (text, data) in enumerate(source):
-            button = self.create_button(text, container)
-            layout.addWidget(button)
-            self.group.addButton(button, idx)
-            
-            self.keys[idx] = data
-        
-        self.inner_layout.addWidget(container)
-        
-        if default_text:
-            self.setCurrentText(default_text)
-        
-        elif default_value:
-            self.setCurrentData(default_value)
-    
-    def create_button(
-        self,
-        text:   str,
-        parent: QWidget
-    ) -> QPushButton:
-        
-        button = QPushButton(text, parent, objectName = "segmentedButton", checkable = True)
-        button.setFont(Utils.NType(9))
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        
-        return button
-    
-    def on_button_clicked(
-        self,
-        button: QPushButton
-    ) -> None:
-        
-        count = len(self.group.buttons())
-        id    = self.group.id(button)
-        tone  = ((id + 1) / count) ** 0.5
-        
-        Player.ui_player.play_sound("Click/Toggle", speed = tone)
-        self.selectionChanged.emit(id, button.text(), self.keys.get(id))
-    
-    # API
-    
-    def currentIndex(self) -> int:
-        return self.group.checkedId()
-    
-    def currentText(self) -> str:
-        button = self.group.checkedButton()
-        return button.text() if button else ""
-    
-    def currentData(self) -> any:
-        return self.keys.get(self.group.checkedId())
-    
-    def setCurrentText(
-        self,
-        text: str
-    ) -> None:
-        
-        for button in self.group.buttons():
-            if button.text() != text:
-                continue
+        self.strip.selectionChanged.connect(self.selectionChanged.emit)
+        self.inner_layout.addWidget(self.strip)
 
-            button.setChecked(True)
-            break
-    
-    def setCurrentData(
-        self,
-        key: any
-    ) -> None:
-        
-        for idx, k in self.keys.items():
-            if str(k) != str(key):
-                continue
+    def current_index(self) -> int:
+        return self.strip.current_index()
 
-            button = self.group.button(idx)
-            
-            if button:
-                button.setChecked(True)
-            
-            break
+    def current_text(self) -> str:
+        return self.strip.current_text()
+
+    def current_data(self) -> object:
+        return self.strip.current_data()
+
+    def set_current_text(self, text: str) -> None:
+        self.strip.select_text(
+            text,
+            animated = False,
+            emit     = False
+        )
+
+    def set_current_data(self, key: object) -> None:
+        self.strip.select_data(
+            key,
+            animated = False,
+            emit     = False
+        )
 
 class CheckboxWithLabel(BaseControlContainer):
     stateChanged = pyqtSignal(bool)
@@ -898,7 +1234,7 @@ class CheckboxWithLabel(BaseControlContainer):
         
         self.description_label = QLabel(description, self.container_background)
         self.description_label.setFont(Utils.NType(10))
-        self.description_label.setStyleSheet(f"color: {Styles.Colors.SubtleFontColor}; padding: 0px;")
+        self.description_label.setStyleSheet(f"color: {Styles.Colors.SubtleFontColor}; padding: 0px; border: none;")
         self.inner_layout.addWidget(self.description_label, 1, Qt.AlignmentFlag.AlignVCenter)
     
     def isChecked(self) -> bool:
@@ -978,89 +1314,224 @@ class SliderWithLabel(BaseControlContainer):
     def __init__(
         self,
         description: str,
-        min_val: int,
-        max_val: int,
-        default_val: int
-    ) -> None:
-        
-        super().__init__()
-        
-        self.setMaximumHeight(60)
-        self.inner_layout.setContentsMargins(12, 8, 12, 4)
-        self.inner_layout.setSpacing(4)
-        
-        self.setup_label(description)
-        self.setup_slider(min_val, max_val, default_val)
-
-        self.slider.valueChanged.connect(self.valueChanged.emit)
-    
-    def setup_label(
-        self,
-        description: str
-    ) -> None:
-        
-        self.description_label = QLabel(description)
-        self.description_label.setFont(Utils.NType(11))
-        self.description_label.setStyleSheet("color: #ddd; padding: 0px;")
-        
-        self.inner_layout.addWidget(self.description_label)
-    
-    def setup_slider(
-        self,
         min_val:     int,
         max_val:     int,
         default_val: int
     ) -> None:
-        
+
+        super().__init__()
+
+        self.minimum_value          = min_val
+        self.maximum_value          = max_val
+        self.target_value           = default_val
+        self.show_animation_pending = True
+        self.value_is_animating     = False
+        self.slider_is_dragging     = False
+
+        self.setMaximumHeight(60)
+        self.inner_layout.setContentsMargins(12, 8, 12, 4)
+        self.inner_layout.setSpacing(4)
+
+        self.setup_label(description)
+        self.setup_slider(min_val, max_val, default_val)
+
+        self.value_animation = QPropertyAnimation(self.slider, b"value")
+        self.value_animation.setDuration(450)
+        self.value_animation.setEasingCurve(QEasingCurve.Type.OutQuint)
+        self.value_animation.finished.connect(self.finish_animation)
+
+        self.slider.sliderPressed.connect(self.handle_slider_pressed)
+        self.slider.sliderReleased.connect(self.handle_slider_released)
+        self.slider.valueChanged.connect(self.handle_slider_value_changed)
+
+    def setup_label(
+        self,
+        description: str
+    ) -> None:
+
+        self.description_label = QLabel(description)
+        self.description_label.setFont(Utils.NType(11))
+        self.description_label.setStyleSheet("color: #ddd; padding: 0px; border: none;")
+
+        self.inner_layout.addWidget(self.description_label)
+
+    def setup_slider(
+        self,
+        min_val: int,
+        max_val: int,
+        default_val: int
+    ) -> None:
+
         slider_value_layout = QHBoxLayout()
         slider_value_layout.setContentsMargins(0, 0, 0, 0)
         slider_value_layout.setSpacing(12)
-        
+
         self.slider = QSlider(Qt.Orientation.Horizontal, self.container_background)
         self.slider.setRange(min_val, max_val)
+        self.slider.setSingleStep(1)
+        self.slider.setPageStep(1)
         self.slider.setValue(default_val)
         self.slider.setStyleSheet(Styles.Controls.Slider)
-        self.slider.valueChanged.connect(self.update_value_label)
-        
+
         slider_value_layout.addWidget(self.slider, 1)
-        
+
         self.value_label = QLabel(str(default_val))
         self.value_label.setFont(Utils.NType(12))
-        self.value_label.setStyleSheet("color: #dddddd; padding: 0px;")
+        self.value_label.setStyleSheet("color: #dddddd; padding: 0px; border: none;")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        
+
         slider_value_layout.addWidget(self.value_label, 0)
-        
+
         self.inner_layout.addLayout(slider_value_layout)
-    
-    def update_value_label(
+
+    def clamp_value(
+        self,
+        value: int
+    ) -> int:
+
+        if value < self.minimum_value:
+            return self.minimum_value
+
+        if value > self.maximum_value:
+            return self.maximum_value
+
+        return value
+
+    def handle_slider_pressed(self) -> None:
+        self.slider_is_dragging = True
+
+        if self.value_animation.state() == QAbstractAnimation.State.Running:
+            self.value_animation.stop()
+
+    def handle_slider_released(self) -> None:
+        self.slider_is_dragging = False
+
+    def handle_slider_value_changed(
         self,
         value: int
     ) -> None:
-        
+
         self.value_label.setText(str(value))
-        
-        max_val = self.slider.maximum()
-        min_val = self.slider.minimum()
-        
-        if max_val < 20 and max_val > min_val:
-            tone = (value - min_val) / (max_val - min_val) + 0.1
-            Player.ui_player.play_sound("Click/Toggle2", speed = tone)
-    
+        self.valueChanged.emit(value)
+
+        if self.value_is_animating:
+            return
+
+        if self.slider_is_dragging:
+            return
+
+        if self.maximum_value <= self.minimum_value:
+            return
+
+        if self.maximum_value >= 20:
+            return
+
+        tone = (value - self.minimum_value) / (self.maximum_value - self.minimum_value) + 0.1
+        Player.ui_player.play_sound("Click/Toggle2", speed = tone)
+
+    def finish_animation(self) -> None:
+        self.value_is_animating = False
+
+    def play_show_animation(self) -> None:
+        if self.slider_is_dragging:
+            return
+
+        if self.value_animation.state() == QAbstractAnimation.State.Running:
+            self.value_animation.stop()
+
+        self.slider.blockSignals(True)
+        self.slider.setValue(self.minimum_value)
+        self.slider.blockSignals(False)
+
+        self.value_label.setText(str(self.minimum_value))
+
+        self.value_animation.setStartValue(self.minimum_value)
+        self.value_animation.setEndValue(self.target_value)
+
+        self.value_is_animating = True
+        self.value_animation.start()
+
+    def animate_to_value(
+        self,
+        value: int
+    ) -> None:
+
+        target_value = self.clamp_value(value)
+        self.target_value = target_value
+
+        if self.slider_is_dragging:
+            return
+
+        if self.value_animation.state() == QAbstractAnimation.State.Running:
+            self.value_animation.stop()
+
+        self.value_animation.setStartValue(self.slider.value())
+        self.value_animation.setEndValue(target_value)
+
+        self.value_is_animating = True
+        self.value_animation.start()
+
+    def showEvent(
+        self,
+        event: QShowEvent
+    ) -> None:
+
+        super().showEvent(event)
+
+        if not self.show_animation_pending:
+            return
+
+        self.show_animation_pending = False
+        QTimer.singleShot(0, self.play_show_animation)
+
+    def hideEvent(
+        self,
+        event
+    ) -> None:
+
+        super().hideEvent(event)
+
+        self.show_animation_pending = True
+
+        if self.value_animation.state() == QAbstractAnimation.State.Running:
+            self.value_animation.stop()
+
+        self.value_is_animating = False
+        self.slider_is_dragging = False
+
     def value(self) -> int:
-        return self.slider.value()
-    
+        return self.target_value
+
     def setValue(
         self,
-        val: int | float | str
+        value: int | float | str
     ) -> None:
-        
-        if isinstance(val, (int, float)):
-            self.slider.setValue(int(val))
-        
-        elif isinstance(val, str) and val.isdigit():
-            self.slider.setValue(int(val))
-    
+
+        target_value = self.target_value
+
+        if isinstance(value, (int, float)):
+            target_value = int(value)
+        elif isinstance(value, str) and value.isdigit():
+            target_value = int(value)
+
+        target_value = self.clamp_value(target_value)
+        self.target_value = target_value
+
+        self.value_label.setText(str(target_value))
+
+        if self.isVisible():
+            self.animate_to_value(target_value)
+            return
+
+        self.slider.blockSignals(True)
+
+        if self.show_animation_pending:
+            self.slider.setValue(self.minimum_value)
+        else:
+            self.slider.setValue(target_value)
+
+        self.slider.blockSignals(False)
+
     def getValueAsText(self) -> str:
         return str(self.value())
 
