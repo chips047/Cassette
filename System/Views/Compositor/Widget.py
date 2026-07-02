@@ -118,7 +118,7 @@ class CompositorWidget(QWidget):
         self.export_button.clicked.connect(self.export_ringtone)
         self.eject_button.clicked.connect(self.unload_composition)
 
-        self.playspeed_button.state_changed.connect      (lambda _, speed:  self.playback_manager.set_speed(speed, 2000))
+        self.playspeed_button.state_changed.connect      (lambda _, speed:  self.playback_manager.set_speed(speed, 700))
         self.default_effect.state_changed.connect        (lambda _, effect: self.content_widget.composition.set_default_effect(effect))
         self.mini_preview_widget.preview_clicked.connect (                  self.content_widget.scroll_to_normalized_position)
         self.glyph_dur_control.valueChanged.connect      (lambda ms:        self.content_widget.composition.set_duration(ms))
@@ -146,11 +146,16 @@ class CompositorWidget(QWidget):
         self.mini_preview_widget.set_audio_data(self.playback_manager.data)
 
         self.on_elements_changed()
+
+        self.setEnabled(True)
+
         self.window().activateWindow()
         self.content_widget.check_tutorial()
 
     def unload_composition(self) -> None:
         logger.warning("Unloading composition from compositor widget and clearing state")
+
+        self.setEnabled(False)
 
         self.back_to_main_menu_requested.emit()
 
