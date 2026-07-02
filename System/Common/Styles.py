@@ -173,7 +173,7 @@ class Other:
     """
 
     Font = f"""color: {Colors.TitleFontColor};"""
-    Label = f"""color: {Colors.FontColor}; background-color: transparent; padding: 0;"""
+    Label = f"""color: {Colors.FontColor}; background-color: transparent; padding: 0; border: none;"""
     SecondFont = f"""color: {Colors.SubtleFontColor};"""
 
     Tooltip = f"""
@@ -228,15 +228,6 @@ class Controls:
 
         QPushButton#segmentedButton:hover {{
             background-color: {Colors.ThirdBackground};
-        }}
-
-        QPushButton#segmentedButton:checked {{
-            background-color: {Colors.NothingAccent};
-            color: #ffffff;
-        }}
-
-        QPushButton#segmentedButton:checked:hover {{
-            background-color: {Colors.NothingAccentHover};
         }}
     """
 
@@ -335,12 +326,17 @@ class Controls:
 
     SliderBackground = f"""
         QWidget {{
-            background-color: {Colors.EffectMenu.Press};
+            background-color: transparent;
             border-radius: {Roundings.Button}px;
+            border: 1.35px solid {Colors.GlassBorder};
         }}
         """
 
     Slider = f"""
+        QSlider {{
+            border: none;
+        }}
+
         QSlider::groove:horizontal {{
             height: {Metrics.SliderHeight}px;
             background: {Colors.EffectMenu.Hover};
@@ -419,6 +415,7 @@ class Controls:
         QCheckBox {{
             spacing: 6px;
             color: {Colors.FontColor};
+            border: none;
         }}
 
         QCheckBox::indicator {{
