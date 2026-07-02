@@ -57,12 +57,43 @@ jobs:
           python setup.py bdist_wheel
           cd ..
 
+      - name: Switch to PyQt5 for Windows build
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          skip_dirs = {'.git', '.venv', 'venv', '__pycache__', 'build', 'dist'}
+          skip_files = {'System/Interface/Animation/LoomEngine.py'}
+          suffixes = {'.py', '.txt'}
+
+          for path in root.rglob('*'):
+              if any(part in skip_dirs for part in path.parts):
+                  continue
+
+              if not path.is_file() or path.suffix.lower() not in suffixes:
+                  continue
+
+              relative_path = path.relative_to(root).as_posix()
+              if relative_path in skip_files:
+                  continue
+
+              text = path.read_text(encoding='utf-8')
+              updated = text.replace('PyQt6', 'PyQt5').replace('pyqt6', 'pyqt5')
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+                  print(relative_path)
+          PY
+
       - name: Setup Venv and Install Project
         shell: bash
         run: |
           python -m venv venv
           if [ "${{ runner.os }}" == "Windows" ]; then
             source venv/Scripts/activate
+            pip install PyQt5
           else
             source venv/bin/activate
           fi
