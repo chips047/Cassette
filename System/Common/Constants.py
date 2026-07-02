@@ -390,6 +390,27 @@ DEVICES: dict[str, DeviceConfig] = {
         },
 
         port_variants = ["2a", "3a"]
+    ),
+
+    "PHONE4B": DeviceConfig(
+        "PHONE4B", "4b", "Phone (4b)", ["A009P"], "SuperContra",
+        glyph_indexes = make_ranges(5),
+        zone_indexes  = [[i] for i in range(5)],
+        segments_map  = {"1": 5},
+
+        visualization_map = {
+            "glyphs": {
+                "1": {
+                    "svg": "M4,3 V70",
+                    "position": (12, 0),
+                    "segments": 5
+                }
+            },
+            "size": (32, 70),
+            "thickness": 14
+        },
+
+        port_variants = ["2a", "3a", "4a"]
     )
 }
 
@@ -401,6 +422,18 @@ PortMaps = {
     "PHONE2A": {
         "to": {
             "PHONE4A": {
+                "1": ["1"],
+                "2": ["1"],
+                "3": ["1"],
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
+            },
+
+            "PHONE4B": {
                 "1": ["1"],
                 "2": ["1"],
                 "3": ["1"],
@@ -511,6 +544,20 @@ PortMaps = {
                 "2": ["2"],
                 "3": ["3"],
                 
+                "effects": {
+                    "segments": {
+                        "1": ["1"],
+                        "2": ["1"],
+                        "3": ["1"]
+                    }
+                },
+            },
+
+            "PHONE4B": {
+                "1": ["1"],
+                "2": ["1"],
+                "3": ["1"],
+
                 "effects": {
                     "segments": {
                         "1": ["1"],
@@ -637,6 +684,72 @@ PortMaps = {
                 }
             },
 
+            "PHONE4B": {
+                "1": "1",
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
+            },
+
+            "PHONE3A": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
+            }
+        }
+    },
+
+    "PHONE4B": {
+        "to": {
+            "PHONE2A": {
+                "1": {
+                    "mode": "random",
+                    "variants": [
+                        ["1"],
+                        ["2"],
+                        ["3"],
+                        ["1", "2"],
+                        ["1", "3"],
+                        ["2", "3"],
+                        ["1", "2", "3"]
+                    ],
+                },
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
+            },
+
+            "PHONE4A": {
+                "1": "1",
+
+                "effects": {
+                    "segments": {
+                        "1": ["1"]
+                    }
+                }
+            },
+
             "PHONE3A": {
                 "1": {
                     "mode": "random",
@@ -698,7 +811,7 @@ PortMaps = {
 
                 "effects": {
                     "segments": {
-                        "4": ["7"],
+                        "4":  ["7"],
                         "10": ["7"]
                     }
                 }
@@ -900,11 +1013,12 @@ SettingsDict = {
             "title": "Animation Style",
             "key": "animation_style",
             "map": {
-                "Smooth": "smooth",
-                "Bouncy": "bouncy",
-                "Roll": "roll",
-                "Glitch": "glitch",
-                "Classic": "classic"
+                "Smooth":   "smooth",
+                "Bouncy":   "bouncy",
+                "Roll":     "roll",
+                "Glitch":   "glitch",
+                "Classic":  "classic",
+                "Electric": "electric"
             },
             "default": "Bouncy"
         },
@@ -967,6 +1081,143 @@ SettingsDict = {
         }
     ],
 
+    "Audio": [
+        {
+            "type": "checkbox",
+            "title": "Disable Sounds",
+            "key": "disable_sounds",
+            "description": "Disables all UI sounds.",
+            "default": False
+        },
+        {
+            "type": "slider",
+            "title": "Sound Effect Volume",
+            "key": "sound_effect_volume",
+            "min": 0,
+            "max": 100,
+            "default": 100
+        },
+        {
+            "type": "checkbox",
+            "title": "Sound Tone Effects",
+            "description": "Enables dynamic tonal variation for UI sounds.",
+            "key": "sound_tone_effects",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Glyph Deletion Sound",
+            "description": "Enables a sound effect when a glyph is deleted.",
+            "key": "glyph_deletion_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Playhead Sound Effects",
+            "description": "Enables sound effects on playhead actions.",
+            "key": "playhead_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Glyph Spawn Sound",
+            "description": "Enables a sound effect when a glyph is spawned.",
+            "key": "glyph_spawn_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Startup Sound",
+            "description": "Enables a sound effect on application startup.",
+            "key": "startup_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Floating Window Sound Effects",
+            "description": "Enables sound effects on floating window actions.",
+            "key": "floating_window_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Drag & Drop Sound Effects",
+            "description": "Enables sound effects when dragging and dropping files.",
+            "key": "drag_drop_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Glyph Duplication Sound",
+            "description": "Enables a sound effect when a glyph is duplicated.",
+            "key": "glyph_duplication_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Rewind Sound Effect",
+            "description": "Enables a sound effect when auto scrolling.",
+            "key": "rewind_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Context Menu Sound Effects",
+            "description": "Enables sound effects on context menu actions.",
+            "key": "context_menu_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Timeline Jump Sound Effect",
+            "description": "Enables a sound effect when jumping to the start or end of a timeline.",
+            "key": "timeline_jump_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Textbox Sound Effects",
+            "description": "Enables sound effects on textbox actions.",
+            "key": "textbox_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Shutdown Sound",
+            "description": "Enables a sound effect on application shutdown.",
+            "key": "shutdown_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Brightness Adjustment Sound",
+            "description": "Enables a sound effect when adjusting brightness.",
+            "key": "brightness_adjustment_sound",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Glyph Stack Sounds",
+            "description": "Enables sound effects when stacking or unstacking glyphs.",
+            "key": "glyph_stack_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Checkbox Sounds",
+            "description": "Enables sound effects when toggling checkboxes.",
+            "key": "checkbox_sounds",
+            "default": True
+        },
+        {
+            "type": "checkbox",
+            "title": "Selector Sounds",
+            "description": "Enables sound effects when changing selector values.",
+            "key": "selector_sounds",
+            "default": True
+        }
+    ],
+
     "User Experience": [
         {
             "type": "slider",
@@ -996,20 +1247,6 @@ SettingsDict = {
             "default": "Normal"
         },
         {
-            "type": "checkbox",
-            "title": "Disable Sounds",
-            "key": "disable_sounds",
-            "description": "Disables all UI sounds.",
-            "default": False
-        },
-        {
-            "type": "checkbox",
-            "title": "Sound Tone Effects",
-            "description": "Enables dynamic tonal variation for UI sounds.",
-            "key": "sound_tone_effects",
-            "default": True
-        },
-        {
             "type": "selector",
             "title": "Waveform Smoothing",
             "key": "waveform_smoothing",
@@ -1019,6 +1256,16 @@ SettingsDict = {
                 "Smooth": 3
             },
             "default": "Balance"
+        },
+        {
+            "type": "selector",
+            "title": "Mouse Click Behavior",
+            "key": "mouse_click_behavior",
+            "map": {
+                "Normal": "normal",
+                "Fast (On Press)": "fast"
+            },
+            "default": "Normal"
         },
         {
             "type": "selector",
@@ -1043,6 +1290,28 @@ SettingsDict = {
                 "Very big": 500
             },
             "default": "Very big"
+        },
+        {
+            "type": "selector",
+            "title": "Menu Scroll Sensitivity",
+            "key": "wheel_scroll_sensitivity",
+            "map": {
+                "Low": 0.5,
+                "Normal": 1.0,
+                "High": 1.5
+            },
+            "default": "Normal"
+        },
+        {
+            "type": "selector",
+            "title": "Menu Scroll Inertia",
+            "key": "inertia_deceleration_rate",
+            "map": {
+                "Low": 0.85,
+                "Normal": 0.93,
+                "High": 0.97
+            },
+            "default": "Normal"
         }
     ]
 }
