@@ -8,42 +8,51 @@ from PyQt6.QtGui import (
     QIcon,
     QPainter,
     QTransform,
-    QFontMetrics
+    QPaintEvent,
+    QFontMetrics,
+    QMouseEvent
 )
 
 from PyQt6.QtCore import (
     Qt,
     QSize,
-    QPoint,
     QEvent,
+    QPoint,
     QTimer,
     QObject,
     pyqtSignal,
-    pyqtProperty
+    QEasingCurve,
+    pyqtProperty,
+    QPropertyAnimation
 )
 
 from PyQt6.QtWidgets import (
     QLabel,
+    QStyle,
     QWidget,
+    QPushButton,
     QHBoxLayout,
-    QPushButton
+    QStyleOptionButton
 )
 
 from System.Common import (
     Utils,
-    Styles
+    Styles,
+    Constants
 )
 
 from System.Services import Player
 
+# Logic Classes
+
 class Timer(QTimer):
     def __init__(
         self,
-        interval:    int    = 1000,
-        callback:    object = None,
-        auto_start:  bool   = False,
+        interval   : int    = 1000,
+        callback   : object = None,
+        auto_start : bool   = False,
         single_shot: bool   = False,
-        parent:      QTimer = None
+        parent     : QTimer = None
     ) -> None:
 
         super().__init__(parent)
@@ -61,44 +70,80 @@ class Timer(QTimer):
         if auto_start:
             self.start()
 
-class GlitchyButton(QPushButton):
+# Buttons
+
+class BaseButton(QPushButton):
+    right_clicked  = pyqtSignal()
+    middle_clicked = pyqtSignal()
+    double_clicked = pyqtSignal()
     glitch_started = pyqtSignal()
 
     def __init__(
         self,
-        title:               str   = None,
-        enable_glitch_sound: bool  = True,
-        icon:                QIcon = None
-    ) -> None:
-
-        super().__init__(title)
-
-        self.glitch_timer = Timer(
-            interval = 24,
-            callback = self.glitch_step,
-            parent   = self
-        )
-        
-        self.glitch_steps_left = 0
-
-        self.original_position = None
-        self.original_size     = None
-
-        self.enable_glitch_sound  = enable_glitch_sound
-        self.original_button_text = super().text()
+        text                : str     = None,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = False
+    ) -> None: 
 
         if icon:
-            self.setIcon(icon)
+            super().__init__(icon, text, parent)
+
+        else:
+            super().__init__(text, parent)
+
+        self.press_scale  = 1.0
+        self.fast_clicked = False
         
-        self.setFont(Utils.NType(10))
-        self.setFixedHeight(40)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setup_press_animation()
+
+        if enable_glitch_effect:
+            self.setup_glitch_effect()
+
+        self.pressed.connect(self.animate_press)
+        self.released.connect(self.animate_release)
+
+    def setup_press_animation(self) -> None:
+        self.press_animation = QPropertyAnimation(self, b"pressScale")
+        self.press_animation.setDuration(100)
+        self.press_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+    
+    def setup_glitch_effect(self) -> None:
+        self.glitch_timer = Timer(
+            interval      = 24,
+            callback      = self.glitch_step,
+            parent        = self
+        )
+
+        self.original_button_text = super().text()
+
+        self.glitch_steps_left    = 0
+
+        self.original_position    = None
+        self.original_size        = None
+
+        self.glitch_sound_locked  = False
 
         self.installEventFilter(self)
 
-    def random_ass_text(self, length: int) -> str:
-        characters = string.ascii_letters + string.digits
-        return "".join(random.choices(characters, k = length))
+    @pyqtProperty(float)
+    def pressScale(self) -> float:
+        return self.press_scale
+
+    @pressScale.setter
+    def pressScale(self, value: float) -> None:
+        self.press_scale = value
+        self.update()
+
+    def animate_press(self) -> None:
+        self.press_animation.stop()
+        self.press_animation.setEndValue(0.97)
+        self.press_animation.start()
+
+    def animate_release(self) -> None:
+        self.press_animation.stop()
+        self.press_animation.setEndValue(1.0)
+        self.press_animation.start()
     
     def glitch_step(self) -> None:
         if self.glitch_steps_left <= 0:
@@ -134,7 +179,7 @@ class GlitchyButton(QPushButton):
         self.glitch_steps_left = self.glitch_steps_left - 1
 
     def start_glitch(self) -> None:
-        if self.enable_glitch_sound:
+        if not self.glitch_sound_locked:
             Player.ui_player.play_sound("Reject")
 
         self.glitch_started.emit()
@@ -151,10 +196,70 @@ class GlitchyButton(QPushButton):
 
         self.glitch_timer.start()
     
+    def block_glitch_sound(self) -> None:
+        self.glitch_sound_locked = True
+    
+    def unblock_glitch_sound(self) -> None:
+        self.glitch_sound_locked = False
+
+    def paintEvent(self, event: QPaintEvent) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.scale(self.press_scale, self.press_scale)
+        painter.translate(-self.width() / 2, -self.height() / 2)
+
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+
+        self.style().drawControl(QStyle.ControlElement.CE_PushButton, option, painter, self)
+
+        painter.end()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.RightButton:
+            self.right_clicked.emit()
+        
+        elif event.button() == Qt.MouseButton.MiddleButton:
+            self.middle_clicked.emit()
+
+        if event.button() == Qt.MouseButton.LeftButton:
+            if Constants.current_settings["mouse_click_behavior"] == "fast":
+                self.setDown(True)
+                self.pressed.emit()
+                self.clicked.emit()
+
+                self.fast_clicked = True
+
+                return
+            
+            else:
+                self.fast_clicked = False
+                
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.fast_clicked:
+            self.setDown(False)
+            self.released.emit()
+
+            self.fast_clicked = False
+
+            return
+            
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.double_clicked.emit()
+        
+        super().mouseDoubleClickEvent(event)
+    
     def eventFilter(
         self,
         target_object: QObject,
-        event:         QEvent
+        event        : QEvent
     ) -> bool:
         
         if target_object != self:
@@ -169,66 +274,87 @@ class GlitchyButton(QPushButton):
         self.start_glitch()
         
         return True
+    
+    def random_ass_text(self, length: int) -> str:
+        """Watching at my code? Do you like it? I tried my best."""
 
-class NothingButton(GlitchyButton):
+        characters = string.ascii_letters + string.digits
+        return "".join(random.choices(characters, k = length))
+
+class RectangularButton(BaseButton):
     def __init__(
         self,
-        title:               str   = None,
-        enable_glitch_sound: bool  = True,
-        icon:                QIcon = None
+        text                : str     = None,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = True
     ) -> None:
 
-        super().__init__(title, enable_glitch_sound, icon)
+        super().__init__(text, icon, parent, enable_glitch_effect)
 
+        self.setFont(Utils.NType(10))
+        self.setFixedHeight(40)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+class NothingButton(RectangularButton):
+    def __init__(
+        self,
+        text                : str     = None,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = True
+    ) -> None: 
+
+        super().__init__(text, icon, parent, enable_glitch_effect)
         self.setStyleSheet(Styles.Buttons.NothingStyledButton)
 
-class Button(GlitchyButton):
+class Button(RectangularButton):
     def __init__(
         self,
-        title:               str   = None,
-        enable_glitch_sound: bool  = True,
-        icon:                QIcon = None
-    ) -> None:
+        text                : str     = None,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = True
+    ) -> None: 
 
-        super().__init__(title, enable_glitch_sound, icon)
-
+        super().__init__(text, icon, parent, enable_glitch_effect)
         self.setStyleSheet(Styles.Buttons.NormalButton)
 
-class ButtonWithOutline(GlitchyButton):
+class ButtonWithOutline(RectangularButton):
     def __init__(
         self,
-        title:               str   = None,
-        enable_glitch_sound: bool  = True,
-        icon:                QIcon = None
+        text                : str     = None,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = True
     ) -> None:
 
-        super().__init__(title, enable_glitch_sound, icon)
-
+        super().__init__(text, icon, parent, enable_glitch_effect)
         self.setStyleSheet(Styles.Buttons.NormalButtonWithBorder)
 
-class ButtonWithOutlineSlim(GlitchyButton):
+class ButtonWithOutlineSlim(RectangularButton):
     def __init__(
         self,
-        title:               str   = None,
-        enable_glitch_sound: bool  = True,
-        icon:                QIcon = None
+        text                : str     = None,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = True
     ) -> None:
 
-        super().__init__(title, enable_glitch_sound, icon)
-
+        super().__init__(text, icon, parent, enable_glitch_effect)
         self.setStyleSheet(Styles.Buttons.NormalButtonWithBorderSlim)
         self.setFixedHeight(28)
 
-class IconButtonSmall(GlitchyButton):
+class IconButtonSmall(RectangularButton):
     def __init__(
-            self,
-            icon:                QIcon,
-            enable_glitch_sound: bool = True
-        ):
+        self,
+        icon                : QIcon   = None,
+        parent              : QWidget = None,
+        enable_glitch_effect: bool    = True
+    ) -> None:
 
-        super().__init__(None, enable_glitch_sound, icon)
+        super().__init__(icon = icon, parent = parent, enable_glitch_effect = enable_glitch_effect)
 
-        self.setIcon(icon)
         self.setFixedSize(53, 28)
         self.setIconSize(QSize(22, 22))
         self.setStyleSheet(Styles.Buttons.MainMenu.SmallButton)
@@ -244,7 +370,7 @@ class ButtonRow(QHBoxLayout):
 
         self.setSpacing(spacing)
 
-        self.buttons: dict[str, GlitchyButton] = {}
+        self.buttons: dict[str, RectangularButton] = {}
 
         for item in buttons:
             if len(item) == 4:
@@ -255,8 +381,8 @@ class ButtonRow(QHBoxLayout):
                 glitch                     = True
 
             button = class_name(
-                title               = text,
-                enable_glitch_sound = glitch
+                text                 = text,
+                enable_glitch_effect = glitch
             )
 
             button.clicked.connect(callback)
@@ -265,17 +391,17 @@ class ButtonRow(QHBoxLayout):
 
             self.buttons[text] = button
 
-    def get_button(self, text: str) -> GlitchyButton | None:
+    def get_button(self, text: str) -> RectangularButton | None:
         return self.buttons.get(text)
 
-class NavButton(QPushButton):
+class NavButton(BaseButton):
     def __init__(
         self,
-        text:   str,
+        text  : str,
         parent: QWidget = None
     ) -> None:
         
-        super().__init__(parent)
+        super().__init__(text = text, parent = parent)
         
         self.setText(text)
         self.setFont(Utils.NType(10))
@@ -287,34 +413,35 @@ class NavButton(QPushButton):
         self.inactive_style = Styles.Buttons.Settings.CategoryInactiveButton
         
         self.setActive(False)
-    
+
     def setActive(self, is_active: bool) -> None:
         self.setChecked(is_active)
         style = self.active_style if is_active else self.inactive_style
         self.setStyleSheet(style)
 
-class OptionButton(QPushButton):
+class OptionButton(BaseButton):
     def __init__(
             self,
-            text:     str,
-            accent:   bool   = False,
+            text    : str,
+            accent  : bool   = False,
             callback: object = None
         ) -> None:
         
-        super().__init__(text)
-
-
+        super().__init__(text = text)
+        
         self.setStyleSheet(
             Styles.Buttons.MainMenu.AccentButton if accent
             else Styles.Buttons.MainMenu.NormalButton
         )
-
+        
         self.setFixedHeight(40)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFont(Utils.NType(10))
 
         if callback:
             self.clicked.connect(callback)
+
+# Labels
 
 class TitleLabel(QLabel):
     def __init__(self, text: str) -> None:
@@ -434,7 +561,7 @@ class TitleLabel(QLabel):
 class DescriptionLabel(QLabel):
     def __init__(
         self,
-        text:          str,
+        text         : str,
         maximum_width: int | None = None
     ) -> None:
         
