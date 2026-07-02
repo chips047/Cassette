@@ -92,7 +92,6 @@ def apply_biquad_block(
             x0 = float(block[frame_index, channel_index])
             y0 = (b0 * x0) + (b1 * x1) + (b2 * x2) - (a1 * y1) - (a2 * y2)
             
-            # Защита от NaN и бесконечности
             if not numpy.isfinite(y0):
                 y0 = 0.0
 
@@ -196,7 +195,6 @@ def calculate_bandpass_coefficients(
 
     inverse_a0 = 1.0 / a0
     
-    # Защита от NaN
     if not numpy.isfinite(inverse_a0):
         return 1.0, 0.0, 0.0, 0.0, 0.0, 0.0
 

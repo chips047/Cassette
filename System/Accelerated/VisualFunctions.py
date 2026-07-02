@@ -70,12 +70,15 @@ def apply_simple_smooth(data: numpy.ndarray, sigma: float) -> numpy.ndarray:
     size   = data.shape[0]
     result = data.copy()
     radius = int(sigma * 2)
-    if radius < 1: return result
+    
+    if radius < 1:
+        return result
 
-    # Simple box blur is extremely fast in Pythran and looks similar for waveforms
     for i in range(radius, size - radius):
         val = 0.0
         for j in range(i - radius, i + radius + 1):
             val += data[j]
+        
         result[i] = val / (2.0 * radius + 1.0)
+    
     return result
