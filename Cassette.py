@@ -66,7 +66,7 @@ from System.Common import (
 )
 
 from System.Interface import (
-    Basic,
+    Timing,
     Windows
 )
 
@@ -181,13 +181,13 @@ class WindowEffectManager:
         self.last_accordion_time     = 0
         self.is_accordion_active     = False
 
-        self.accordion_stop_timer = Basic.Timer(
+        self.accordion_stop_timer = Timing.Timer(
             2000,
             self.reset_accordion_state,
             single_shot = True
         )
 
-        self.shake_stop_timer = Basic.Timer(
+        self.shake_stop_timer = Timing.Timer(
             2000,
             self.reset_shake_state,
             single_shot = True
@@ -806,6 +806,19 @@ def main() -> None:
 
     Constants.prepare_default_settings(Constants.SettingsDict)
     Constants.load_settings()
+
+    ui_scale_factor = Constants.current_settings.get("ui_scale_factor", 1.0)
+
+    try:
+        ui_scale_factor = float(ui_scale_factor)
+
+    except (TypeError, ValueError):
+        ui_scale_factor = 1.0
+
+    if ui_scale_factor > 0:
+        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+        os.environ["QT_SCALE_FACTOR"] = str(ui_scale_factor)
+        logger.debug(f"Applied Qt UI scale factor: {ui_scale_factor}")
 
     if Constants.current_settings.get("msaa"):
         logger.debug(f"Enabling MSAA with {Constants.current_settings['msaa']} samples")
