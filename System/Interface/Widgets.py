@@ -15,12 +15,7 @@ from PyQt6.QtCore import (
     QTimer,
     QPointF,
     pyqtSignal,
-    QEasingCurve,
-    pyqtProperty,
-    QElapsedTimer,
-    QAbstractAnimation,
-    QPropertyAnimation,
-    QParallelAnimationGroup
+    QElapsedTimer
 )
 
 from PyQt6.QtGui import (
@@ -57,16 +52,20 @@ from PyQt6.QtWidgets import (
 from loguru import logger
 
 from System.Common import (
+    Dev,
     Utils,
     Styles,
     Constants
 )
 
-from System.Interface import Basic
 from System.Services import Player
+from System.Interface import Timing
+
+from System.Interface.Animation import Lifecycle
 from System.Interface.Animation import LoomEngine
 
-class ValuePopup(QWidget):
+@Dev.track_ram
+class ValuePopup(Lifecycle.LoomAnimationMixin, QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
@@ -85,23 +84,30 @@ class ValuePopup(QWidget):
     # Setup
 
     def setup_animations(self) -> None:
-        self.animation_engine = LoomEngine.AnimationEngine("PyQt6")
-
-        self.animation_engine.add_properties(
-            [
-                ("opacity", 1.0,     LoomEngine.MixMode.NOMIX, self.on_opacity_updated),
-                ("rect",    QRect(), LoomEngine.MixMode.NOMIX, self.on_geometry_updated)
-            ]
+        self.opacity_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "opacity",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_opacity_updated
         )
 
-        self.manual_hide_timer = Basic.Timer(
+        self.rect_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "rect",
+            base_value = QRect(),
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_geometry_updated
+        )
+
+        self.manual_hide_timer = Timing.Timer(
             1000,
             self.hide,
             single_shot = True,
             parent      = self
         )
 
-        self.final_hide_timer = Basic.Timer(
+        self.final_hide_timer = Timing.Timer(
             300,
             self.on_hide_finished,
             single_shot = True,
@@ -113,17 +119,13 @@ class ValuePopup(QWidget):
 
     # Painting
 
-    def paintEvent(
-        self,
-        event: QPaintEvent
-    ) -> None:
-        
+    def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         
         if Constants.current_settings["antialiasing"]:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        alpha = int(self.animation_engine.get_property_value("opacity") * 255)
+        alpha = int(self.opacity_handle.value * 255)
 
         background_color = QColor(self.cached_background_color)
         background_color.setAlpha(alpha)
@@ -142,11 +144,7 @@ class ValuePopup(QWidget):
 
     # Helpers
 
-    def layout_for_text(
-        self,
-        text: str
-    ) -> tuple[int, int]:
-        
+    def layout_for_text(self, text: str) -> tuple[int, int]:
         self.original_text = text
         metrics            = QFontMetrics(self.font)
 
@@ -160,7 +158,7 @@ class ValuePopup(QWidget):
     def compute_top_left(
         self,
         position: QPoint,
-        width: int
+        width:    int
     ) -> tuple[int, int]:
         
         desired_x = position.x() - width // 2
@@ -200,54 +198,47 @@ class ValuePopup(QWidget):
             parent_pos = self.parent().mapFromGlobal(QPoint(x, y))
             x, y       = parent_pos.x(), parent_pos.y()
 
-        self.animation_engine.set_target_value(
-            "rect",
-            QRect(x, y, width, height),
-            300,
-            LoomEngine.Easing.ease_out_cubic
+        self.rect_handle.set_target(
+            value           = QRect(x, y, width, height),
+            duration_ms     = 300,
+            easing_function = LoomEngine.Easing.ease_out_cubic
         )
 
         self.show()
 
     def fade_in(self) -> None:
-        self.animation_engine.set_target_value(
-            "opacity",
-            1.0,
-            300,
-            LoomEngine.Easing.ease_out_cubic
+        self.opacity_handle.set_target(
+            value           = 1.0,
+            duration_ms     = 300,
+            easing_function = LoomEngine.Easing.ease_out_cubic
         )
 
     def fade_out(self) -> None:
-        self.animation_engine.set_target_value(
-            "opacity",
-            0.0,
-            300,
-            LoomEngine.Easing.ease_out_cubic
+        self.opacity_handle.set_target(
+            value           = 0.0,
+            duration_ms     = 300,
+            easing_function = LoomEngine.Easing.ease_out_cubic
         )
 
         self.final_hide_timer.start()
 
     def show(self) -> None:
-        self.animation_engine.resume()
         self.fade_in()
-
         super().show()
 
     def hide(self) -> None:
         self.fade_out()
 
     def cleanup(self) -> None:
-        self.animation_engine.clear()
         super().hide()
-
         self.deleteLater()
 
     # Callbacks
 
-    def on_hide_finished(self) -> None:
-        self.animation_engine.pause()
+    def on_hide_finished(self):
         super().hide()
 
+@Dev.track_ram
 class MiniWaveformPreview(QWidget):
     preview_clicked = pyqtSignal(float)
 
@@ -270,8 +261,8 @@ class MiniWaveformPreview(QWidget):
         self.cached_wave_brush                = QBrush(QColor(255, 255, 255, 100))
         self.cached_playhead_pen              = QPen(QColor(255, 0, 0), 2.0)
         self.cached_loading_color             = QColor("#888")
-        self.cached_gradient_fade_transparent = QColor(0, 0, 0, 0)
         self.cached_gradient_fade_opaque      = QColor(0, 0, 0, 255)
+        self.cached_gradient_fade_transparent = QColor(0, 0, 0, 0)
 
     # Data
 
@@ -307,9 +298,9 @@ class MiniWaveformPreview(QWidget):
     def generate_pixmap(self) -> QPixmap | None:
         width        = max(1, self.width()  - 4)
         height       = max(1, self.height() - 10)
-        waveform_max = self.waveform_max
         min_samples  = self.min_samples
         max_samples  = self.max_samples
+        waveform_max = self.waveform_max
 
         if min_samples.size == 0:
             return None
@@ -565,6 +556,7 @@ class BaseSegmentedBar(QWidget):
         super().resizeEvent(event)
         self.update_paths()
 
+@Dev.track_ram
 class ScheduledSegmentedBar(BaseSegmentedBar):
     def __init__(
         self,
@@ -588,7 +580,7 @@ class ScheduledSegmentedBar(BaseSegmentedBar):
 
         self.elapsed_timer = QElapsedTimer()
 
-        self.timer = Basic.Timer(
+        self.timer = Timing.Timer(
             Constants.FPS_60,
             self.tick,
             parent = self
@@ -731,6 +723,7 @@ class ScheduledSegmentedBar(BaseSegmentedBar):
             self.levels = new_levels
             self.update()
 
+@Dev.track_ram
 class SegmentedBar(BaseSegmentedBar):
     segment_changed = pyqtSignal()
 
@@ -869,6 +862,7 @@ class SegmentedBar(BaseSegmentedBar):
         
         Player.ui_player.play_sound("Click/Toggle3")
 
+@Dev.track_ram
 class PlayheadItem(QGraphicsObject):
     def __init__(
         self,
@@ -879,6 +873,7 @@ class PlayheadItem(QGraphicsObject):
         super().__init__()
 
         self.conductor = conductor
+
         self.width     = 2.0
         self.height    = custom_height
         self.target_x  = 0.0
@@ -886,7 +881,7 @@ class PlayheadItem(QGraphicsObject):
         self.cached_pen = QPen(QColor(255, 0, 0), 2.0)
         self.cached_pen.setCosmetic(True)
 
-        self.lerp_timer = Basic.Timer(
+        self.lerp_timer = Timing.Timer(
             Constants.FPS_120,
             self.lerp_step,
             parent = self
@@ -956,12 +951,9 @@ class PlayheadItem(QGraphicsObject):
         if self.conductor.total_content_width > 0:
             self.conductor.playhead_moved.emit(x / self.conductor.total_content_width)
 
-class MarqueeItem(QGraphicsObject):
-    def __init__(
-        self,
-        player: Player.PlaybackManager
-    ) -> None:
-        
+@Dev.track_ram
+class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
+    def __init__(self, player: Player.PlaybackManager) -> None:
         super().__init__()
 
         self.player         = player
@@ -987,27 +979,52 @@ class MarqueeItem(QGraphicsObject):
     def setup_animations(self) -> None:
         Player.bpm_informer.beat_4.connect(self.bpm_tick)
 
-        self.animation_engine = LoomEngine.AnimationEngine("PyQt6")
-        self.animation_engine.updated.connect(self.on_animation_updated)
-
-        self.animation_engine.add_properties(
-            [
-                ("bpm_pulse",     0.0,       LoomEngine.MixMode.ADD),
-                ("mouse_point",   QPointF(), LoomEngine.MixMode.NOMIX),
-                ("mouse_y",       0.0,       LoomEngine.MixMode.NOMIX),
-                ("brush_opacity", 1.0,       LoomEngine.MixMode.NOMIX),
-                ("pen_opacity",   1.0,       LoomEngine.MixMode.NOMIX)
-            ]
+        self.bpm_pulse_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "bpmPulse",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD,
+            on_change  = self.on_animation_updated
         )
-    
+
+        self.mouse_point_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "mousePoint",
+            base_value = QPointF(),
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_animation_updated
+        )
+
+        self.start_position_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "startPosition",
+            base_value = QPointF(),
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_animation_updated
+        )
+
+        self.brush_opacity_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "brushOpacity",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_animation_updated
+        )
+
+        self.pen_opacity_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "penOpacity",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_animation_updated
+        )
+
     # Geometry
 
     def boundingRect(self) -> QRectF:
-        mouse_point = self.animation_engine.get_property_value("mouse_point")
-        
         return QRectF(
-            self.start_position,
-            mouse_point
+            self.start_position_handle.value,
+            self.mouse_point_handle.value
         ).normalized()
 
     # Painting
@@ -1018,7 +1035,7 @@ class MarqueeItem(QGraphicsObject):
         opacity:    float
     ) -> int:
         
-        pulse = self.animation_engine.get_property_value("bpm_pulse")
+        pulse = self.bpm_pulse_handle.value
         alpha = int(base_alpha * opacity * (1.0 + pulse))
         
         return alpha
@@ -1026,15 +1043,16 @@ class MarqueeItem(QGraphicsObject):
     def paint(
         self,
         painter: QPainter,
-        option: QStyleOptionGraphicsItem,
-        widget: QWidget = None
+        option:  QStyleOptionGraphicsItem,
+        widget:  QWidget = None
     ) -> None:
         
-        brush_alpha = self.animation_engine.get_property_value("brush_opacity")
-        pen_alpha   = self.animation_engine.get_property_value("pen_opacity")
-        mouse_point = self.animation_engine.get_property_value("mouse_point")
+        brush_alpha = self.brush_opacity_handle.value
+        pen_alpha   = self.pen_opacity_handle.value
+        start_point = self.start_position_handle.value 
+        mouse_point = self.mouse_point_handle.value
 
-        rect   = QRectF(self.start_position, mouse_point).normalized()
+        rect   = QRectF(start_point, mouse_point).normalized()
         radius = min((rect.width() + rect.height()) / 12, 10)
 
         self.cached_brush_color.setAlpha(self.apply_bpm_to_alpha(50, brush_alpha))
@@ -1053,53 +1071,44 @@ class MarqueeItem(QGraphicsObject):
     # Animations
 
     def fade_in(self) -> None:
-        self.animation_engine.resume()
-
-        self.animation_engine.animate(
-            "brush_opacity",
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ],
-            300,
-            LoomEngine.Easing.ease_out_cubic
+        self.brush_opacity_handle.play_curve(
+            keyframes                  = [(0.0, self.brush_opacity_handle.value), (1.0, 1.0)],
+            duration_ms                = 300,
+            easing_function            = LoomEngine.Easing.ease_out_cubic
         )
 
-        self.animation_engine.animate(
-            "pen_opacity", [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ],
-            300,
-            LoomEngine.Easing.ease_out_cubic
+        self.pen_opacity_handle.play_curve(
+            keyframes                  = [(0.0, self.pen_opacity_handle.value), (1.0, 1.0)],
+            duration_ms                = 300,
+            easing_function            = LoomEngine.Easing.ease_out_cubic
         )
 
     def fade_out(self) -> None:
         if not Constants.current_settings["marquee_hide_animation"]:
-            self.animation_engine.set_property_base_value("brush_opacity", 0.0)
-            self.animation_engine.set_property_base_value("pen_opacity",   0.0)
+            self.brush_opacity_handle.set_base(0.0)
+            self.pen_opacity_handle.set_base(0.0)
             
             self.finish_and_hide()
             
             return
 
-        self.animation_engine.animate("brush_opacity", [(0.0, 1.0), (1.0, 0.0)], 230, LoomEngine.Easing.ease_out_cubic)
+        self.brush_opacity_handle.play_curve(
+            keyframes       = [(0.0, self.brush_opacity_handle.value), (1.0, 0.0)],
+            duration_ms     = 230,
+            easing_function = LoomEngine.Easing.ease_out_cubic
+        )
+
         QTimer.singleShot(70, self.animate_pen_out)
 
     def animate_pen_out(self) -> None:
-        self.animation_engine.animate(
-            "pen_opacity",
-            [
-                (0.0, 1.0),
-                (1.0, 0.0)
-            ],
-            300,
-            LoomEngine.Easing.ease_out_cubic,
-            self.finish_and_hide
+        self.pen_opacity_handle.play_curve(
+            keyframes       = [(0.0, self.pen_opacity_handle.value), (1.0, 0.0)],
+            duration_ms     = 300,
+            easing_function = LoomEngine.Easing.ease_out_cubic,
+            finished        = self.finish_and_hide
         )
 
     def finish_and_hide(self) -> None:
-        self.animation_engine.pause()
         self.hide()
 
     # API
@@ -1108,10 +1117,19 @@ class MarqueeItem(QGraphicsObject):
         self.bpm = bpm
 
     def start_marquee(self, start_point: QPointF) -> None:
-        self.start_position = start_point
-        
-        self.animation_engine.set_property_base_value("mouse_point", start_point)
-        
+        if self.isVisible():
+            current_start = self.start_position_handle.value
+
+            self.start_position_handle.play_curve(
+                keyframes       = [(0.0, current_start), (1.0, start_point)],
+                duration_ms     = 150,
+                easing_function = LoomEngine.Easing.ease_out_cubic
+            )
+
+        else:
+            self.mouse_point_handle.set_base(start_point)
+            self.start_position_handle.set_base(start_point)
+
         self.fade_in()
         self.show()
 
@@ -1125,19 +1143,18 @@ class MarqueeItem(QGraphicsObject):
         ) -> None:
         
         if animate:
-            self.animation_engine.set_target_value(
-                "mouse_point",
-                point,
-                150,
-                LoomEngine.Easing.ease_out_cubic
+            self.mouse_point_handle.set_target(
+                value           = point,
+                duration_ms     = 150,
+                easing_function = LoomEngine.Easing.ease_out_cubic
             )
         
         else:
-            self.animation_engine.set_property_base_value("mouse_point", point)
+            self.mouse_point_handle.set_base(point)
             self.on_animation_updated()
 
         path = QPainterPath()
-        path.addRect(QRectF(self.start_position, point).normalized())
+        path.addRect(QRectF(self.start_position_handle.value, point).normalized())
 
         modifiers = QApplication.keyboardModifiers()
         
@@ -1156,7 +1173,7 @@ class MarqueeItem(QGraphicsObject):
 
     # Callbacks
 
-    def on_animation_updated(self) -> None:
+    def on_animation_updated(self, *arguments: object) -> None:
         self.prepareGeometryChange()
         self.update()
 
@@ -1172,17 +1189,15 @@ class MarqueeItem(QGraphicsObject):
 
         interval_ms = Player.bpm_informer.get_interval(4)
 
-        self.animation_engine.animate(
-            "bpm_pulse",
-            [
-                (0.0, 0.5),
-                (1.0, 0.0)
-            ],
-            interval_ms,
-            LoomEngine.Easing.ease_out_cubic
+        self.bpm_pulse_handle.play_curve(
+            keyframes                  = [(0.0, 0.5), (1.0, 0.0)],
+            duration_ms                = interval_ms,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            multiply_duration_by_speed = False
         )
 
-class GlyphItem(QGraphicsObject):
+@Dev.track_ram
+class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     STACK_LABEL_FONT  = Utils.NType(9)
     STACK_LABEL_COLOR = QColor(0, 0, 0)
 
@@ -1229,7 +1244,6 @@ class GlyphItem(QGraphicsObject):
 
         self.setup_animations()
         self.setup_flags()
-        self.setup_timers()
         self.setup_keyframes()
         
         self.cached_fade_pen.setWidthF(self.keyframe_line_width)
@@ -1301,14 +1315,6 @@ class GlyphItem(QGraphicsObject):
         self.setCacheMode(QGraphicsItem.CacheMode.ItemCoordinateCache)
         self.setAcceptHoverEvents(True)
 
-    def setup_timers(self) -> None:
-        self.hover_timer = Basic.Timer(
-            1000,
-            self.on_hover_timeout,
-            single_shot = True,
-            parent = self
-        )
-
     def setup_keyframes(self) -> None:
         self.keyframe_line_padding  = 12
         self.keyframe_line_width    = 4
@@ -1318,23 +1324,52 @@ class GlyphItem(QGraphicsObject):
         self.fade_dragged_index     = None
 
     def setup_animations(self) -> None:
-        self.animation_margin              = 0.0
-        self.is_animating                  = False
+        self.animation_margin = 0.0
+        self.is_animating     = False
+        self.stack_depth      = 0
 
-        self.marquee_selection_scale       = 1.0
-        self.spawn_scale                   = 1.0
-        self.despawn_scale                 = 1.0
+        self.despawn_duration_ms = None
+        self.despawn_start_ms    = None
 
-        self.tilt_x                        = 0.0
-        self.tilt_y                        = 0.0
+        self.scale_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "scale",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.MULTIPLY,
+            on_change  = self.on_visual_property_changed
+        )
 
-        self.border_opacity                = 0.0
+        self.tilt_x_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "tiltX",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_visual_property_changed
+        )
 
-        self.stack_y_offset                = 0.0
-        self.stack_depth                   = 0
+        self.tilt_y_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "tiltY",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_visual_property_changed
+        )
 
-        self.despawn_duration_ms           = None
-        self.despawn_start_ms              = None
+        self.border_opacity_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "borderOpacity",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_border_opacity_changed
+        )
+
+        self.stack_y_offset_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "stackYOffset",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_stack_y_offset_changed
+        )
 
     # Geometry & Metrics
 
@@ -1381,20 +1416,27 @@ class GlyphItem(QGraphicsObject):
         option:  QStyleOptionGraphicsItem,
         widget:  QWidget = None
     ) -> None:
-        width_px     = self.ms_to_px(self.duration_ms)
-        height       = Styles.Metrics.Tracks.BoxHeight
+        
+        width_px = self.ms_to_px(self.duration_ms)
+        height   = Styles.Metrics.Tracks.BoxHeight
 
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.save()
+        has_transforms = (
+            self.scale_handle.value  != 1.0 or
+            self.tilt_x_handle.value != 0   or
+            self.tilt_y_handle.value != 0
+        )
 
-        self.apply_paint_transforms(painter, width_px, height)
+        if has_transforms:
+            painter.save()
+            self.apply_paint_transforms(painter, width_px, height)
+
         self.draw_base_shape(painter, width_px, height)
 
         if self.pending_fade_keyframes and width_px > 30:
             self.draw_fade_keyframes(painter, width_px, height)
 
-        painter.restore()
+        if has_transforms:
+            painter.restore()
 
     def apply_paint_transforms(
         self,
@@ -1403,19 +1445,23 @@ class GlyphItem(QGraphicsObject):
         height:       float
     ) -> None:
         
-        scale    = self.marquee_selection_scale * self.spawn_scale * self.despawn_scale
         center_x = width_px / 2
         center_y = height       / 2
+
+        scale    = self.scale_handle.value
 
         painter.translate(center_x, center_y)
 
         if scale != 1.0:
             painter.scale(scale, scale)
 
-        if self.tilt_x != 0 or self.tilt_y != 0:
+        tilt_x = self.tilt_x_handle.value
+        tilt_y = self.tilt_y_handle.value
+
+        if tilt_x != 0 or tilt_y != 0:
             transform = QTransform()
-            transform.rotate(self.tilt_x, Qt.Axis.XAxis)
-            transform.rotate(self.tilt_y, Qt.Axis.YAxis)
+            transform.rotate(tilt_x, Qt.Axis.XAxis)
+            transform.rotate(tilt_y, Qt.Axis.YAxis)
             
             painter.setTransform(transform * painter.transform())
 
@@ -1433,7 +1479,7 @@ class GlyphItem(QGraphicsObject):
         )
 
     def update_border_pen(self) -> None:
-        opacity = max(0.0, min(1.0, self.border_opacity))
+        opacity = max(0.0, min(1.0, self.border_opacity_handle.value))
         r = int(255 * opacity)
         
         self.cached_border_color.setRed(r)
@@ -1456,7 +1502,7 @@ class GlyphItem(QGraphicsObject):
             height:  float
         ) -> None:
         
-        has_stack = self.stack_depth > 0 and abs(self.stack_y_offset) < 1.0
+        has_stack = self.stack_depth > 0 and abs(self.stack_y_offset_handle.value) < 1.0
 
         self.update_radius(width)
         self.update_border_pen()
@@ -1530,88 +1576,33 @@ class GlyphItem(QGraphicsObject):
 
     # Animations
 
-    def make_animation(
-        self,
-        keyframes: list,
-        property:  bytes,
-        duration:  int,
-        curve:     QEasingCurve = QEasingCurve.Type.OutCubic,
-        loop:      bool         = False
-    ) -> QPropertyAnimation:
-
-        animation = QPropertyAnimation(self, property)
-        animation.setDuration(duration)
-        animation.setKeyValues(keyframes)
-        animation.setEasingCurve(curve)
-        animation.setParent(self)
-
-        if loop:
-            animation.setLoopCount(-1)
-
-        return animation
-
-    def group_animate(
-        self,
-        animations:    list[QPropertyAnimation],
-        finished:      callable | None = None,
-        value_changed: callable | None = None,
-        multiplier:    float           = 1.0
-    ) -> None:
-
-        self.animation_group = QParallelAnimationGroup(self)
-
-        if multiplier == 1.0:
-            multiplier = float(Constants.current_settings["animation_multiplier"])
-
-        for animation in animations:
-            if multiplier != 1.0:
-                animation.setDuration(int(animation.duration() * multiplier))
-            
-            if value_changed:
-                animation.valueChanged.connect(value_changed)
-            
-            self.animation_group.addAnimation(animation)
-
-        if finished:
-            self.animation_group.finished.connect(finished)
-
-        self.animation_group.start()
-
     def set_animating(self, active: bool) -> None:
         if self.is_animating == active:
             return
         
         self.prepareGeometryChange()
         
-        self.is_animating    = active
+        self.is_animating     = active
         self.animation_margin = 15.0 if active else 0.0
         
         self.update()
 
     def fade_in_animation(self) -> None:
-        self.fade_in = self.make_animation(
-            [
-                (0.0, self.border_opacity),
-                (1.0, 1.0)
-            ],
-            b"borderOpacity",
-            400
+        self.border_opacity_handle.play_curve(
+            keyframes                  = [(0.0, self.border_opacity_handle.value), (1.0, 1.0)],
+            duration_ms                = 400,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            multiply_duration_by_speed = False
         )
-        
-        self.fade_in.start()
 
     def fade_out_animation(self) -> None:
-        self.fade_out = self.make_animation(
-            [
-                (0.0, self.border_opacity),
-                (1.0, 0.0)
-            ],
-            b"borderOpacity",
-            400
+        self.border_opacity_handle.play_curve(
+            keyframes                  = [(0.0, self.border_opacity_handle.value), (1.0, 0.0)],
+            duration_ms                = 400,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            multiply_duration_by_speed = False,
+            finished                   = self.fade_out_callback
         )
-        
-        self.fade_out.finished.connect(self.fade_out_callback)
-        self.fade_out.start()
 
     def spawn_animation(self, animate: bool = True) -> None:
         if not animate:
@@ -1621,17 +1612,14 @@ class GlyphItem(QGraphicsObject):
             return
         
         self.set_animating(True)
-        
-        self.scale_animation = self.make_animation(
-            [
-                (0.0, 0.0),
-                (1.0, 1.0)
-            ],
-            b"spawnScale",
-            400
+
+        self.scale_handle.play_curve(
+            keyframes                  = [(0.0, 0.0), (1.0, 1.0)],
+            duration_ms                = 400,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            snap_to_start              = True,
+            finished                   = lambda: self.set_animating(False)
         )
-        
-        self.scale_animation.start()
 
     def prepare_for_despawn(self) -> None:
         data = self.data
@@ -1645,156 +1633,82 @@ class GlyphItem(QGraphicsObject):
     def despawn_animation(self) -> None:
         self.prepare_for_despawn()
 
-        for child in self.children():
-            if not isinstance(child, QAbstractAnimation):
-                continue
-
-            child.stop()
-
         self.set_animating(True)
-        
-        self.scale_animation = self.make_animation(
-            [
-                (0.0, self.spawn_scale),
-                (1.0, 0.0)
-            ],
-            b"spawnScale",
-            300
+
+        self.scale_handle.play_curve(
+            keyframes                  = [(0.0, 1.0), (1.0, 0.0)],
+            duration_ms                = 300,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            finished                   = self.on_despawn_finished
         )
-        
-        self.scale_animation.finished.connect(self.on_despawn_finished)
-        self.scale_animation.start()
 
     def marquee_select_animation(self) -> None:
         self.set_animating(True)
-        
-        self.marquee_scale_animation = self.make_animation(
-            [
-                (0.0, self.marquee_selection_scale),
-                (0.5, 1.05),
-                (1.0, 1.0)
+
+        self.scale_handle.play_curve(
+            keyframes = [
+                (0.0, 1.000),
+                (0.5, 1.075),
+                (1.0, 1.000)
             ],
-            b"marqueeSelectionScale",
-            500
+            duration_ms                 = 500,
+            easing_function             = LoomEngine.Easing.ease_out_cubic,
+            finished                    = lambda: self.set_animating(False)
         )
-        
-        self.marquee_scale_animation.finished.connect(lambda: self.set_animating(False))
-        self.marquee_scale_animation.start()
 
     def press_animation(self, position: QPointF) -> None:
         if not Constants.current_settings["glyph_tilt_animation"]:
             return
 
         target_tilt_x, target_tilt_y = self.calculate_target_tilt(position)
-        
+        duration_ms                  = 700
+
         self.set_animating(True)
 
-        tilt_x_animation = self.make_animation(
-            [
-                (0.0, self.tilt_x),
+        self.tilt_x_handle.play_curve(
+            keyframes = [
+                (0.0, self.tilt_x_handle.value),
                 (0.5, target_tilt_x),
                 (1.0, 0.0)
             ],
-            b"tiltX",
-            700
+            duration_ms     = duration_ms,
+            easing_function = LoomEngine.Easing.ease_out_cubic
         )
-        
-        tilt_y_animation = self.make_animation(
-            [
-                (0.0, self.tilt_y),
+
+        self.tilt_y_handle.play_curve(
+            keyframes = [
+                (0.0, self.tilt_y_handle.value),
                 (0.5, target_tilt_y),
                 (1.0, 0.0)
             ],
-            b"tiltY",
-            700
+            duration_ms     = duration_ms,
+            easing_function = LoomEngine.Easing.ease_out_cubic,
+            finished        = lambda: self.set_animating(False)
         )
 
-        self.group_animate(
-            [
-                tilt_x_animation,
-                tilt_y_animation
-            ],
-            lambda: self.set_animating(False)
-        )
+    # Animation Callbacks
 
-    # Animation Properties
+    def on_visual_property_changed(self, value: object) -> None:
+        self.update()
 
-    @pyqtProperty(float)
-    def borderOpacity(self) -> float:
-        return self.border_opacity
-
-    @borderOpacity.setter
-    def borderOpacity(self, value: float) -> None:
-        self.border_opacity = value
+    def on_border_opacity_changed(self, value: float) -> None:
         self.update_border_pen()
         self.update()
 
-    @pyqtProperty(float)
-    def tiltY(self) -> float:
-        return self.tilt_y
-
-    @tiltY.setter
-    def tiltY(self, value: float) -> None:
-        self.tilt_y = value
-        self.update()
-
-    @pyqtProperty(float)
-    def tiltX(self) -> float:
-        return self.tilt_x
-
-    @tiltX.setter
-    def tiltX(self, value: float) -> None:
-        self.tilt_x = value
-        self.update()
-
-    @pyqtProperty(float)
-    def spawnScale(self) -> float:
-        return self.spawn_scale
-
-    @spawnScale.setter
-    def spawnScale(self, value: float) -> None:
-        self.spawn_scale = value
-        self.update()
-
-    @pyqtProperty(float)
-    def despawnScale(self) -> float:
-        return self.despawn_scale
-
-    @despawnScale.setter
-    def despawnScale(self, value: float) -> None:
-        self.despawn_scale = value
-        self.update()
-
-    @pyqtProperty(float)
-    def marqueeSelectionScale(self) -> float:
-        return self.marquee_selection_scale
-
-    @marqueeSelectionScale.setter
-    def marqueeSelectionScale(self, value: float) -> None:
-        self.marquee_selection_scale = value
-        self.update()
-
-    @pyqtProperty(float)
-    def stackYOffset(self) -> float:
-        return self.stack_y_offset
-    
-    @stackYOffset.setter
-    def stackYOffset(self, value: float) -> None:
-        self.stack_y_offset = value
+    def on_stack_y_offset_changed(self, value: float) -> None:
         self.setPos(self.pos().x(), self.fixed_y + value)
-
         self.update()
 
     # Events
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         if not self.conductor.glyph_controller.drag_session:
-            self.hover_timer.start()
+            self.conductor.glyph_controller.set_hovered_item(self)
         
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
-        self.hover_timer.stop()
+        self.conductor.glyph_controller.clear_hovered_item()
         self.conductor.tooltip.hide_tooltip()
         
         super().hoverLeaveEvent(event)
@@ -1814,10 +1728,10 @@ class GlyphItem(QGraphicsObject):
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
         if not self.interaction_mode:
-            self.hover_timer.start()
+            self.conductor.glyph_controller.set_hovered_item(self)
 
         super().hoverMoveEvent(event)
-
+    
     def itemChange(
         self,
         change: QGraphicsItem.GraphicsItemChange,
@@ -1871,7 +1785,7 @@ class GlyphItem(QGraphicsObject):
             controller.collapse_stack()
         
         self.was_clicked = True
-        self.hover_timer.stop()
+        self.conductor.glyph_controller.clear_hovered_item()
 
         super().mousePressEvent(event)
 
@@ -2001,7 +1915,7 @@ class GlyphItem(QGraphicsObject):
         event.accept()
 
     def handle_fade_delete(self, event: QGraphicsSceneMouseEvent) -> None:
-        width_px = self.ms_to_px(self.duration_ms) - self.keyframe_line_padding * 2
+        width_px     = self.ms_to_px(self.duration_ms) - self.keyframe_line_padding * 2
         height       = Styles.Metrics.Tracks.BoxHeight
         position     = event.pos()
         click_radius = 8.0
@@ -2038,7 +1952,7 @@ class GlyphItem(QGraphicsObject):
         if self.fade_dragged_index is None:
             return
 
-        width_px = self.ms_to_px(self.duration_ms) - 2 * self.keyframe_line_padding
+        width_px     = self.ms_to_px(self.duration_ms) - 2 * self.keyframe_line_padding
         height       = Styles.Metrics.Tracks.BoxHeight
         inner_height = height - 2 * self.border_width
         index        = self.fade_dragged_index
@@ -2066,12 +1980,12 @@ class GlyphItem(QGraphicsObject):
         event.accept()
 
     def calculate_target_tilt(self, position: QPointF) -> tuple[float, float]:
-        width_px      = self.ms_to_px(self.duration_ms)
-        height_px     = Styles.Metrics.Tracks.BoxHeight
-        center_x      = width_px  / 2
-        center_y      = height_px / 2
-        offset_x      = position.x() - center_x
-        offset_y      = position.y() - center_y
+        width_px  = self.ms_to_px(self.duration_ms)
+        height_px = Styles.Metrics.Tracks.BoxHeight
+        center_x  = width_px  / 2
+        center_y  = height_px / 2
+        offset_x  = position.x() - center_x
+        offset_y  = position.y() - center_y
 
         MAX_EDGE_LIFT_px = 40.0
 
@@ -2092,7 +2006,7 @@ class GlyphItem(QGraphicsObject):
         self.pending_fade_keyframes = self.keyframes
         self.fixed_y                = self.calculate_y_pos()
 
-        self.setPos(self.ms_to_px(self.start_ms), self.fixed_y + self.stack_y_offset)
+        self.setPos(self.ms_to_px(self.start_ms), self.fixed_y + self.stack_y_offset_handle.value)
         self.update()
 
     def remove_glyph(self, animate: bool = True) -> None:
@@ -2127,9 +2041,7 @@ class GlyphItem(QGraphicsObject):
 
         self.deleteLater()
 
-    def on_hover_timeout(self) -> None:
-        self.conductor.tooltip.show_hover_tooltip(self)
-
+@Dev.track_ram
 class TrimmingWaveformWidget(QWidget):
     regionChanged = pyqtSignal(float, float)
 
@@ -2359,6 +2271,7 @@ class TrimmingWaveformWidget(QWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self.dragging_handle = None
 
+@Dev.track_ram
 class ContentCanvas(QWidget):
     def __init__(
             self,
@@ -2376,6 +2289,7 @@ class ContentCanvas(QWidget):
         size_hint = self.layout_manager.sizeHint()
         return QSize(size_hint.width(), size_hint.height())
 
+@Dev.track_ram
 class ElasticScrollArea(QScrollArea):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -2401,14 +2315,14 @@ class ElasticScrollArea(QScrollArea):
         self.layout_manager.setAlignment(Qt.AlignmentFlag.AlignTop)
 
     def setup_timers(self) -> None:
-        self.idle_timer = Basic.Timer(
+        self.idle_timer = Timing.Timer(
             Constants.USER_SCROLL_IDLE_TIMEOUT,
             self.handle_scroll_finished,
             single_shot = True,
             parent = self
         )
 
-        self.animation_timer = Basic.Timer(
+        self.animation_timer = Timing.Timer(
             Constants.ANIMATION_TICK_INTERVAL,
             self.process_animation_tick,
             parent = self
@@ -2447,7 +2361,7 @@ class ElasticScrollArea(QScrollArea):
         limit      = self.calculate_maximum_scroll()
         resistance = self.calculate_resistance(limit)
 
-        self.velocity_speed     -= (delta * Constants.current_settings.get("wheel_scroll_sensitivity") / 8.0) * resistance
+        self.velocity_speed     -= (delta * Constants.current_settings.get("wheel_scroll_sensitivity", 1.0) / 8.0) * resistance
         self.scrolling_is_active = True
 
         self.idle_timer.start(Constants.USER_SCROLL_IDLE_TIMEOUT)

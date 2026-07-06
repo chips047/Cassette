@@ -18,7 +18,10 @@ from PyQt6.QtWidgets import (
 
 from loguru import logger
 
-from System.Common import Styles
+from System.Common import (
+    Dev,
+    Styles
+)
 
 from System.Services import (
     Player,
@@ -26,11 +29,14 @@ from System.Services import (
 )
 
 from System.Interface import (
-    Basic,
-    Inputs,
-    Widgets
+    Sliders,
+    Widgets,
+    Buttons,
+    Selectors,
+    Checkboxes
 )
 
+@Dev.track_ram
 class ContextMenu(QMenu):
     def __init__(
         self,
@@ -53,7 +59,7 @@ class ContextMenu(QMenu):
         menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         menu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         menu.setWindowFlags(
-            menu.windowFlags()        |
+            menu.windowFlags()                   |
             Qt.WindowType.FramelessWindowHint    |
             Qt.WindowType.NoDropShadowWindowHint
         )
@@ -109,6 +115,7 @@ class ContextMenu(QMenu):
     def close_sound(self) -> None:
         Player.ui_player.play_sound("Menu/Close", setting_key = "context_menu_sounds")
 
+@Dev.track_ram
 class EffectPreviewWidget(QWidget):
     apply_requested: pyqtSignal = pyqtSignal(str, dict)
 
@@ -146,14 +153,14 @@ class EffectPreviewWidget(QWidget):
         self.live_preview_bar = Widgets.ScheduledSegmentedBar(30, loop = True)
         self.main_layout.addWidget(self.live_preview_bar)
 
-        self.apply_button = Basic.NothingButton("Apply")
+        self.apply_button = Buttons.NothingButton("Apply")
         self.apply_button.clicked.connect(self.on_apply)
 
     def populate_controls(self) -> None:
         types_map = {
-            "checkbox": (Inputs.Checkbox,          "stateChanged"),
-            "slider":   (Inputs.SliderWithLabel,   "valueChanged"),
-            "selector": (Inputs.SelectorWithLabel, "selectionChanged")
+            "checkbox": (Checkboxes.Checkbox,          "stateChanged"),
+            "slider":   (Sliders.SliderWithLabel,   "valueChanged"),
+            "selector": (Selectors.SelectorWithLabel, "selectionChanged")
         }
 
         logger.debug(f"Populating controls for Effect {self.effect_name}")
@@ -185,13 +192,13 @@ class EffectPreviewWidget(QWidget):
         settings = {}
 
         for key, widget in self.controls.items():
-            if isinstance(widget, Inputs.Checkbox):
+            if isinstance(widget, Checkboxes.Checkbox):
                 settings[key] = widget.isChecked()
 
-            elif isinstance(widget, Inputs.SliderWithLabel):
+            elif isinstance(widget, Sliders.SliderWithLabel):
                 settings[key] = widget.value()
 
-            elif isinstance(widget, Inputs.SelectorWithLabel):
+            elif isinstance(widget, Selectors.SelectorWithLabel):
                 settings[key] = widget.current_data()
 
         return settings

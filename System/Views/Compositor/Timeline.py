@@ -64,7 +64,7 @@ from System.Services import (
 
 from System.Interface import (
     Menu,
-    Basic,
+    Timing,
     Widgets,
     Windows
 )
@@ -186,7 +186,7 @@ class ScrollableContent(QGraphicsView):
 
             self.setViewport(self.gl_viewport)
         
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
         self.setOptimizationFlags(
             QGraphicsView.OptimizationFlag.DontSavePainterState |
             QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing
@@ -200,44 +200,48 @@ class ScrollableContent(QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def init_state(self, parent: QWidget) -> None:
-        self.playback_manager            = parent.playback_manager
-        self.composition                 = None
+        self.playback_manager           = parent.playback_manager
+        self.composition                = None
 
-        self.px_per_sec                  = Constants.current_settings["default_scaling"]
-        self.tile_width                  = Constants.current_settings["tile_width"]
+        self.px_per_sec                 = Constants.current_settings["default_scaling"]
+        self.tile_width                 = Constants.current_settings["tile_width"]
 
-        self.track_names                 = []
-        self.total_content_width         = 0
-        self.waveform_tiles              = {}
-        self.global_waveform_max         = 1e-6
-        self.is_auto_scroll_active       = False
+        self.track_names                = []
+        self.total_content_width        = 0
+        self.waveform_tiles             = {}
+        self.global_waveform_max        = 1e-6
+        self.is_auto_scroll_active      = False
 
-        self.pending_tiles               = set()
-        self.tile_generation_id          = 0
-        self.target_px_per_sec           = self.px_per_sec
-        self.scale_anim_center_ms        = 0.0
-        self.frozen_tiles                = {}
-        self.frozen_px_per_sec           = self.px_per_sec
-        self.frozen_fallback_tiles       = {}
-        self.frozen_fallback_px_per_sec  = self.px_per_sec
-        self.tile_fade_alphas            = {}
+        self.pending_tiles              = set()
+        self.tile_generation_id         = 0
+        self.target_px_per_sec          = self.px_per_sec
+        self.scale_anim_center_ms       = 0.0
+        self.frozen_tiles               = {}
+        self.frozen_px_per_sec          = self.px_per_sec
+        self.frozen_fallback_tiles      = {}
+        self.frozen_fallback_px_per_sec = self.px_per_sec
+        self.tile_fade_alphas           = {}
 
-        self.ruler_font                  = Utils.NType(10)
-        self.track_label_font            = Utils.NType(12)
+        self.ruler_font                 = Utils.NType(10)
+        self.track_label_font           = Utils.NType(12)
         
-        self.cached_background_color     = QColor(0, 0, 0)
-        self.cached_foreground_color     = QColor(31, 31, 31)
-        self.cached_ruler_pen            = QPen(QColor(255, 255, 255), 0.5)
-        self.cached_beat_pen             = QPen(QColor(Styles.Colors.Waveline.BeatColor), 1, Qt.PenStyle.DotLine)
-        self.cached_track_name_color     = QColor(Styles.Colors.Waveline.TrackNameColor)
-        self.cached_waveform_pen         = QPen(QColor(255, 255, 255, 90), 2.5)
-        self.cached_waveform_brush       = QBrush(QColor(255, 255, 255, 90))
-        self.cached_waveform_pen2        = QPen(QColor(255, 255, 255, 160), 0.7)
+        self.cached_background_color    = QColor(0, 0, 0)
+        self.cached_foreground_color    = QColor(31, 31, 31)
+        self.cached_ruler_pen           = QPen(QColor(255, 255, 255), 0.5)
+        self.cached_beat_pen            = QPen(QColor(Styles.Colors.Waveline.BeatColor), 1, Qt.PenStyle.DotLine)
+        self.cached_track_name_color    = QColor(Styles.Colors.Waveline.TrackNameColor)
+        self.cached_waveform_pen        = QPen(QColor(255, 255, 255, 90), 2.5)
+        self.cached_waveform_brush      = QBrush(QColor(255, 255, 255, 90))
+        self.cached_waveform_pen2       = QPen(QColor(255, 255, 255, 160), 0.7)
+        
+        self.cached_ruler_coordinates   = {}
+        self.cached_track_grid_coords   = {}
+        self.cached_beat_lines          = []
 
     def setup_ui(self) -> None:
-        self.playhead_timer      = Basic.Timer(Constants.FPS_120, self.on_playback_position_updated)
-        self.waveform_anim_timer = Basic.Timer(Constants.FPS_120, self.on_waveform_anim_tick)
-        self.scroll_tick_timer   = Basic.Timer(Constants.FPS_120, self.on_scroll_tick)
+        self.playhead_timer      = Timing.Timer(Constants.FPS_120, self.on_playback_position_updated)
+        self.waveform_anim_timer = Timing.Timer(Constants.FPS_120, self.on_waveform_anim_tick)
+        self.scroll_tick_timer   = Timing.Timer(Constants.FPS_120, self.on_scroll_tick)
 
         self.scale_anim_active   = False
         self.tile_fade_subframe  = 0
@@ -336,13 +340,11 @@ class ScrollableContent(QGraphicsView):
         pos_ms     = self.playback_manager.get_position()
         true_x_pos = (pos_ms / 1000.0) * self.px_per_sec
         
-        self.set_playhead_position_px(int(true_x_pos))
         self.set_playhead_position_px(true_x_pos)
 
         horizontal_bar = self.horizontalScrollBar()
         viewport_width = self.viewport().width()
         offset_ratio   = Constants.current_settings["playhead_position"]
-        target_scroll  = int(true_x_pos) - int(viewport_width * offset_ratio)
         target_scroll  = round(true_x_pos - viewport_width * offset_ratio)
 
         if not self.is_auto_scroll_active:
@@ -533,6 +535,9 @@ class ScrollableContent(QGraphicsView):
 
         if self.step_tile_fade():
             self.waveform_anim_timer.stop()
+            self.cached_beat_lines.clear()
+            self.cached_ruler_coordinates.clear()
+            self.cached_track_grid_coords.clear()
 
     def step_scale_animation(self) -> None:
         diff                = self.target_px_per_sec - self.px_per_sec
@@ -541,11 +546,16 @@ class ScrollableContent(QGraphicsView):
         if abs(diff) < 0.3:
             self.px_per_sec         = self.target_px_per_sec
             self.scale_anim_active  = False
+            self.cached_beat_lines.clear()
+            self.cached_ruler_coordinates.clear()
+            self.cached_track_grid_coords.clear()
             self.finish_scale_change(current_playhead_ms)
 
             return
 
         self.px_per_sec += diff * 0.18
+        self.cached_beat_lines.clear()
+        self.cached_ruler_coordinates.clear()
         self.apply_intermediate_scale(current_playhead_ms)
 
     def apply_intermediate_scale(self, current_playhead_ms: float) -> None:
@@ -568,7 +578,6 @@ class ScrollableContent(QGraphicsView):
         self.viewport().update()
 
     def finish_scale_change(self, current_playhead_ms: float) -> None:
-
         self.tile_generation_id += 1
 
         self.tile_fade_subframe         = 0
@@ -579,6 +588,9 @@ class ScrollableContent(QGraphicsView):
 
         self.waveform_tiles.clear()
         self.pending_tiles.clear()
+        self.cached_beat_lines.clear()
+        self.cached_ruler_coordinates.clear()
+        self.cached_track_grid_coords.clear()
 
         self.update_scene_rect()
         self.update_scroll_to_center()
@@ -647,7 +659,7 @@ class ScrollableContent(QGraphicsView):
         )
 
     def request_tile(self, tile_index: int) -> None:
-        if tile_index in self.pending_tiles:
+        if tile_index in self.pending_tiles or tile_index in self.waveform_tiles:
             return
 
         self.pending_tiles.add(tile_index)
@@ -769,7 +781,7 @@ class ScrollableContent(QGraphicsView):
     # Render
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:
-        painter.fillRect(self.sceneRect(), self.cached_background_color)
+        painter.fillRect(rect, self.cached_background_color)
 
         if Constants.current_settings["antialiasing"]:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -874,11 +886,16 @@ class ScrollableContent(QGraphicsView):
         start_second = int(rect.left() / self.px_per_sec)
         end_second   = int(rect.right() / self.px_per_sec)
 
+        ruler_lines  = []
+        ruler_height = Styles.Metrics.Tracks.RulerHeight
+
         for i in range(start_second, end_second + 1):
             x = i * self.px_per_sec
+            ruler_lines.append(QLineF(x, 0, x, 8))
+            painter.drawText(QPointF(x + 5, ruler_height - 10), str(i))
 
-            painter.drawLine(QPointF(x, 0), QPointF(x, 8))
-            painter.drawText(QPointF(x + 5, Styles.Metrics.Tracks.RulerHeight - 10), str(i))
+        if ruler_lines:
+            painter.drawLines(ruler_lines)
 
     def draw_beat_lines(self, painter: QPainter, rect: QRectF) -> None:
         if not self.composition.beats:
@@ -886,16 +903,18 @@ class ScrollableContent(QGraphicsView):
 
         painter.setPen(self.cached_beat_pen)
 
-        line_height = Styles.Metrics.Waveform.Height + Styles.Metrics.Tracks.RulerHeight
-        
-        lines = [
-            QLineF(QPointF(x, 0), QPointF(x, line_height))
-            for beat in self.composition.beats
-            if 0 <= (x := beat * self.px_per_sec) <= rect.x() + rect.width()
-        ]
+        line_height  = Styles.Metrics.Waveform.Height + Styles.Metrics.Tracks.RulerHeight
+        rect_right   = rect.x() + rect.width()
+        beat_lines   = []
 
-        if lines:
-            painter.drawLines(lines)
+        for beat in self.composition.beats:
+            x = beat * self.px_per_sec
+            
+            if 0 <= x <= rect_right:
+                beat_lines.append(QLineF(x, 0, x, line_height))
+
+        if beat_lines:
+            painter.drawLines(beat_lines)
 
     def draw_track_grid(self, painter: QPainter, rect: QRectF) -> None:
         if rect.left() > Styles.Metrics.Tracks.BoxHeight:
@@ -904,27 +923,34 @@ class ScrollableContent(QGraphicsView):
         painter.setFont(self.track_label_font)
         painter.setPen(self.cached_track_name_color)
 
+        box_spacing     = Styles.Metrics.Tracks.BoxSpacing
+        label_width     = Styles.Metrics.Tracks.LabelWidth
+        row_height      = Styles.Metrics.Tracks.RowHeight
+        box_height      = Styles.Metrics.Tracks.BoxHeight
+        rect_top        = rect.top()
+        rect_bottom     = rect.bottom()
+
         y = (
             Styles.Metrics.Tracks.RulerHeight +
             Styles.Metrics.Waveform.Height    +
-            Styles.Metrics.Tracks.BoxSpacing
+            box_spacing
         )
 
         for track_name in self.track_names:
-            top_y    = y + (Styles.Metrics.Tracks.RowHeight - Styles.Metrics.Tracks.BoxHeight) / 2.0
-            bottom_y = top_y + Styles.Metrics.Tracks.BoxHeight
+            top_y    = y + (row_height - box_height) / 2.0
+            bottom_y = top_y + box_height
 
-            if bottom_y >= rect.top() and top_y <= rect.bottom():
+            if bottom_y >= rect_top and top_y <= rect_bottom:
                 label_rect = QRectF(
-                    Styles.Metrics.Tracks.BoxSpacing,
+                    box_spacing,
                     top_y,
-                    Styles.Metrics.Tracks.LabelWidth - 2 * Styles.Metrics.Tracks.BoxSpacing,
-                    Styles.Metrics.Tracks.BoxHeight
+                    label_width - 2 * box_spacing,
+                    box_height
                 )
                 
                 painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, track_name)
 
-            y += Styles.Metrics.Tracks.RowHeight + Styles.Metrics.Tracks.BoxSpacing
+            y += row_height + box_spacing
 
     # Context menu
 

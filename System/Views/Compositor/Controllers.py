@@ -41,8 +41,8 @@ from System.Services import (
 )
 
 from System.Interface import (
-    Basic,
-    Widgets
+    Widgets,
+    Timing
 )
 
 from . import (
@@ -94,8 +94,8 @@ class KeyboardController(QObject):
             (Qt.KeyboardModifier.ShiftModifier |Qt.Key.Key_Left,  lambda: self.handle_manual_playhead_move(-self.move_increment * 10)),
             (Qt.KeyboardModifier.ShiftModifier |Qt.Key.Key_Right, lambda: self.handle_manual_playhead_move(self.move_increment * 10)),
 
-            (Qt.Key.Key_Delete,    self.glyph_controller.delete_selected_glyphs),
-            (Qt.Key.Key_Backspace, self.glyph_controller.delete_selected_glyphs),
+            (Qt.Key.Key_Delete,    self.handle_deletion),
+            (Qt.Key.Key_Backspace, self.handle_deletion),
 
             (Qt.Key.Key_S, self.compositor.playspeed_button.next_state),
             (Qt.Key.Key_B, self.open_brightness_editor),
@@ -148,12 +148,19 @@ class KeyboardController(QObject):
         elif key_code == Qt.Key.Key_D:
             Player.ui_player.release_sound("warning_duration")
             Player.ui_player.release_sound("warning_duplicate")
+        
+        elif key_code in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            Player.ui_player.release_sound("glyph_deletion")
 
         return super().eventFilter(watched, event)
 
     def setup_track_hotkeys(self) -> None:
         for key, track_id in self.glyph_controller.track_map.items():
             self.bind(key, partial(self.glyph_controller.spawn_glyph_on_track, track_id))
+    
+    def handle_deletion(self) -> None:
+        self.glyph_controller.delete_selected_glyphs()
+        Player.ui_player.play_sound("Glyphs/Delete", setting_key = "glyph_deletion_sound", lock_tag = "glyph_deletion")
 
     def handle_playback_toggle(self) -> None:
         pos       = self.conductor.get_playhead_position_ms()
@@ -331,9 +338,17 @@ class GlyphController(QObject):
         self.expanded_stack:          frozenset[int] | None         = None
 
         self.expand_animations:       list[QPropertyAnimation]      = []
-
         self.collapse_animations:     list[QPropertyAnimation]      = []
         self.collapse_refresh_timer:  QTimer | None                 = None
+
+        self.hovered_item:            Widgets.GlyphItem | None      = None
+
+        self.hover_timer:             Timing.Timer                   = Timing.Timer(
+            1000,
+            self.on_hover_timeout,
+            single_shot = True,
+            parent      = self
+        )
 
         self.track_map = {
             Qt.Key.Key_1:     "1",
@@ -354,6 +369,26 @@ class GlyphController(QObject):
         self.is_processing     = False
         self.max_history       = 1000
         self.temp_before_state = {}
+    
+    def set_hovered_item(
+        self,
+        item: object
+    ) -> None:
+        
+        self.hovered_item = item
+        
+        self.hover_timer.start()
+
+    def clear_hovered_item(self) -> None:
+        self.hovered_item = None
+        
+        self.hover_timer.stop()
+
+    def on_hover_timeout(self) -> None:
+        if not self.hovered_item:
+            return
+            
+        self.conductor.tooltip.show_hover_tooltip(self.hovered_item)
 
     def get_selected_glyph_items(self) -> list[Widgets.GlyphItem]:
         valid_items = set(self.glyph_items.values())
@@ -444,7 +479,8 @@ class GlyphController(QObject):
 
                 self.conductor.tooltip.show_tooltip_at(
                     f"Brightness: {after_state[target_glyph_id]['brightness']}%",
-                    glyph_item
+                    glyph_item,
+                    True
                 )
 
         self.composition.stop_batching()
@@ -548,8 +584,6 @@ class GlyphController(QObject):
 
         if push_undo and deleted_batch:
             self.push_action(Actions.ActionDelete(self, deleted_batch))
-
-        Player.ui_player.play_sound("Glyphs/Delete", setting_key = "glyph_deletion_sound")
 
         self.glyph_deleted.emit()
         self.elements_changed.emit()
@@ -734,6 +768,8 @@ class GlyphController(QObject):
 
         self.drag_session      = {}
         self.temp_before_state = {}
+
+        self.refresh_stack_indicators()
 
         self.glyph_moved_or_resized.emit()
 

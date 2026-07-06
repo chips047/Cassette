@@ -1,0 +1,65 @@
+{
+    "open": {
+        "curves": {
+            "rotation_x": {
+                "keyframes":   [[0.0, 30], [1.0, 0]],
+                "duration_ms": 800,
+                "easing":      "ease_out_expo"
+            },
+            "scale": {
+                "keyframes":   [[0.0, {"maximum_scale": true}], [1.0, 1.0]],
+                "duration_ms": 650,
+                "easing":      "ease_out_expo"
+            },
+            "opacity_content": {
+                "keyframes":   [[0.0, 0.0], [1.0, 1.0]],
+                "duration_ms": 250,
+                "easing":      "linear"
+            },
+            "opacity_background": {
+                "keyframes":   [[0.0, 0.0], [1.0, 1.0]],
+                "duration_ms": 200,
+                "easing":      "linear"
+            }
+        }
+    },
+    "close": {
+        "curves": {
+            "rotation_x": {
+                "keyframes":   [[0.0, 0], [1.0, -30]],
+                "duration_ms": 500,
+                "easing":      "ease_out_expo"
+            },
+            "scale": {
+                "keyframes":   [[0.0, 1.0], [1.0, {"maximum_scale": true}]],
+                "duration_ms": 500,
+                "easing":      "ease_out_expo"
+            },
+            "opacity_content": {
+                "keyframes":   [[0.0, 1.0], [1.0, 0.0]],
+                "duration_ms": 300,
+                "easing":      "linear"
+            },
+            "opacity_background": {
+                "keyframes":   [[0.0, 1.0], [1.0, 0.0]],
+                "duration_ms": 500,
+                "easing":      "linear",
+                "finished":    "really_close"
+            }
+        }
+    },
+    "disturb": {
+        "curves": {
+            "rotation_x": {
+                "keyframes":   [[0.0, 0.0], [0.5, 30], [1.0, 0.0]],
+                "duration_ms": 600,
+                "easing":      "ease_out_expo"
+            }
+        }
+    },
+    "sounds": {
+        "open":    ["Packs/Smooth/Open"],
+        "close":   ["Packs/Smooth/Close"],
+        "disturb": ["Packs/Smooth/Disturbe"]
+    }
+}

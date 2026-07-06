@@ -36,7 +36,6 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
-    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -50,9 +49,9 @@ from System.Common import (
 )
 
 from System.Interface import (
-    Basic,
-    Inputs,
-    Windows
+    Windows,
+    Buttons,
+    Textboxes
 )
 
 from System.Services import (
@@ -244,7 +243,7 @@ class TrackItemWidget(QWidget):
         ]
 
         for icon_name, slot in icons_data:
-            button = Basic.IconButtonSmall(
+            button = Buttons.IconButtonSmall(
                 QIcon(f"System/Assets/Icons/ProjectMenu/{icon_name}")
             )
             
@@ -405,7 +404,7 @@ class MainMenu(QWidget):
 
         self.projects_info:   dict[str, dict[str, object]] = {}
         self.track_widgets:   dict[str, TrackItemWidget]   = {}
-        self.search_box:      Inputs.Textbox | None        = None
+        self.search_box:      Textboxes.Textbox | None        = None
         self.tracks_widget:   QWidget        | None        = None
         
         self.drag_loop_sound: Player.UISound | None        = None
@@ -464,7 +463,7 @@ class MainMenu(QWidget):
         button_panel = self.create_button_panel()
         button_layout.addWidget(button_panel)
 
-        self.search_box = Inputs.SearchTextbox()
+        self.search_box = Textboxes.SearchTextbox()
         self.search_box.safeTextChanged.connect(self.apply_search_filter)
 
         button_layout.addWidget(self.search_box)
@@ -540,7 +539,7 @@ class MainMenu(QWidget):
         ]
 
         for text, is_accent, slot_name in buttons_data:
-            button = Basic.OptionButton(
+            button = Buttons.OptionButton(
                 text,
                 is_accent,
                 getattr(self, slot_name)

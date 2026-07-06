@@ -30,10 +30,10 @@ from System.Services import (
 )
 
 from System.Interface import (
-    Basic,
-    Inputs,
     Windows,
-    Widgets
+    Widgets,
+    Buttons,
+    Controls
 )
 
 class CompositorWidget(QWidget):
@@ -62,27 +62,27 @@ class CompositorWidget(QWidget):
         self.top_control_bar_layout.setContentsMargins(0, 0, 0, 0)
         self.top_control_bar_layout.setSpacing(8)
 
-        self.eject_button        = Basic.Button("Eject")
-        self.export_button       = Basic.NothingButton("Export")
+        self.eject_button        = Buttons.Button("Eject")
+        self.export_button       = Buttons.NothingButton("Export")
         self.top_status_label    = QLabel(Constants.STATUS_BAR_DEFAULT)
         self.mini_preview_widget = Widgets.MiniWaveformPreview()
 
-        self.glyph_dur_control = Inputs.DraggableValueControl(
+        self.glyph_dur_control = Controls.DraggableValueControl(
             QIcon("System/Assets/Icons/Compositor/Duration.png"),
             "duration", 100, 5, 5000, 5, "ms"
         )
         
-        self.brightness_control = Inputs.DraggableValueControl(
+        self.brightness_control = Controls.DraggableValueControl(
             QIcon("System/Assets/Icons/Compositor/Brightness.png"),
             "brightness", 100, 5, 100, 5, "%"
         )
         
-        self.playspeed_button = Inputs.CycleButton(
+        self.playspeed_button = Controls.CycleButton(
             QIcon("System/Assets/Icons/Compositor/Speed.png"),
             "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)]
         )
         
-        self.default_effect = Inputs.CycleButton(
+        self.default_effect = Controls.CycleButton(
             QIcon("System/Assets/Icons/Compositor/Effect.png"),
             "effect", [
                 ("None", "none"),

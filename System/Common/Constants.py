@@ -2,8 +2,6 @@ from loguru import logger
 
 from System.Common import Utils
 
-from PyQt6.QtCore import QSettings
-
 from dataclasses import (
     field,
     dataclass
@@ -979,6 +977,19 @@ SettingsDict = {
     "Interface": [
         {
             "type": "selector",
+            "title": "Interface Scale (Requires restart)",
+            "key": "ui_scale_factor",
+            "map": {
+                "0.75x": "0.75",
+                "1.0x":  "1.0",
+                "1.25x": "1.25",
+                "1.5x":  "1.5",
+                "2.0x":  "2.0"
+            },
+            "default": "1.0x"
+        },
+        {
+            "type": "selector",
             "title": "Animation Multiplier",
             "key": "animation_multiplier",
             "map": {
@@ -1296,9 +1307,9 @@ SettingsDict = {
             "title": "Menu Scroll Sensitivity",
             "key": "wheel_scroll_sensitivity",
             "map": {
-                "Low": 0.5,
-                "Normal": 1.0,
-                "High": 1.5
+                "Low":    "0.5",
+                "Normal": "1.0",
+                "High":   "1.5"
             },
             "default": "Normal"
         },

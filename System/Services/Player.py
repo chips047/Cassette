@@ -28,8 +28,7 @@ from System.Common import (
 
 from System.Interface.Animation.LoomEngine import (
     Easing,
-    MixMode,
-    AnimationEngine
+    ui_engine
 )
 
 from System.Accelerated import PlayerFunctions
@@ -102,6 +101,7 @@ class PlaybackManager(QObject):
 
         self.stream_sample_rate       = 0
         self.stream_channels          = 0
+        self.stream_needs_reopen      = False
 
         self.setup_effect_properties()
         self.reset_playback_state()
@@ -111,46 +111,51 @@ class PlaybackManager(QObject):
 
     @property
     def speed(self) -> float:
-        return self.loom.get_property_value("speed")
+        return self.speed_property.value
 
     @property
     def volume(self) -> float:
-        return self.loom.get_property_value("volume")
+        return self.volume_property.value
 
     # Setup
 
     def setup_effect_properties(self) -> None:
-        self.loom = AnimationEngine(fps = 60)
+        self.defaults = [
+            ("speed",                  1.0,   self.update_playback_start),
+            ("volume",                 1.0),
+            ("channel_delay_left",     0.0),
+            ("channel_delay_right",    0.0),
+            ("eq_low",                 1.0),
+            ("eq_mid",                 1.0),
+            ("eq_high",                1.0),
+            ("bitcrush_bits",          16.0),
+            ("bitcrush_downsample",    1.0),
+            ("bitcrush_mix",           0.0),
+            ("noise_mix",              0.0),
+            ("reverb_mix",             0.0),
+            ("pass_mix",               0.0),
+            ("pass_q",                 1.0),
+            ("pass_gain",              1.0),
+            ("radio_noise_intensity",  0.0),
+            ("radio_noise_mix",        0.0),
+            ("radio_noise_attack_ms",  100.0),
+            ("radio_noise_peak_ms",    180.0),
+            ("radio_noise_release_ms", 250.0),
+            ("radio_noise_mute_mix",   0.45),
+            ("echo_mix",               0.0),
+            ("echo_delay_ms",          180.0),
+            ("echo_feedback",          0.25)
+        ]
 
-        self.defaults = {
-            ("speed",                  1.0,   MixMode.NOMIX, self.update_playback_start),
-            ("volume",                 1.0,   MixMode.NOMIX),
-            ("channel_delay_left",     0.0,   MixMode.NOMIX),
-            ("channel_delay_right",    0.0,   MixMode.NOMIX),
-            ("eq_low",                 1.0,   MixMode.NOMIX),
-            ("eq_mid",                 1.0,   MixMode.NOMIX),
-            ("eq_high",                1.0,   MixMode.NOMIX),
-            ("bitcrush_bits",          16.0,  MixMode.NOMIX),
-            ("bitcrush_downsample",    1.0,   MixMode.NOMIX),
-            ("bitcrush_mix",           0.0,   MixMode.NOMIX),
-            ("noise_mix",              0.0,   MixMode.NOMIX),
-            ("reverb_mix",             0.0,   MixMode.NOMIX),
-            ("pass_mix",               0.0,   MixMode.NOMIX),
-            ("pass_q",                 1.0,   MixMode.NOMIX),
-            ("pass_gain",              1.0,   MixMode.NOMIX),
-            ("radio_noise_intensity",  0.0,   MixMode.NOMIX),
-            ("radio_noise_mix",        0.0,   MixMode.NOMIX),
-            ("radio_noise_attack_ms",  100.0, MixMode.NOMIX),
-            ("radio_noise_peak_ms",    180.0, MixMode.NOMIX),
-            ("radio_noise_release_ms", 250.0, MixMode.NOMIX),
-            ("radio_noise_mute_mix",   0.45,  MixMode.NOMIX),
-            ("echo_mix",               0.0,   MixMode.NOMIX),
-            ("echo_delay_ms",          180.0, MixMode.NOMIX),
-            ("echo_feedback",          0.25,  MixMode.NOMIX)
-        }
+        for item in self.defaults:
+            name       = item[0]
+            base_value = item[1]
+            callback   = item[2] if len(item) > 2 else None
 
-        self.loom.add_properties(self.defaults)
+            prop = ui_engine.bind(self, name, base_value, on_change=callback)
 
+            setattr(self, f"{name}_property", prop)
+    
     def set_property(
             self,
             property_name: str,
@@ -160,15 +165,17 @@ class PlaybackManager(QObject):
             on_finish:     callable | None = None
         ) -> None:
 
+        prop_handle = getattr(self, f"{property_name}_property")
+
         if duration_ms <= 0:
-            self.loom.set_property_base_value(property_name, value)
+            prop_handle.set_base(value)
 
             if on_finish:
                 on_finish()
 
             return
 
-        self.loom.set_target_value(property_name, value, duration_ms, easing)
+        prop_handle.set_target(value, duration_ms, easing)
 
         if on_finish:
             QTimer.singleShot(duration_ms, on_finish)
@@ -184,11 +191,13 @@ class PlaybackManager(QObject):
             self.set_property(name, value, duration_ms, easing)
 
     def reset_playback_state(self) -> None:
-        for property in self.defaults:
-            name  = property[0]
-            value = property[1]
+        if hasattr(self, 'defaults'):
+            for property_config in self.defaults:
+                name  = property_config[0]
+                value = property_config[1]
 
-            self.loom.set_property_base_value(name, value)
+                if hasattr(self, f"{name}_property"):
+                    getattr(self, f"{name}_property").set_base(value)
 
         self.pass_frequencies                = []
         self.position                        = 0.0
@@ -294,18 +303,11 @@ class PlaybackManager(QObject):
             peak_level            = float(numpy.max(numpy.abs(data)))
             self.track_peak_level = max(peak_level, 1e-6)
 
-        reopen_required = (
+        self.stream_needs_reopen = (
             self.stream is None                or
             self.stream_sample_rate != self.fs or
             self.stream_channels != channels
         )
-
-        if reopen_required:
-            logger.info("Required stream parameters changed, reopening stream with new configuration")
-            self.open_stream()
-        
-        else:
-            logger.info("Stream configuration unchanged, skipping stream reopening")
 
         self.audio_loaded.emit(
             self.data,
@@ -385,7 +387,16 @@ class PlaybackManager(QObject):
 
         self.playback_state_changed.emit(False)
 
+    def ensure_stream_opened(self) -> None:
+        if not self.stream_needs_reopen:
+            return
+        
+        self.stream_needs_reopen = False
+        self.open_stream()
+
     def play(self, start_position_ms: float = 0.0) -> None:
+        self.ensure_stream_opened()
+        
         with self.lock:
             if self.data is None:
                 return
@@ -409,20 +420,20 @@ class PlaybackManager(QObject):
         return (
             PlayerFunctions.calculate_lowshelf_coefficients(
                 250.0,
-                self.loom.get_property_value("eq_low"),
+                self.eq_low_property.value,
                 float(self.fs)
             ),
 
             PlayerFunctions.calculate_peaking_coefficients(
                 1000.0,
-                self.loom.get_property_value("eq_mid"),
+                self.eq_mid_property.value,
                 1.0,
                 float(self.fs)
             ),
 
             PlayerFunctions.calculate_highshelf_coefficients(
                 4000.0,
-                self.loom.get_property_value("eq_high"),
+                self.eq_high_property.value,
                 float(self.fs)
             )
         )
@@ -712,9 +723,9 @@ class PlaybackManager(QObject):
         duration_ms = max(
             duration_ms,
             (
-                float(self.loom.get_property_value("radio_noise_attack_ms")) +
-                float(self.loom.get_property_value("radio_noise_peak_ms")) +
-                float(self.loom.get_property_value("radio_noise_release_ms"))
+                float(self.radio_noise_attack_ms_property.value) +
+                float(self.radio_noise_peak_ms_property.value) +
+                float(self.radio_noise_release_ms_property.value)
             )
         )
 
@@ -767,31 +778,31 @@ class PlaybackManager(QObject):
             "max_index":               len(self.data) - 1,
             "delays":                  numpy.array(
                                            [
-                                               self.loom.get_property_value("channel_delay_left"),
-                                               self.loom.get_property_value("channel_delay_right")
+                                               self.channel_delay_left_property.value,
+                                               self.channel_delay_right_property.value
                                            ],
                                            dtype = numpy.float32
                                        ),
-            "eq_low":                  self.loom.get_property_value("eq_low"),
-            "eq_mid":                  self.loom.get_property_value("eq_mid"),
-            "eq_high":                 self.loom.get_property_value("eq_high"),
-            "bitcrush_mix":            self.loom.get_property_value("bitcrush_mix"),
-            "bitcrush_bits":           self.loom.get_property_value("bitcrush_bits"),
-            "bitcrush_downsample":     self.loom.get_property_value("bitcrush_downsample"),
-            "reverb_mix":              self.loom.get_property_value("reverb_mix"),
-            "noise_mix":               self.loom.get_property_value("noise_mix"),
-            "pass_mix":                self.loom.get_property_value("pass_mix"),
-            "pass_q":                  self.loom.get_property_value("pass_q"),
-            "pass_gain":               self.loom.get_property_value("pass_gain"),
-            "radio_noise_intensity":   self.loom.get_property_value("radio_noise_intensity"),
-            "radio_noise_mix":         self.loom.get_property_value("radio_noise_mix"),
-            "radio_noise_attack_ms":   self.loom.get_property_value("radio_noise_attack_ms"),
-            "radio_noise_peak_ms":     self.loom.get_property_value("radio_noise_peak_ms"),
-            "radio_noise_release_ms":  self.loom.get_property_value("radio_noise_release_ms"),
-            "radio_noise_mute":        self.loom.get_property_value("radio_noise_mute_mix"),
-            "echo_mix":                self.loom.get_property_value("echo_mix"),
-            "echo_delay_ms":           self.loom.get_property_value("echo_delay_ms"),
-            "echo_feedback":           self.loom.get_property_value("echo_feedback"),
+            "eq_low":                  self.eq_low_property.value,
+            "eq_mid":                  self.eq_mid_property.value,
+            "eq_high":                 self.eq_high_property.value,
+            "bitcrush_mix":            self.bitcrush_mix_property.value,
+            "bitcrush_bits":           self.bitcrush_bits_property.value,
+            "bitcrush_downsample":     self.bitcrush_downsample_property.value,
+            "reverb_mix":              self.reverb_mix_property.value,
+            "noise_mix":               self.noise_mix_property.value,
+            "pass_mix":                self.pass_mix_property.value,
+            "pass_q":                  self.pass_q_property.value,
+            "pass_gain":               self.pass_gain_property.value,
+            "radio_noise_intensity":   self.radio_noise_intensity_property.value,
+            "radio_noise_mix":         self.radio_noise_mix_property.value,
+            "radio_noise_attack_ms":   self.radio_noise_attack_ms_property.value,
+            "radio_noise_peak_ms":     self.radio_noise_peak_ms_property.value,
+            "radio_noise_release_ms":  self.radio_noise_release_ms_property.value,
+            "radio_noise_mute":        self.radio_noise_mute_mix_property.value,
+            "echo_mix":                self.echo_mix_property.value,
+            "echo_delay_ms":           self.echo_delay_ms_property.value,
+            "echo_feedback":           self.echo_feedback_property.value,
         }
 
         self.check_start_radio_noise(context["radio_noise_intensity"])
@@ -816,7 +827,7 @@ class PlaybackManager(QObject):
         return block
 
     def check_start_radio_noise(self, intensity: float) -> None:
-        if self.loom.get_property_value("radio_noise_mix") <= 0.0:
+        if self.radio_noise_mix_property.value <= 0.0:
             self.radio_noise_active = False
             self.radio_noise_frames_remaining = 0
             
@@ -901,19 +912,18 @@ class PlaybackManager(QObject):
             return
 
         if left_to_ms is None:
-            left_to_ms = self.loom.get_property_value("channel_delay_left")
+            left_to_ms = self.channel_delay_left_property.value
 
         if right_to_ms is None:
-            right_to_ms = self.loom.get_property_value("channel_delay_right")
+            right_to_ms = self.channel_delay_right_property.value
 
         if duration_ms <= 0:
-            self.loom.set_property_base_value("channel_delay_left",  left_to_ms)
-            self.loom.set_property_base_value("channel_delay_right", right_to_ms)
-
+            self.channel_delay_left_property.set_base(left_to_ms)
+            self.channel_delay_right_property.set_base(right_to_ms)
             return
 
-        self.loom.set_target_value("channel_delay_left",  left_to_ms,  duration_ms, easing)
-        self.loom.set_target_value("channel_delay_right", right_to_ms, duration_ms, easing)
+        self.channel_delay_left_property.set_target(left_to_ms,  duration_ms, easing)
+        self.channel_delay_right_property.set_target(right_to_ms, duration_ms, easing)
 
     def set_speed(
             self,
@@ -1152,7 +1162,8 @@ class PlaybackManager(QObject):
 
     def full_shutdown(self) -> None:
         self.reset_playback_state()
-        self.loom.clear()
+
+        ui_engine.unbind_owner(self)
 
         with self.lock:
             self.close_stream()
