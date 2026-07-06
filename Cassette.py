@@ -808,12 +808,7 @@ def main() -> None:
     Constants.load_settings()
 
     ui_scale_factor = Constants.current_settings.get("ui_scale_factor", 1.0)
-
-    try:
-        ui_scale_factor = float(ui_scale_factor)
-
-    except (TypeError, ValueError):
-        ui_scale_factor = 1.0
+    ui_scale_factor = float(ui_scale_factor)
 
     if ui_scale_factor > 0:
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
