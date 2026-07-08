@@ -818,6 +818,67 @@ class AnimationMath:
             )
 
         return first != second
+    
+    @staticmethod
+    def soft_limit_max(
+            value:           object,
+            max_val:         object,
+            softness_factor: float = 0.8
+        ) -> object:
+
+        if max_val is None:
+            return value
+
+        if isinstance(value, tuple) and isinstance(max_val, tuple):
+            return tuple(AnimationMath.soft_limit_max(v, m, softness_factor) for v, m in zip(value, max_val))
+            
+        if isinstance(value, list) and isinstance(max_val, list):
+            return [AnimationMath.soft_limit_max(v, m, softness_factor) for v, m in zip(value, max_val)]
+
+        if AnimationMath.is_number(value):
+            threshold = max_val * softness_factor
+            
+            if value <= threshold:
+                return value
+            
+            if max_val <= threshold:
+                return max_val
+                
+            return max_val - (max_val - threshold) * math.exp(-(value - threshold) / (max_val - threshold))
+
+        if AnimationMath.is_point_like(value):
+            return AnimationMath.construct_like(
+                value,
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "x"), AnimationMath.component_value(max_val, "x"), softness_factor),
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "y"), AnimationMath.component_value(max_val, "y"), softness_factor)
+            )
+
+        if AnimationMath.is_size_like(value):
+            return AnimationMath.construct_like(
+                value,
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "width"),  AnimationMath.component_value(max_val, "width"), softness_factor),
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "height"), AnimationMath.component_value(max_val, "height"), softness_factor)
+            )
+
+        if AnimationMath.is_rect_like(value):
+            return AnimationMath.construct_like(
+                value,
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "x"),      AnimationMath.component_value(max_val, "x"), softness_factor),
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "y"),      AnimationMath.component_value(max_val, "y"), softness_factor),
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "width"),  AnimationMath.component_value(max_val, "width"), softness_factor),
+                AnimationMath.soft_limit_max(AnimationMath.component_value(value, "height"), AnimationMath.component_value(max_val, "height"), softness_factor)
+            )
+
+        if AnimationMath.is_color_like(value):
+            return AnimationMath.construct_like(
+                value,
+                int(AnimationMath.soft_limit_max(AnimationMath.component_value(value, "red"),   AnimationMath.component_value(max_val, "red"), softness_factor)),
+                int(AnimationMath.soft_limit_max(AnimationMath.component_value(value, "green"), AnimationMath.component_value(max_val, "green"), softness_factor)),
+                int(AnimationMath.soft_limit_max(AnimationMath.component_value(value, "blue"),  AnimationMath.component_value(max_val, "blue"), softness_factor)),
+                int(AnimationMath.soft_limit_max(AnimationMath.component_value(value, "alpha"), AnimationMath.component_value(max_val, "alpha"), softness_factor))
+            )
+
+        return value
 
 # Animation Clip
 
@@ -1006,7 +1067,9 @@ class PropertyTrack:
             mix_mode:            MixMode,
             backend:             RuntimeBackend | None = None,
             smoothing_enabled:   bool                  = False,
-            smoothing_factor:    float                 = 0.1
+            smoothing_factor:    float                 = 0.1,
+            max_value:           object | None         = None,
+            soft_limit_factor:   float                 = 0.8
         ) -> None:
 
         self.scheduler = scheduler
@@ -1017,6 +1080,9 @@ class PropertyTrack:
 
         self.smoothing_enabled = smoothing_enabled
         self.smoothing_factor  = smoothing_factor
+
+        self.max_value         = max_value
+        self.soft_limit_factor = soft_limit_factor
 
         self.base_value   = base_value
         self.cached_value = base_value
@@ -1105,8 +1171,22 @@ class PropertyTrack:
 
         return lambda start, end, progress: start
 
+    def set_max_value(
+            self,
+            max_value:         object | None,
+            soft_limit_factor: float | None = None
+        ) -> None:
+
+        self.max_value = max_value
+
+        if soft_limit_factor is not None:
+            self.soft_limit_factor = soft_limit_factor
+
+        self.updated.emit(self.cached_value)
+
     def set_base_value(self, value: object) -> None:
         self.is_targeting = False
+
         self.base_value   = value
         self.cached_value = value
         self.interpolator = self.choose_interpolator(value)
@@ -1205,8 +1285,9 @@ class PropertyTrack:
         self.updated.emit(self.cached_value)
 
     def update(self, delta_ms: int) -> None:
-        running_clips     = []
-        any_clip_finished = False
+        running_clips        = []
+        any_clip_finished    = False
+        target_just_finished = False
 
         for clip in self.clips:
             clip.update(delta_ms)
@@ -1239,8 +1320,9 @@ class PropertyTrack:
             target         = self.interpolator(self.target_start_value, self.target_end_value, eased_progress)
 
             if progress >= 1.0:
-                self.is_targeting = False
-                self.base_value   = self.target_end_value
+                self.base_value      = self.target_end_value
+                self.is_targeting    = False
+                target_just_finished = True
 
         if self.mix_mode == MixMode.REPLACE:
             if self.clips:
@@ -1261,8 +1343,13 @@ class PropertyTrack:
 
         self.target_value = target
 
+        if self.max_value is not None:
+            target = AnimationMath.soft_limit_max(target, self.max_value, self.soft_limit_factor)
+
+        self.target_value = target
+
         if self.smoothing_enabled:
-            actual_factor      = min(1.0, self.smoothing_factor * (delta_ms / 16.0))
+            actual_factor     = min(1.0, self.smoothing_factor * (delta_ms / 16.0))
             self.cached_value = self.interpolator(self.cached_value, self.target_value, actual_factor)
 
         else:
@@ -1272,7 +1359,8 @@ class PropertyTrack:
             AnimationMath.is_different(self.cached_value, self.target_value) or
             bool(self.clips) or
             self.is_targeting or
-            any_clip_finished
+            any_clip_finished or
+            target_just_finished
         )
 
         if should_notify:
@@ -1309,6 +1397,14 @@ class PropertyHandle:
 
     def set_base(self, value: object) -> None:
         self.engine.set_property_base_value(self.key, value)
+
+    def set_max_value(
+            self,
+            max_value:         object | None,
+            soft_limit_factor: float | None = None
+        ) -> None:
+
+        self.engine.set_property_max_value(self.key, max_value, soft_limit_factor)
 
     def set_target(
             self,
@@ -1526,7 +1622,9 @@ class AnimationEngine:
             mix_mode:           MixMode                           = MixMode.REPLACE,
             on_change:          Callable[[object], object] | None = None,
             smoothing_enabled:  bool                              = False,
-            smoothing_factor:   float                             = 0.1
+            smoothing_factor:   float                             = 0.1,
+            max_value:          object | None                     = None,
+            soft_limit_factor:  float                             = 0.8
         ) -> PropertyHandle:
 
         key = self.namespace.key_for(owner, name)
@@ -1539,7 +1637,9 @@ class AnimationEngine:
                 mix_mode          = mix_mode,
                 backend           = self.backend,
                 smoothing_enabled = smoothing_enabled,
-                smoothing_factor  = smoothing_factor
+                smoothing_factor  = smoothing_factor,
+                max_value         = max_value,
+                soft_limit_factor = soft_limit_factor
             )
 
         if on_change is not None:
@@ -1565,6 +1665,19 @@ class AnimationEngine:
             return
 
         self.tracks[key].set_base_value(value)
+
+    def set_property_max_value(
+            self,
+            key:               str,
+            max_value:         object | None,
+            soft_limit_factor: float | None = None
+        ) -> None:
+
+        if key not in self.tracks:
+            logger.error(f"Property {key} not found.")
+            return
+
+        self.tracks[key].set_max_value(max_value, soft_limit_factor)
 
     def set_target_value(
             self,

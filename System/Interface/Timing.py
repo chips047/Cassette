@@ -1,8 +1,3 @@
-import time
-import weakref
-
-from PyQt6 import sip
-
 from PyQt6.QtCore import (
     Qt,
     QTimer
@@ -14,7 +9,6 @@ from System.Common import Dev
 
 @Dev.track_ram
 class Timer(QTimer):
-
     def __init__(
             self,
             interval:    int    = 1000,
@@ -29,7 +23,6 @@ class Timer(QTimer):
         self.setInterval(interval)
         self.setSingleShot(single_shot)
 
-
         if interval < 15:
             self.setTimerType(Qt.TimerType.PreciseTimer)
 
@@ -38,5 +31,3 @@ class Timer(QTimer):
 
         if auto_start:
             self.start()
-
-    # Core Logic

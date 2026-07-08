@@ -162,10 +162,10 @@ class DraggableValueControl(BaseControlWidget):
 
         self.initial_value = initial_value
         self.current_value = initial_value
-        self.minimum_value  = minimum_value
-        self.maximum_value  = maximum_value
-        self.step           = step
-        self.unit_suffix     = unit_suffix
+        self.minimum_value = minimum_value
+        self.maximum_value = maximum_value
+        self.step          = step
+        self.unit_suffix   = unit_suffix
 
         self.dragging         = False
         self.drag_start_x     = 0
@@ -194,9 +194,9 @@ class DraggableValueControl(BaseControlWidget):
         if not self.dragging:
             return
 
-        delta_x            = event.pos().x() - self.drag_start_x
-        pixels_per_step    = 10
-        steps               = delta_x // pixels_per_step
+        pixels_per_step = 10
+        delta_x         = event.pos().x() - self.drag_start_x
+        steps           = delta_x // pixels_per_step
 
         new_value = self.drag_start_value + steps * self.step
         new_value = int(round(new_value / self.step)) * self.step
@@ -225,7 +225,6 @@ class DraggableValueControl(BaseControlWidget):
     def reset(self) -> None:
         self.current_value = self.initial_value
         self.update_value_label()
-
 
 # Cycle Button
 

@@ -13,9 +13,7 @@ from PyQt6.QtCore import (
     pyqtSignal
 )
 
-from PyQt6.QtWidgets import (
-    QLabel
-)
+from PyQt6.QtWidgets import QLabel
 
 from System.Common import (
     Dev,
@@ -31,9 +29,7 @@ from System.Interface.Animation.LoomEngine import (
     ui_engine
 )
 
-from System.Interface.Timing import (
-    Timer
-)
+from System.Interface.Timing import Timer
 
 # Labels
 
@@ -54,7 +50,7 @@ class TitleLabel(Lifecycle.LoomAnimationMixin, QLabel):
 
         self.scale_handle = ui_engine.bind(
             owner      = self,
-            name       = "titleScale",
+            name       = "title_scale",
             base_value = 1.0,
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_transform_changed
@@ -62,7 +58,7 @@ class TitleLabel(Lifecycle.LoomAnimationMixin, QLabel):
 
         self.rotation_handle = ui_engine.bind(
             owner      = self,
-            name       = "titleRotation",
+            name       = "title_rotation",
             base_value = 0.0,
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_transform_changed

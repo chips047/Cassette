@@ -34,9 +34,7 @@ from System.Interface.Animation.LoomEngine import (
     ui_engine
 )
 
-from System.Interface.Timing import (
-    Timer
-)
+from System.Interface.Timing import Timer
 
 # Textbox
 
@@ -106,7 +104,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
         self.glitch_text_handle = ui_engine.bind(
             owner      = self,
-            name       = "glitchText",
+            name       = "glitch_text",
             base_value = "",
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_glitch_text_changed
@@ -167,7 +165,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         else:
             return super().keyPressEvent(event)
 
-        if not (key in (Qt.Key.Key_Left, Qt.Key.Key_Right) or self.is_key_pressed):
+        if not (key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Enter) or self.is_key_pressed):
             self.start_shake_animation()
 
     def handle_arrow_keys(
@@ -186,7 +184,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
             Player.ui_player.play_sound(
                 "Textbox/ArrowTick",
-                speed        = tone,
+                speed       = tone,
                 setting_key = "textbox_sounds"
             )
 
@@ -307,8 +305,8 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             return None
 
     def seconds_to_time_text(self, seconds: int) -> str:
-        total_seconds   = int(seconds)
-        minutes         = total_seconds // 60
+        total_seconds     = int(seconds)
+        minutes           = total_seconds // 60
         remaining_seconds = total_seconds % 60
 
         return f"{minutes}:{remaining_seconds:02}"
@@ -433,9 +431,9 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             return
 
         self.is_glitching      = True
-        self.animating          = True
-        self.original_position  = self.pos()
-        self.original_text      = super().text()
+        self.animating         = True
+        self.original_position = self.pos()
+        self.original_text     = super().text()
 
         self.glitch_text_handle.play_steps(
             steps    = self.build_glitch_frames(),

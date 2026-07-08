@@ -1,5 +1,4 @@
 import os
-import re
 import sys
 import time
 import random
@@ -809,7 +808,7 @@ def main() -> None:
 
     ui_scale_factor = Constants.current_settings.get("ui_scale_factor", 1.0)
     ui_scale_factor = float(ui_scale_factor)
-
+    
     if ui_scale_factor > 0:
         os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
         os.environ["QT_SCALE_FACTOR"] = str(ui_scale_factor)

@@ -370,6 +370,7 @@ class ButtonRow(QHBoxLayout):
                 enable_glitch_effect = glitch
             )
 
+            button.setMinimumWidth(120)
             button.clicked.connect(callback)
 
             self.addWidget(button)

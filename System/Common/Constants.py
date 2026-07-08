@@ -1478,3 +1478,24 @@ VISUAL_EASINGS = {
     "ease_in_out":    lambda t: 2 * t * t if t < 0.5 else 1 - (-2 * t + 2) ** 2 / 2,
     "ease_out_cubic": lambda t: 1 - (1 - t) ** 3
 }
+
+OK_TEXTS = [
+    "Ok",
+    "Yeah",
+    "YEAH",
+    "Hell yeah",
+    "Yep",
+    "Sure",
+    "Cool",
+    "Right",
+    "You bet"
+]
+
+NO_TEXTS = [
+    "Nah",
+    "Later",
+    "Nope",
+    "Pass",
+    "Not now",
+    "No thanks"
+]

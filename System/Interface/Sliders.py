@@ -30,9 +30,7 @@ from System.Interface.Animation.LoomEngine import (
     ui_engine
 )
 
-from System.Interface.Controls import (
-    BaseControlContainer
-)
+from System.Interface.Controls import BaseControlContainer
 
 # Slider With Label
 
@@ -150,9 +148,9 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
         self.value_handle.set_base(self.minimum_value)
 
         self.value_handle.set_target(
-            value                  = self.target_value,
-            duration_ms = 450,
-            easing_function        = Easing.ease_out_quint
+            value           = self.target_value,
+            duration_ms     = 450,
+            easing_function = Easing.ease_out_quint
         )
 
     def animate_to_value(self, value: int) -> None:
@@ -162,9 +160,9 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
             return
 
         self.value_handle.set_target(
-            value                  = self.target_value,
-            duration_ms = 450,
-            easing_function        = Easing.ease_out_quint
+            value           = self.target_value,
+            duration_ms     = 450,
+            easing_function = Easing.ease_out_quint
         )
 
     def showEvent(self, event: QShowEvent) -> None:

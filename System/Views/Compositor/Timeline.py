@@ -398,11 +398,7 @@ class ScrollableContent(QGraphicsView):
 
         self.horizontalScrollBar().valueChanged.connect(self.mouse_controller.force_mouse_update)
 
-        self.glyph_visualizer = Windows.GlyphVisualizer(
-            self,
-            self.composition.model,
-            self.playback_manager
-        )
+        self.glyph_visualizer = Windows.GlyphVisualizer(self, self.composition.model)
 
         self.glyph_controller.elements_changed.connect(self.parent().on_elements_changed)
         self.glyph_controller.create_glyph_items(self.composition.glyphs.keys(), True, False, False)
@@ -1151,8 +1147,7 @@ class ScrollableContent(QGraphicsView):
             title,
             label,
             min_val,
-            max_val,
-            player = self.playback_manager
+            max_val
         )
 
         if not dialog.exec():
@@ -1176,8 +1171,7 @@ class ScrollableContent(QGraphicsView):
         popup = Windows.SegmentEditor(
             "Segments",
             Constants.DEVICES[self.composition.model].segments_map[first_glyph["track"]],
-            first_glyph.get("segments"),
-            self.playback_manager
+            first_glyph.get("segments")
         )
 
         if not popup.exec():

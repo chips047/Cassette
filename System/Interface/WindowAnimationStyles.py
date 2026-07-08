@@ -29,7 +29,6 @@ def play_sound_choice(
         speed       = speed
     )
 
-
 # Value Resolution
 
 class ValueResolver:
@@ -76,7 +75,6 @@ class ValueResolver:
 
     def resolve_schedule(self, schedule: list[list]) -> list[tuple[int, object]]:
         return [(delay_ms, self.resolve(value)) for delay_ms, value in schedule]
-
 
 # Window Animation Style
 
@@ -153,7 +151,7 @@ class WindowAnimationStyle:
             resolver: ValueResolver
         ) -> None:
 
-        handle   = owner.property_handles[name]
+        handle   = getattr(owner, name + "_property")
         easing   = getattr(Easing, curve.get("easing", "ease_out_cubic"))
         finished = getattr(owner, curve["finished"]) if "finished" in curve else None
 

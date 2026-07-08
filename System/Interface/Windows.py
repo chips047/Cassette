@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import math
 import numpy
 import random
@@ -133,7 +134,6 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             margin:                          int                    | None = None,
             dialog:                          bool                          = True,
             stays_on_top:                    bool                          = True,
-            player:                          Player.PlaybackManager        = None,
             max_tilt_angle:                  int                           = 20,
             animation_style:                 str                    | None = None,
             enable_audioplayer_effects:      bool                          = True,
@@ -141,16 +141,14 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             enable_tilt:                     bool                          = True,
             enable_open_animation:           bool                          = True,
             enable_close_animation:          bool                          = True,
-            start_position:                  QPoint                 | None = None,
-            show_fps:                        bool                          = False
+            start_position:                  QPoint                 | None = None
         ):
 
         super().__init__(parent)
 
-        self.player                = player
+        self.player                = Player.player
         self.enable_tilt           = enable_tilt
         self.max_tilt_angle        = max_tilt_angle
-        self.show_fps              = show_fps
 
         self.result                = None
         self.event_loop            = None
@@ -171,17 +169,11 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.enable_advanced_beat_animations = enable_advanced_beat_animations
         self.enable_transition_audio_effects = enable_audioplayer_effects
 
-        self.margin_x = margin or 300
-        self.margin_y = margin or 300
+        self.target_margin = margin or 300
+        self.margin_x      = self.target_margin
+        self.margin_y      = self.target_margin
 
         self.anim_group = None
-
-        self.frame_count = 0
-        self.fps_timer   = QElapsedTimer()
-
-        if self.show_fps:
-            self.fps_timer.start()
-            self.frameSwapped.connect(self.on_frame_swapped)
 
         self.prepare_fmt()
         self.apply_attributes(dialog, stays_on_top)
@@ -189,15 +181,22 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.setup_animation_properties()
         self.setup_timers()
 
+    
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+
+        if self.is_ready:
+            return
+
+        self.adjustSize()
+        self.center_window()
+        self.is_ready = True
+
+        scale_restriction = self.maximum_scale()
+        self.scale_property.set_max_value(scale_restriction)
+
         if self.enable_open_animation:
-            QTimer.singleShot(0, self.open_window)
-
-    def event(self, event):
-        if event.type() == QEvent.Type.LayoutRequest:
-            if self.sizeHint() != self.size():
-                self.adjustSize()
-
-        return super().event(event)
+            self.open_window()
 
     # Setup
 
@@ -260,23 +259,14 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.adjustSize()
 
     def setup_animation_properties(self) -> None:
-        self.close_attempt_count = 0
         self.animations_active   = False
-        self.property_handles: dict = {}
 
-        self.scale                = 1.0
-        self.rotation_x           = 0.0
-        self.rotation_y           = 0.0
-        self.rotation_z           = 0.0
-        self.current_tilt_x       = 0.0
-        self.current_tilt_y       = 0.0
-        self.target_tilt_x        = 0.0
-        self.target_tilt_y        = 0.0
-        self.opacity_content      = 1.0
-        self.opacity_background   = 1.0
-        self.x_offset             = 0.0
-        self.y_offset             = 0.0
-        self.z_offset             = 0.0
+        self.current_tilt_x = 0.0
+        self.current_tilt_y = 0.0
+
+        self.target_tilt_x  = 0.0
+        self.target_tilt_y  = 0.0
+
         self.tilt_smoothing       = float(Constants.current_settings["window_hover_smoothing"])
         self.bpm_peak_scale       = 1.03
         self.is_pulsing           = False
@@ -290,27 +280,66 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.content_opacity_effect.setOpacity(0.0)
         self.content_widget.setGraphicsEffect(self.content_opacity_effect)
 
-        attribute_properties = (
-            ("rotation_x",         0.0,     LoomEngine.MixMode.ADD),
-            ("rotation_y",         0.0,     LoomEngine.MixMode.ADD),
-            ("rotation_z",         0.0,     LoomEngine.MixMode.ADD),
-            ("scale",              1.0,     LoomEngine.MixMode.MULTIPLY),
-            ("opacity_background", 1.0,     LoomEngine.MixMode.MULTIPLY),
-            ("x_offset",           0.0,     LoomEngine.MixMode.ADD),
-            ("y_offset",           0.0,     LoomEngine.MixMode.ADD),
-            ("z_offset",           0.0,     LoomEngine.MixMode.ADD)
+        self.x_offset_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "x_offset",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD
         )
 
-        for name, base_value, mix_mode in attribute_properties:
-            self.property_handles[name] = LoomEngine.ui_engine.bind(
-                owner      = self,
-                name       = name,
-                base_value = base_value,
-                mix_mode   = mix_mode,
-                on_change  = lambda value, name = name: self.on_attribute_property_changed(name, value)
-            )
+        self.y_offset_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "y_offset",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD
+        )
 
-        self.property_handles["opacity_content"] = LoomEngine.ui_engine.bind(
+        self.z_offset_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "z_offset",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD
+        )
+
+        self.rotation_x_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "rotation_x",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD
+        )
+
+        self.rotation_y_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "rotation_y",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD
+        )
+
+        self.rotation_z_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "rotation_z",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.ADD,
+            smoothing_enabled = True
+        )
+
+        print("YES", self.maximum_scale())
+        self.scale_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "scale",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.MULTIPLY,
+            max_value  = self.maximum_scale()
+        )
+
+        self.opacity_background_property = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "opacity_background",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.MULTIPLY
+        )
+
+        self.opacity_content_property = LoomEngine.ui_engine.bind(
             owner      = self,
             name       = "opacity_content",
             base_value = 1.0,
@@ -318,7 +347,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             on_change  = self.on_opacity_content_changed
         )
 
-        self.property_handles["geometry"] = LoomEngine.ui_engine.bind(
+        self.window_geometry_property = LoomEngine.ui_engine.bind(
             owner      = self,
             name       = "geometry",
             base_value = QRect(),
@@ -330,17 +359,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         self.animations_active = True
 
-    def on_attribute_property_changed(
-            self,
-            name:  str,
-            value: float
-        ) -> None:
-
-        setattr(self, name, value)
-        self.update()
-
     def on_opacity_content_changed(self, value: float) -> None:
-        self.opacity_content = value
         self.content_opacity_effect.setOpacity(value)
         self.update()
 
@@ -351,9 +370,9 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if self.max_tilt_angle <= 0 or self.tilt_smoothing <= 0 or not self.enable_tilt:
             return
 
-        local_pos           = self.mapFromGlobal(QCursor.pos())
-        widget_rect         = self.content_widget.rect()
-        content_rect_local  = widget_rect.translated(self.content_widget.pos())
+        local_pos          = self.mapFromGlobal(QCursor.pos())
+        widget_rect        = self.content_widget.rect()
+        content_rect_local = widget_rect.translated(self.content_widget.pos())
 
         if content_rect_local.contains(local_pos):
             center_x = self.width()  / 2
@@ -418,7 +437,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             self.resize(target_width + (self.margin_x * 2), target_height + (self.margin_y * 2))
             return
 
-        self.property_handles["geometry"].set_target(
+        self.window_geometry_property.set_target(
             value           = QRect(
                 self.x(), self.y(),
                 target_width  + (self.margin_x * 2),
@@ -454,7 +473,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
                 (1.0, 1.0)
             ]
 
-        self.property_handles["scale"].play_curve(
+        self.scale_property.play_curve(
             keyframes                  = keyframes,
             duration_ms                = interval_ms,
             easing_function            = LoomEngine.Easing.ease_out_cubic,
@@ -465,7 +484,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if not self.animations_active:
             return
 
-        self.property_handles["rotation_z"].play_curve(
+        self.rotation_z_property.play_curve(
             keyframes       = [
                 (0.0, 0.0),
                 (0.5, strength * (5 if random.random() > 0.5 else -5)),
@@ -479,7 +498,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if not self.animations_active:
             return
 
-        self.property_handles["y_offset"].play_curve(
+        self.y_offset_property.play_curve(
             keyframes                  = [
                 (0.0, 0.0),
                 (0.5, strength * random.choice([0.1, -0.1])),
@@ -494,7 +513,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if not self.animations_active or not self.animations_enabled:
             return
 
-        self.property_handles["scale"].play_curve(
+        self.scale_property.play_curve(
             keyframes       = [(0.0, 1.0), (1.0, 1.03)],
             duration_ms     = 250,
             easing_function = LoomEngine.Easing.ease_out_cubic
@@ -506,7 +525,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if not self.animations_active or not self.animations_enabled:
             return
 
-        self.property_handles["scale"].play_curve(
+        self.scale_property.play_curve(
             keyframes       = [(0.0, 1.0), (1.0, 0.97)],
             duration_ms     = 400,
             easing_function = LoomEngine.Easing.ease_out_cubic
@@ -524,22 +543,22 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         self.shake_timer.stop()
 
-        self.property_handles["rotation_x"].set_target(0.0, duration_ms = 400, easing_function = LoomEngine.Easing.ease_out_cubic)
-        self.property_handles["rotation_y"].set_target(0.0, duration_ms = 400, easing_function = LoomEngine.Easing.ease_out_cubic)
+        self.rotation_x_property.set_target(0.0, duration_ms = 400, easing_function = LoomEngine.Easing.ease_out_cubic)
+        self.rotation_y_property.set_target(0.0, duration_ms = 400, easing_function = LoomEngine.Easing.ease_out_cubic)
 
     def apply_shake_step(self) -> None:
         deviation = self.shake_deviation
         target_x  = random.uniform(-deviation, deviation)
         target_y  = random.uniform(-deviation, deviation)
 
-        self.property_handles["rotation_x"].set_target(target_x, duration_ms = self.shake_frequency_ms, easing_function = LoomEngine.Easing.ease_out_cubic)
-        self.property_handles["rotation_y"].set_target(target_y, duration_ms = self.shake_frequency_ms, easing_function = LoomEngine.Easing.ease_out_cubic)
+        self.rotation_x_property.set_target(target_x, duration_ms = self.shake_frequency_ms, easing_function = LoomEngine.Easing.ease_out_cubic)
+        self.rotation_y_property.set_target(target_y, duration_ms = self.shake_frequency_ms, easing_function = LoomEngine.Easing.ease_out_cubic)
 
     def wobble(self) -> None:
         if not self.animations_active or not self.animations_enabled:
             return
 
-        self.property_handles["scale"].play_curve(
+        self.scale_property.play_curve(
             keyframes       = [(0.0, 1.0), (0.5, 1.05), (1.0, 1.0)],
             duration_ms     = 500,
             easing_function = LoomEngine.Easing.ease_out_cubic
@@ -549,7 +568,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if not self.animations_active or not self.animations_enabled:
             return
 
-        self.property_handles["rotation_z"].play_curve(
+        self.rotation_z_property.play_curve(
             keyframes       = [
                 (0.0, 0),
                 (0.5, self.period_randomizer((-6, -3), (3, 6))),
@@ -565,8 +584,14 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         return WindowAnimationStyle(self.animation_style)
 
     def open_window(self) -> None:
-        self.adjustSize()
-        final_rect    = self.center_window()
+        self.ensurePolished()
+
+        if self.layout():
+            self.layout().activate()
+
+        super().adjustSize()
+        self.center_window()
+
         self.is_ready = True
 
         self.play_stage_sound("open")
@@ -579,6 +604,15 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             owner = self,
             size  = self.get_window_size()
         )
+    
+    def get_window_size(self) -> tuple[int, int]:
+        hint = self.content_widget.sizeHint()
+
+        if hint.isValid() and not self.is_ready:
+            return hint.width(), hint.height()
+
+        geometry = self.content_widget.geometry()
+        return geometry.width(), geometry.height()
 
     def request_close(self) -> None:
         if not self.enable_close_animation:
@@ -607,8 +641,6 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             owner = self,
             size  = self.get_window_size()
         )
-
-    # Physics
 
     # Render
 
@@ -687,8 +719,8 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         GL.glUniform1f(self.location_border_px,     2.0)
         GL.glUniform4f(self.location_rect_color,    0.17, 0.17, 0.17, 1.0)
         GL.glUniform4f(self.location_border_color,  0.25, 0.25, 0.25, 1.0)
-        GL.glUniform1f(self.location_rect_alpha,    self.opacity_background)
-        GL.glUniform1f(self.location_border_alpha,  self.opacity_background)
+        GL.glUniform1f(self.location_rect_alpha,    self.opacity_background_property.value)
+        GL.glUniform1f(self.location_border_alpha,  self.opacity_background_property.value)
         GL.glUniform1f(self.location_global_alpha,  1.0)
 
         GL.glUniformMatrix4fv(self.location_mvp, 1, GL.GL_FALSE, mvp_final.data())
@@ -719,14 +751,14 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         if self.animations_active:
             rotation = QQuaternion.fromEulerAngles(
-                self.rotation_x + self.current_tilt_x,
-                self.rotation_y + self.current_tilt_y,
-                self.rotation_z
+                self.rotation_x_property.value + self.current_tilt_x,
+                self.rotation_y_property.value + self.current_tilt_y,
+                self.rotation_z_property.value
             )
 
             mvp.rotate(rotation)
-            mvp.translate(self.x_offset, self.y_offset, self.z_offset)
-            mvp.scale(self.scale)
+            mvp.translate(self.x_offset_property.value, self.y_offset_property.value, self.z_offset_property.value)
+            mvp.scale(self.scale_property.value)
 
         mvp.scale((content_w * pixel_unit) / 2.0, (content_h * pixel_unit) / 2.0)
         return mvp
@@ -751,60 +783,37 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if self.allow_exit:
             super().closeEvent(event)
             return
-
-        self.close_attempt_count += 1
-
-        if random.random() < 0.5:
-            if self.close_attempt_count == 50:
-                Player.ui_player.play_sound("Packs/NOK/WAYD")
-
-                if self.title_label:
-                    self.title_label.setText("What are you doing?")
-
-            if self.close_attempt_count == 70:
-                Player.ui_player.play_sound("Packs/NOK/HCYLWY")
-
-                if self.title_label:
-                    self.title_label.setText("???")
-
-            if self.close_attempt_count > 70:
-                self.chaos_mode()
-
-            if self.close_attempt_count == 100 and self.title_label:
-                Player.ui_player.play_sound("Packs/NOK/ONYD")
-                self.title_label.setText("Dividing by zero: 3")
-
-                QTimer.singleShot(1000, lambda: self.title_label.setText("Dividing by zero: 2"))
-                QTimer.singleShot(2000, lambda: self.title_label.setText("Dividing by zero: 1"))
-                QTimer.singleShot(2100, lambda: Player.ui_player.play_sound("Packs/NOK/Charging"))
-                QTimer.singleShot(2500, lambda: self.title_label.setText("LMAO"))
-                QTimer.singleShot(3000, lambda: 1 / 0)
-
+        
         event.ignore()
-        self.play_disturb_animation()
+        self.request_close()
+        self.was_cancelled = True
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
             return
 
         if self.title_label:
-            label_rect = self.title_label.geometry()
-            local_pos  = self.content_widget.mapFrom(self, event.pos())
-
-            if not label_rect.contains(local_pos):
+            local_pos = self.content_widget.mapFrom(self, event.pos())
+            if not self.title_label.geometry().contains(local_pos):
                 return
         
-        else:
-            if not self.content_widget.geometry().contains(event.pos()):
-                return
+        elif sys.platform != "linux" and not self.content_widget.geometry().contains(event.pos()):
+            return
+
+        if sys.platform == "linux":
+            self.windowHandle().startSystemMove()
         
         self.drag_pos = event.globalPosition().toPoint() - self.pos()
+
         self.move_start_animation()
-    
         event.accept()
 
     def mouseMoveEvent(self, event) -> None:
-        if event.buttons() == Qt.MouseButton.LeftButton and self.drag_pos is not None:
+        if (
+            event.buttons() == Qt.MouseButton.LeftButton and
+            self.drag_pos is not None                    and
+            sys.platform != "linux"
+        ):
             self.move(event.globalPosition().toPoint() - self.drag_pos)
             event.accept()
 
@@ -864,36 +873,46 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.was_cancelled = True
 
         self.request_close()
-    
-    def on_frame_swapped(self) -> None:
-        self.frame_count += 1
-        elapsed_time      = self.fps_timer.elapsed()
 
-        if elapsed_time < 1000:
+    def adjustSize(self) -> None:
+        self.ensurePolished()
+
+        if self.layout():
+            self.layout().activate()
+
+        content_size = self.content_widget.sizeHint()
+
+        if self.is_ready:
+            self.animate_resize(content_size.width(), content_size.height())
             return
 
-        frames_per_second = self.frame_count / (elapsed_time / 1000.0)
-        fps_text          = f"FPS: {frames_per_second:.2f}"
+        screen_geo       = QApplication.primaryScreen().availableGeometry()
 
-        if self.title_label:
-            self.title_label.setText(fps_text)
+        available_width  = screen_geo.width()
+        available_height = screen_geo.height()
 
-        self.setWindowTitle(fps_text)
+        content_width    = content_size.width()
+        content_height   = content_size.height()
 
-        self.frame_count = 0
-        self.fps_timer.restart()
+        max_margin_x     = (available_width  - 46 * 2 - content_width)  // 2
+        max_margin_y     = (available_height - 46 * 2 - content_height) // 2
+        margin_x         = min(max_margin_x, 300)
+        margin_y         = min(max_margin_y, 300)
 
-    def adjustSize(self):
-        if self.is_ready:
-            size = self.content_widget.sizeHint()
-            
-            self.animate_resize(
-                size.width(),
-                size.height()
-            )
+        self.margin_x    = margin_x
+        self.margin_y    = margin_y
 
-        else:
-            return super().adjustSize()
+        self.layout().setContentsMargins(
+            self.margin_x, 
+            self.margin_y, 
+            self.margin_x, 
+            self.margin_y
+        )
+
+        final_width  = content_width  + (self.margin_x * 2)
+        final_height = content_height + (self.margin_y * 2)
+
+        self.resize(final_width, final_height)
 
     def set_bpm_peak_size(self, coefficient: float) -> None:
         self.bpm_peak_scale = coefficient
@@ -985,13 +1004,33 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         return geometry.width(), geometry.height()
 
     def maximum_scale(self) -> float:
-        real_width   = self.geometry().width()
-        real_height  = self.geometry().height()
-        width        = self.content_widget.width()
-        height       = self.content_widget.height()
-        coefficient  = max(width, height) / max(real_width, real_height)
-        
-        return 1.0 + (1.0 - coefficient)
+        content_width  = self.content_widget.width()
+        content_height = self.content_widget.height()
+
+        if content_width <= 0 or content_height <= 0:
+            return 1.0
+
+        real_width       = self.geometry().width()
+        real_height      = self.geometry().height()
+
+        screen_geo       = QApplication.primaryScreen().availableGeometry()
+        available_width  = screen_geo.width()
+        available_height = screen_geo.height()
+
+        is_full_width    = real_width  >= (available_width  - 92)
+        is_full_height   = real_height >= (available_height - 92)
+
+        max_scale_x      = float("inf") if is_full_width  else real_width  / content_width
+        max_scale_y      = float("inf") if is_full_height else real_height / content_height
+
+        final_scale      = min(max_scale_x, max_scale_y)
+
+        if final_scale == float("inf"):
+            final_scale  = 2.0
+
+        logger.debug(f"Scale property was restricted to {final_scale}")
+
+        return final_scale
 
     def really_close(self) -> None:
         if self.animations_active:
@@ -1041,11 +1080,12 @@ class DialogInputWindow(FloatingWindowGPU):
             min_number:  int                    = 0,
             max_number:  int                    = 100,
             max_length:  int                    = 100,
-            input_type:  str                    = "number",
-            player:      Player.PlaybackManager = None
+            input_type:  str                    = "number"
         ):
 
-        super().__init__(title, player = player)
+        super().__init__(title)
+
+        self.close_attempt_count = 0
 
         self.input_field = Textboxes.Textbox(input_type, min_number, max_number, max_length)
         self.input_field.setMinimumWidth(160)
@@ -1053,10 +1093,12 @@ class DialogInputWindow(FloatingWindowGPU):
 
         self.button_row = Buttons.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, "Cancel", self.on_cancel, False),
-                (Buttons.NothingButton,     "OK",     self.on_ok,     False)
+                (Buttons.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
+                (Buttons.NothingButton,     random.choice(Constants.OK_TEXTS), self.on_ok)
             ]
         )
+
+        self.button_row.get_button("OK").block_glitch_sound()
 
         self.content_layout.addWidget(self.input_field)
         self.content_layout.addLayout(self.button_row)
@@ -1067,9 +1109,43 @@ class DialogInputWindow(FloatingWindowGPU):
         if not self.input_field.text():
             self.button_row.buttons["OK"].start_glitch()
             self.play_disturb_animation()
+
+            self.process_ee()            
+
             return
 
         super().on_ok()
+    
+    def process_ee(self) -> None:
+        self.close_attempt_count += 1
+
+        if random.random() > 0.5:
+            return
+        
+        if self.close_attempt_count == 50:
+            Player.ui_player.play_sound("Packs/NOK/WAYD")
+
+            if self.title_label:
+                self.title_label.setText("What are you doing?")
+
+        if self.close_attempt_count == 70:
+            Player.ui_player.play_sound("Packs/NOK/HCYLWY")
+
+            if self.title_label:
+                self.title_label.setText("???")
+
+        if self.close_attempt_count > 70:
+            self.chaos_mode()
+
+        if self.close_attempt_count == 100 and self.title_label:
+            Player.ui_player.play_sound("Packs/NOK/ONYD")
+            self.title_label.setText("Dividing by zero: 3")
+
+            QTimer.singleShot(1000, lambda: self.title_label.setText("Dividing by zero: 2"))
+            QTimer.singleShot(2000, lambda: self.title_label.setText("Dividing by zero: 1"))
+            QTimer.singleShot(2100, lambda: Player.ui_player.play_sound("Packs/NOK/Charging"))
+            QTimer.singleShot(2500, lambda: self.title_label.setText("LMAO"))
+            QTimer.singleShot(3000, lambda: 1 / 0)
 
     def get_text(self) -> str:
         return self.input_field.text()
@@ -1079,14 +1155,10 @@ class ExportDialogWindow(FloatingWindowGPU):
 
     def __init__(
             self,
-            composition: ProjectSaver.Composition,
-            player:      Player.PlaybackManager = None
+            composition: ProjectSaver.Composition
         ):
 
-        super().__init__(
-            "Export?",
-            player = player
-        )
+        super().__init__("Export?")
 
         self.composition = composition
 
@@ -1098,9 +1170,9 @@ class ExportDialogWindow(FloatingWindowGPU):
 
         button_row = Buttons.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, "Later",                 self.on_cancel),
-                (Buttons.ButtonWithOutline, "Export to every model", self.export_all),
-                (Buttons.NothingButton,     "Tape it",               self.export)
+                (Buttons.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
+                (Buttons.ButtonWithOutline, "Export to every model",           self.export_all),
+                (Buttons.NothingButton,     "Tape it",                         self.export)
             ]
         )
 
@@ -1134,8 +1206,8 @@ class DialogWindow(FloatingWindowGPU):
 
         button_row = Buttons.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, "Nah",       self.on_cancel),
-                (Buttons.NothingButton,     "Hell yeah", self.on_ok)
+                (Buttons.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
+                (Buttons.NothingButton,     random.choice(Constants.OK_TEXTS), self.on_ok)
             ]
         )
 
@@ -1146,11 +1218,10 @@ class SegmentEditor(FloatingWindowGPU):
             self,
             title:       str,
             segment_num: int | None  = None,
-            defaults                 = None,
-            player                   = None
+            defaults                 = None
         ):
 
-        super().__init__(title, player = player)
+        super().__init__(title)
 
         self.segmented_bar = Widgets.SegmentedBar(segment_num, defaults)
 
@@ -1185,11 +1256,12 @@ class ErrorWindow(FloatingWindowGPU):
             description: str,
             button_text: str = "Cool"
         ):
+
         super().__init__(title)
 
-        ok_button         = Buttons.NothingButton(button_text)
-        copy_button       = Buttons.ButtonWithOutline("Copy error details")
-        
+        ok_button   = Buttons.NothingButton(button_text)
+        copy_button = Buttons.ButtonWithOutline("Copy error details")
+
         self.description_label = Labels.DescriptionLabel(description, 600)
 
         self.content_layout.addWidget(self.description_label)
@@ -1217,15 +1289,15 @@ class ErrorWindow(FloatingWindowGPU):
 
             self.title_label.start_glitch(0.01, 18)
 
-            self.property_handles["scale"].play_curve(
+            self.scale_property.play_curve(
                 keyframes       = [(0.0, 1.5), (1.0, 1.0)],
                 duration_ms     = 12000,
                 easing_function = LoomEngine.Easing.ease_out_quart
             )
 
-            self.property_handles["opacity_content"].set_base(1.0)
+            self.opacity_content_property.set_base(1.0)
 
-            self.property_handles["opacity_background"].play_curve(
+            self.opacity_background_property.play_curve(
                 keyframes       = [(0.0, 0.0), (1.0, 1.0)],
                 duration_ms     = 3000,
                 easing_function = LoomEngine.Easing.linear
@@ -1578,13 +1650,11 @@ class GlyphVisualizer(FloatingWindowGPU):
     def __init__(
             self,
             parent: QObject,
-            model:  str,
-            player: Player.PlaybackManager = None
+            model:  str
         ):
 
         super().__init__(
             None,
-            player                  = player,
             margin                  = 50,
             max_tilt_angle          = 9,
             enable_open_animation   = False,
@@ -1779,14 +1849,14 @@ class GlyphVisualizer(FloatingWindowGPU):
         if not self.animations_active:
             return
 
-        self.property_handles["scale"].play_curve(
+        self.scale_property.play_curve(
             keyframes                  = [(0.0, 0.0), (1.0, 1.0)],
             duration_ms                = 1000,
             easing_function            = LoomEngine.Easing.ease_out_quart,
             multiply_duration_by_speed = False
         )
 
-        self.property_handles["opacity_background"].set_base(1.0)
+        self.scale_property.set_base(1.0)
 
     def scale_out(self, cleanup: bool) -> None:
         if not self.animations_active:
@@ -1795,7 +1865,7 @@ class GlyphVisualizer(FloatingWindowGPU):
 
             return
 
-        self.property_handles["scale"].play_curve(
+        self.scale_property.play_curve(
             keyframes                  = [(0.0, 1.0), (1.0, 0.0)],
             duration_ms                = 500,
             easing_function            = LoomEngine.Easing.ease_in_quart,
@@ -1927,19 +1997,11 @@ class GlyphVisualizer(FloatingWindowGPU):
 # Tutorial
 
 class Tutorial(FloatingWindowGPU):
-    def __init__(
-            self,
-            path: str
-        ):
-
+    def __init__(self, path: str):
         self.player = Player.PlaybackManager()
         self.player.load_audio(path)
 
-        super().__init__(
-            "Tutorial",
-            player                     = self.player,
-            enable_audioplayer_effects = False
-        )
+        super().__init__("Tutorial", enable_audioplayer_effects = False)
 
         self.stage = 0
 
@@ -2467,7 +2529,7 @@ class BPMEditorBase(AudioEditorBase):
         )
 
         if self.animations_active:
-            self.property_handles["bpm_textbox_width"] = LoomEngine.ui_engine.bind(
+            self.bpm_textbox_width = LoomEngine.ui_engine.bind(
                 owner      = self,
                 name       = "bpmTextboxWidth",
                 base_value = self.bpm_input.width(),
@@ -2542,7 +2604,7 @@ class BPMEditorBase(AudioEditorBase):
         if not self.animations_active:
             return
 
-        self.property_handles["bpm_textbox_width"].set_target(
+        self.bpm_textbox_width.set_target(
             value           = self.get_perfect_bpm_width(),
             duration_ms     = 300,
             easing_function = LoomEngine.Easing.ease_out_cubic
@@ -2620,18 +2682,12 @@ class BPMEditorBase(AudioEditorBase):
 # Audio Setup Dialog
 
 class AudioSetupDialog(BPMEditorBase):
-    def __init__(
-            self,
-            audio_path: str
-        ):
-
-        self.player     = Player.player
+    def __init__(self, audio_path: str):
         self.audio_path = audio_path
         self.filename   = audio_path.split("/")[-1]
 
         super().__init__(
             "Audio",
-            player                     = self.player,
             max_tilt_angle             = 14,
             enable_audioplayer_effects = False
         )
@@ -2739,12 +2795,10 @@ class AudioSetupDialog(BPMEditorBase):
 
 class GlyphtoneEditor(AudioEditorBase):
     def __init__(self, audio_path: str):
-        self.player    = Player.PlaybackManager()
         self.audio_path = audio_path
 
         super().__init__(
             "Glyphtone Editor",
-            player                     = self.player,
             max_tilt_angle             = 14,
             enable_audioplayer_effects = False
         )
@@ -2816,7 +2870,6 @@ class GlyphtoneEditor(AudioEditorBase):
 
 class ImportWindow(BPMEditorBase):
     def __init__(self):
-        self.player     = Player.player
         self.audio_path = None
         self.save_path  = None
         self.cached_wav = None
@@ -2828,7 +2881,6 @@ class ImportWindow(BPMEditorBase):
 
         super().__init__(
             "Import",
-            player                     = self.player,
             max_tilt_angle             = 14,
             enable_audioplayer_effects = False
         )
@@ -3098,8 +3150,7 @@ class Playground(FloatingWindowGPU):
             enable_advanced_beat_animations = False,
             enable_tilt                    = True,
             enable_open_animation          = True,
-            enable_close_animation         = True,
-            show_fps                       = False
+            enable_close_animation         = True
         )
 
         self.content_widget.setMinimumWidth(720)

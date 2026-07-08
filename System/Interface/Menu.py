@@ -58,6 +58,7 @@ class ContextMenu(QMenu):
     def apply_styling(self, menu: QMenu) -> None:
         menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         menu.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+
         menu.setWindowFlags(
             menu.windowFlags()                   |
             Qt.WindowType.FramelessWindowHint    |

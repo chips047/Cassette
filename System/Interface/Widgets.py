@@ -863,7 +863,7 @@ class SegmentedBar(BaseSegmentedBar):
         Player.ui_player.play_sound("Click/Toggle3")
 
 @Dev.track_ram
-class PlayheadItem(QGraphicsObject):
+class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     def __init__(
         self,
         conductor,
@@ -881,10 +881,11 @@ class PlayheadItem(QGraphicsObject):
         self.cached_pen = QPen(QColor(255, 0, 0), 2.0)
         self.cached_pen.setCosmetic(True)
 
-        self.lerp_timer = Timing.Timer(
-            Constants.FPS_120,
-            self.lerp_step,
-            parent = self
+        self.x_anim = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "playhead_x",
+            base_value = 0.0,
+            on_change  = self.update_actual_position
         )
 
     # Graphics Item
@@ -910,46 +911,34 @@ class PlayheadItem(QGraphicsObject):
     # Logic
 
     def set_target_x(
-            self,
-            x:       float,
-            animate: bool = False
-        ) -> None:
-        
+        self,
+        x:       float,
+        animate: bool = False
+    ) -> None:
+
         self.target_x = x
 
         if animate and Constants.current_settings.get("playhead_animations", True):
-            if not self.lerp_timer.isActive():
-                self.lerp_timer.start()
+            distance    = abs(x - self.x_anim.value)
+            duration_ms = int(min(420, max(120, 120 + distance * 0.12)))
 
-            return
-            
-        self.lerp_timer.stop()
-        self.update_actual_position(x)
+            self.x_anim.set_target(
+                value           = x,
+                duration_ms     = duration_ms,
+                easing_function = LoomEngine.Easing.ease_out_expo
+            )
+        else:
+            self.x_anim.stop()
+            self.x_anim.set_base(x)
 
-    def lerp_step(self) -> None:
-        current_x = self.x()
-        target_x  = self.target_x
-        
-        lerp_factor = 0.22
-        new_x       = current_x + (target_x - current_x) * lerp_factor
-        
-        if abs(target_x - new_x) < 0.1:
-            new_x = target_x
-            self.lerp_timer.stop()
-
-            logger.debug(f"Playhead reached target: {new_x:.2f} | Timer stopped")
-        
-        self.update_actual_position(new_x)
-
-    def update_actual_position(
-            self,
-            x: float
-        ) -> None:
-        
+    def update_actual_position(self, x: float) -> None:
         self.setPos(x, 0)
         
         if self.conductor.total_content_width > 0:
             self.conductor.playhead_moved.emit(x / self.conductor.total_content_width)
+
+    def destroy(self) -> None:
+        LoomEngine.ui_engine.unbind_owner(self)
 
 @Dev.track_ram
 class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):

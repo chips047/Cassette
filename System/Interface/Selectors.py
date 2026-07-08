@@ -42,9 +42,7 @@ from System.Interface.Animation.LoomEngine import (
     ui_engine
 )
 
-from System.Interface.Controls import (
-    BaseControlContainer
-)
+from System.Interface.Controls import BaseControlContainer
 
 from loguru import logger
 
@@ -224,15 +222,15 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
             self.hover_rectangle_handle.set_base(target_rectangle)
 
         self.hover_rectangle_handle.set_target(
-            value                  = target_rectangle,
-            duration_ms = 200,
-            easing_function        = Easing.ease_out_quint
+            value           = target_rectangle,
+            duration_ms     = 200,
+            easing_function = Easing.ease_out_quint
         )
 
         self.hover_opacity_handle.set_target(
-            value                  = 1.0,
-            duration_ms = 150,
-            easing_function        = Easing.ease_in_out_sine
+            value           = 1.0,
+            duration_ms     = 150,
+            easing_function = Easing.ease_in_out_sine
         )
 
         button_count = len(self.buttons)
@@ -241,15 +239,15 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
 
         Player.ui_player.play_sound(
             "Click/Selector/Hover",
-            speed        = tone,
+            speed       = tone,
             setting_key = "selector_sounds"
         )
 
     def handle_hover_leave(self) -> None:
         self.hover_opacity_handle.set_target(
-            value                  = 0.0,
-            duration_ms = 150,
-            easing_function        = Easing.ease_in_out_sine
+            value           = 0.0,
+            duration_ms     = 150,
+            easing_function = Easing.ease_in_out_sine
         )
 
     def paintEvent(self, event: QEvent) -> None:
@@ -321,7 +319,7 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
 
         Player.ui_player.play_sound(
             "Click/Selector/Confirm",
-            speed        = tone,
+            speed       = tone,
             setting_key = "selector_sounds"
         )
 
@@ -345,9 +343,9 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
         self.indicator_handle.set_base(start_rectangle)
 
         self.indicator_handle.set_target(
-            value                  = target_rectangle,
-            duration_ms = random.randint(200, 500),
-            easing_function        = Easing.ease_out_quint
+            value           = target_rectangle,
+            duration_ms     = random.randint(200, 500),
+            easing_function = Easing.ease_out_quint
         )
 
     def move_indicator(
@@ -370,9 +368,9 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
             return
 
         self.indicator_handle.set_target(
-            value                  = target_rectangle,
-            duration_ms = 300,
-            easing_function        = Easing.ease_out_quint
+            value           = target_rectangle,
+            duration_ms     = 300,
+            easing_function = Easing.ease_out_quint
         )
 
     def select_index(
@@ -545,8 +543,8 @@ class SelectorWithLabel(BaseControlContainer):
     def setup_strip(
             self,
             items:         list[str] | dict,
-            default_text:  str | None,
-            default_value: object | None
+            default_text:  str       | None,
+            default_value: object    | None
         ) -> None:
 
         self.strip = SegmentedStrip(

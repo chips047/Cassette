@@ -178,10 +178,7 @@ class CompositorWidget(QWidget):
     # Misc
 
     def export_ringtone(self) -> None:
-        Windows.ExportDialogWindow(
-            self.content_widget.composition,
-            self.playback_manager
-        ).exec()
+        Windows.ExportDialogWindow(self.content_widget.composition).exec()
 
     def on_elements_changed(self) -> None:
         has_glyphs = bool(self.content_widget.glyph_controller.glyph_items)
