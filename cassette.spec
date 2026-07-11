@@ -79,6 +79,22 @@ a = Analysis(
     noarchive=False,
 )
 
+binaries_clean = []
+seen_basenames = set()
+
+for name, path, typecode in a.binaries:
+    if "PyQt6" in name or "numpy" in name:
+        binaries_clean.append((name, path, typecode))
+        seen_basenames.add(os.path.basename(name))
+
+for name, path, typecode in a.binaries:
+    basename = os.path.basename(name)
+    if basename not in seen_basenames:
+        binaries_clean.append((name, path, typecode))
+        seen_basenames.add(basename)
+
+a.binaries = binaries_clean
+
 if sys.platform == "linux":
     ignore = ('libstdc++.so.6',)
     a.binaries = [b for b in a.binaries if not any(n in os.path.basename(b[0]) for n in ignore)]
