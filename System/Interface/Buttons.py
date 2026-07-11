@@ -387,6 +387,9 @@ class ButtonRow(QHBoxLayout):
 
     def get_button(self, text: str) -> RectangularButton | None:
         return self.buttons.get(text)
+    
+    def get_button_by_number(self, index: int) -> RectangularButton | None:
+        return list(self.buttons.values())[index]
 
 @Dev.track_ram
 class NavButton(BaseButton):

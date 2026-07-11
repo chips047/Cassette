@@ -510,6 +510,11 @@ class StartupFadeOverlay(QWidget):
             painter.drawText(self.text_rectangle, Qt.AlignmentFlag.AlignCenter, self.current_text)
 
 class ApplicationWindow(QMainWindow):
+    EXIT_FADE_BASE_MS            = 3000
+    EXIT_EFFECTS_DELAY_MS        = 1700
+    EXIT_CLOSE_SOUND_DURATION_MS = 1500
+    NO_AUDIO_EXIT_DELAY_MS       = 1800
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -538,6 +543,8 @@ class ApplicationWindow(QMainWindow):
         self.main_menu_widget.composition_created.connect(self.show_compositor_view)
         self.compositor_widget.back_to_main_menu_requested.connect(self.show_main_menu_view)
 
+        self.compositor_widget.loading_finished.connect(self.show_compositor_view_after_transition)
+
         self.stack.setCurrentWidget(self.main_menu_widget)
         self.setStyleSheet(f"background-color: {Styles.Colors.Background};")
 
@@ -545,6 +552,7 @@ class ApplicationWindow(QMainWindow):
         self.intro_overlay.finished.connect(self.handle_intro_finished)
 
         self.is_closing = False
+        self.is_shutdown_complete = False
 
         self.setup_animations()
 
@@ -573,6 +581,11 @@ class ApplicationWindow(QMainWindow):
         )
     
     # Actions
+
+    def process_new_songs_data(self, info: str) -> None:
+        print(info)
+        with open("System/Assets/Songs.txt", "w", encoding = "utf-8") as file:
+            file.write(info)
 
     def show_update_info(self, info: dict) -> None:
         version     = info.get("tag_name", "unknown")
@@ -627,13 +640,11 @@ class ApplicationWindow(QMainWindow):
         self.entry_fade_animation.setDuration(400)
         self.entry_fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
-        self.main_menu_fadeout.finished.connect(self.handle_main_menu_fadeout_finished)
         self.compositor_fadeout.finished.connect(self.handle_compositor_fadeout_finished)
 
     @pyqtSlot(ProjectSaver.Composition)
     def show_compositor_view(self, composition: ProjectSaver.Composition) -> None:
         self.compositor_widget.load_composition(composition)
-        self.main_menu_fadeout.start()
 
     @pyqtSlot(str)
     def on_edit_requested(self, project_id: str) -> None:
@@ -649,7 +660,6 @@ class ApplicationWindow(QMainWindow):
             logger.info(f"Loading project {project_id}...")
             composition = ProjectSaver.Composition(id = project_id)
             self.compositor_widget.load_composition(composition)
-            self.show_compositor_view_after_transition()
 
         except Exception as exception:
             logger.error(f"Failed to load project: {exception}")
@@ -661,6 +671,7 @@ class ApplicationWindow(QMainWindow):
 
         Player.ui_player.play_sound(f"Signals/Error/Critical{random.randint(1, 3)}")
 
+    @pyqtSlot()
     def show_compositor_view_after_transition(self) -> None:
         self.main_menu_widget.setVisible(False)
         self.animate_widget_entry(self.compositor_widget)
@@ -673,11 +684,6 @@ class ApplicationWindow(QMainWindow):
         self.animate_widget_entry(self.main_menu_widget)
 
         Player.ui_player.play_sound("App/Eject")
-
-    @pyqtSlot()
-    def handle_main_menu_fadeout_finished(self) -> None:
-        if self.compositor_widget.content_widget.composition:
-            self.show_compositor_view_after_transition()
 
     @pyqtSlot()
     def handle_compositor_fadeout_finished(self) -> None:
@@ -720,8 +726,10 @@ class ApplicationWindow(QMainWindow):
         self.effect_manager.check_calendar_events()
 
         self.update_thread = Utils.UpdateChecker()
-        self.update_thread.info_received.connect(self.show_update_info)
+        self.update_thread.update_info_received.connect(self.show_update_info)
+        self.update_thread.songs_info_receiver.connect(self.process_new_songs_data)
         self.update_thread.fetch_latest_release()
+        self.update_thread.fetch_latest_songs_strings()
 
     # Lifecycle
 
@@ -752,33 +760,76 @@ class ApplicationWindow(QMainWindow):
         self.is_closing = True
         self.hide()
 
-        content_widget       = self.compositor_widget.content_widget
-        animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
+        content_widget = self.compositor_widget.content_widget
 
         if content_widget.composition:
             content_widget.composition.syncer.exit_app()
             logger.debug("Signaled Cassette Receiver to exit")
 
-        if Player.player.is_playing and content_widget.global_waveform_max > 1e-6:
-            logger.debug("Playing exit effects with audio slowdown")
+        has_audio_to_fade = Player.player.is_playing and content_widget.global_waveform_max > 1e-6
 
-            Player.player.set_speed(0.0, 3000)
+        if has_audio_to_fade:
+            self.shutdown_with_audio_fade()
 
-            timeout = int(animation_multiplier * 1700)
+        else:
+            self.shutdown_without_audio_fade()
 
-            QTimer.singleShot(timeout, self.play_exit_effects)
-            QTimer.singleShot(timeout + 1700, self.complete_shutdown)
+    def shutdown_with_audio_fade(self) -> None:
+        logger.debug("Playing exit effects with audio slowdown")
 
-            return
+        animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
+        player                = Player.player
 
-        duration = int(1800 * animation_multiplier) if self.play_exit_effects() else 1800
+        remaining_ms  = max(0.0, player.duration_ms - player.get_position())
+        fade_duration = self.EXIT_FADE_BASE_MS * animation_multiplier
+        effects_delay = self.EXIT_EFFECTS_DELAY_MS * animation_multiplier
+        quit_delay    = effects_delay * 2
+
+        if quit_delay > remaining_ms:
+            scale = remaining_ms / quit_delay if quit_delay else 0.0
+
+            fade_duration *= scale
+            effects_delay *= scale
+            quit_delay    *= scale
+
+        quit_delay = max(quit_delay, effects_delay + self.EXIT_CLOSE_SOUND_DURATION_MS)
+
+        fade_duration = int(fade_duration)
+        effects_delay = int(effects_delay)
+        quit_delay    = int(quit_delay)
+
+        Player.player.set_speed(0.0, fade_duration, use_engine_multiplier = False)
+
+        self.exit_effects_timer = QTimer(self)
+        self.exit_effects_timer.setSingleShot(True)
+        self.exit_effects_timer.timeout.connect(self.play_exit_effects)
+        self.exit_effects_timer.start(effects_delay)
+
+        self.exit_quit_timer = QTimer(self)
+        self.exit_quit_timer.setSingleShot(True)
+        self.exit_quit_timer.timeout.connect(self.complete_shutdown)
+        self.exit_quit_timer.start(quit_delay)
+
+    def shutdown_without_audio_fade(self) -> None:
+        animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
+        has_exit_effects     = self.play_exit_effects()
+
+        duration = (
+            int(self.NO_AUDIO_EXIT_DELAY_MS * animation_multiplier)
+            if has_exit_effects
+            else self.NO_AUDIO_EXIT_DELAY_MS
+        )
 
         QTimer.singleShot(duration, self.complete_shutdown)
 
     def complete_shutdown(self) -> None:
+        if self.is_shutdown_complete:
+            return
+
+        self.is_shutdown_complete = True
+
         logger.debug("Completing shutdown process, cleaning up resources")
 
-        Player.ui_player.cleanup()
         Player.player.full_shutdown()
 
         application = QApplication.instance()

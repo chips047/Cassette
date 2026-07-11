@@ -158,11 +158,12 @@ class PlaybackManager(QObject):
     
     def set_property(
             self,
-            property_name: str,
-            value:         float,
-            duration_ms:   int             = 0,
-            easing:        Easing          = Easing.smooth,
-            on_finish:     callable | None = None
+            property_name:     str,
+            value:             float,
+            duration_ms:       int             = 0,
+            easing:            Easing          = Easing.smooth,
+            on_finish:         callable | None = None,
+            multiply_duration: bool            = True
         ) -> None:
 
         prop_handle = getattr(self, f"{property_name}_property")
@@ -175,7 +176,12 @@ class PlaybackManager(QObject):
 
             return
 
-        prop_handle.set_target(value, duration_ms, easing)
+        prop_handle.set_target(
+            value,
+            duration_ms,
+            easing,
+            multiply_duration
+        )
 
         if on_finish:
             QTimer.singleShot(duration_ms, on_finish)
@@ -927,12 +933,13 @@ class PlaybackManager(QObject):
 
     def set_speed(
             self,
-            new_speed:          float,
-            duration_ms:        int    = 0,
-            easing:             Easing = Easing.smooth,
-            on_finish:          callable | None = None,
-            cleanup_on_finish:  bool   = False,
-            shutdown_on_finish: bool   = False
+            new_speed:             float,
+            duration_ms:           int             = 0,
+            easing:                Easing          = Easing.smooth,
+            on_finish:             callable | None = None,
+            use_engine_multiplier: bool            = True,
+            cleanup_on_finish:     bool            = False,
+            shutdown_on_finish:    bool            = False
         ) -> None:
 
         self.update_playback_start(new_speed)
@@ -943,7 +950,14 @@ class PlaybackManager(QObject):
             if internal_callback: internal_callback()
             if on_finish: on_finish()
 
-        self.set_property("speed", new_speed, duration_ms, easing, combined_callback)
+        self.set_property(
+            "speed",
+            new_speed,
+            duration_ms,
+            easing,
+            combined_callback,
+            use_engine_multiplier
+        )
 
     def get_speed_callback(
             self,

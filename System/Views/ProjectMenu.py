@@ -445,7 +445,7 @@ class MainMenu(QWidget):
         title_layout = QVBoxLayout(title_container)
         title_layout.setContentsMargins(20, 16, 20, 16)
 
-        self.title_label = QLabel(Utils.get_time())
+        self.title_label = QLabel(Utils.get_some_title())
         self.title_label.setFont(Utils.NType(19))
         self.title_label.setStyleSheet("background-color: transparent; color: #ffffff;")
 

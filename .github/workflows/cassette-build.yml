@@ -81,7 +81,13 @@ jobs:
                   continue
 
               text = path.read_text(encoding='utf-8')
-              updated = text.replace('PyQt6', 'PyQt5').replace('pyqt6', 'pyqt5')
+              
+              # Сначала меняем специфичный для Qt6 импорт OpenGL-виджета на корректный для Qt5
+              updated = text.replace('from PyQt6.QtOpenGLWidgets import QOpenGLWidget', 'from PyQt5.QtWidgets import QOpenGLWidget')
+              
+              # Затем проводим общую замену регистров PyQt6 -> PyQt5
+              updated = updated.replace('PyQt6', 'PyQt5').replace('pyqt6', 'pyqt5')
+              
               if updated != text:
                   path.write_text(updated, encoding='utf-8')
                   print(relative_path)

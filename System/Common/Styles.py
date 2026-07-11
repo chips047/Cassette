@@ -88,7 +88,7 @@ class Metrics:
     SliderHeight    = 5
     HandleSize      = 11
 
-    CheckboxSize    = 13
+    CheckboxSize    = 17
 
     class Tracks:
         RulerHeight = 24

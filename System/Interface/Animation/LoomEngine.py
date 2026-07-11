@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import math
 import time
+import math
 import threading
 import traceback
 
@@ -18,6 +18,8 @@ from System.Common import Constants
 # Signals
 
 class EventSignal:
+    __slots__ = ("callbacks",)
+
     def __init__(self) -> None:
         self.callbacks: list[Callable[..., object]] = []
 
@@ -48,6 +50,8 @@ class EventSignal:
 # Geometry
 
 class Point:
+    __slots__ = ("x_value", "y_value")
+
     def __init__(
             self,
             x: float = 0.0,
@@ -64,6 +68,8 @@ class Point:
         return self.y_value
 
 class Size:
+    __slots__ = ("width_value", "height_value")
+
     def __init__(
             self,
             width:  float = 0.0,
@@ -80,6 +86,8 @@ class Size:
         return self.height_value
 
 class Rect:
+    __slots__ = ("x_value", "y_value", "width_value", "height_value")
+
     def __init__(
             self,
             x:      float = 0.0,
@@ -106,6 +114,8 @@ class Rect:
         return self.height_value
 
 class Color:
+    __slots__ = ("red_value", "green_value", "blue_value", "alpha_value")
+
     def __init__(
             self,
             red:   int = 0,
@@ -351,7 +361,7 @@ class RuntimeBackend:
             if not self.qt_application_running():
                 return None
 
-            print(f"Creating Qt ticker with interval {interval_ms} ms")
+            logger.debug(f"Creating Qt ticker with interval {interval_ms} ms")
             return QtTicker(
                 callback              = callback,
                 interval_ms           = interval_ms,
@@ -474,20 +484,20 @@ class Easing:
 
     @staticmethod
     def ease_out_elastic(t: float) -> float:
-        if t == 0:
+        if t == 0.0:
             return 0.0
-
-        if t == 1:
+    
+        if t == 1.0:
             return 1.0
-
+    
         constant_four = (2 * math.pi) / 3
-
+    
         return math.pow(2, -10 * t) * math.sin((t * 10 - 0.75) * constant_four) + 1
 
     @staticmethod
     def ease_out_bounce(t: float) -> float:
-        gradient  = 7.5625
-        divisor   = 2.75
+        gradient = 7.5625
+        divisor  = 2.75
 
         if t < 1 / divisor:
             return gradient * t * t
@@ -535,24 +545,24 @@ class Easing:
 
     @staticmethod
     def ease_in_expo(t: float) -> float:
-        if t == 0:
+        if t == 0.0:
             return 0.0
 
         return math.pow(2, 10 * (t - 1))
 
     @staticmethod
     def ease_out_expo(t: float) -> float:
-        if t == 1:
+        if t == 1.0:
             return 1.0
 
         return 1 - math.pow(2, -10 * t)
 
     @staticmethod
     def ease_in_out_expo(t: float) -> float:
-        if t == 0:
+        if t == 0.0:
             return 0.0
 
-        if t == 1:
+        if t == 1.0:
             return 1.0
 
         if t < 0.5:
@@ -577,6 +587,13 @@ class PlaybackMode(Enum):
 # Animation Math
 
 class AnimationMath:
+    _shape_cache:    dict[type, str]              = {}
+    _accessor_cache: dict[tuple[type, str], bool] = {}
+
+    @staticmethod
+    def lerp_scalar(start, end, progress):
+        return start + (end - start) * progress
+
     @staticmethod
     def is_number(value: object) -> bool:
         return isinstance(value, (int, float))
@@ -610,10 +627,47 @@ class AnimationMath:
         )
 
     @staticmethod
+    def _classify(value: object) -> str:
+        value_type = type(value)
+        kind        = AnimationMath._shape_cache.get(value_type)
+
+        if kind is not None:
+            return kind
+
+        if AnimationMath.is_number(value):
+            kind = "number"
+
+        elif AnimationMath.is_point_like(value):
+            kind = "point"
+
+        elif AnimationMath.is_size_like(value):
+            kind = "size"
+
+        elif AnimationMath.is_rect_like(value):
+            kind = "rect"
+
+        elif AnimationMath.is_color_like(value):
+            kind = "color"
+
+        else:
+            kind = "other"
+
+        AnimationMath._shape_cache[value_type] = kind
+
+        return kind
+
+    @staticmethod
     def component_value(value: object, name: str) -> float:
+        key         = (type(value), name)
+        is_callable = AnimationMath._accessor_cache.get(key)
+
         component = getattr(value, name)
 
-        if callable(component):
+        if is_callable is None:
+            is_callable = callable(component)
+            AnimationMath._accessor_cache[key] = is_callable
+
+        if is_callable:
             return component()
 
         return component
@@ -639,22 +693,24 @@ class AnimationMath:
         if isinstance(start, list) and isinstance(end, list):
             return [AnimationMath.interpolate(s, e, progress) for s, e in zip(start, end)]
 
-        if AnimationMath.is_number(start):
-            return start + (end - start) * progress
+        kind = AnimationMath._classify(start)
 
-        if AnimationMath.is_point_like(start):
+        if kind == "number":
+            return AnimationMath.lerp_scalar(start, end, progress)
+
+        if kind == "point":
             x = AnimationMath.component_value(start, "x") + (AnimationMath.component_value(end, "x") - AnimationMath.component_value(start, "x")) * progress
             y = AnimationMath.component_value(start, "y") + (AnimationMath.component_value(end, "y") - AnimationMath.component_value(start, "y")) * progress
 
             return AnimationMath.construct_like(start, x, y)
 
-        if AnimationMath.is_size_like(start):
+        if kind == "size":
             width  = AnimationMath.component_value(start, "width")  + (AnimationMath.component_value(end, "width")  - AnimationMath.component_value(start, "width"))  * progress
             height = AnimationMath.component_value(start, "height") + (AnimationMath.component_value(end, "height") - AnimationMath.component_value(start, "height")) * progress
 
             return AnimationMath.construct_like(start, width, height)
 
-        if AnimationMath.is_rect_like(start):
+        if kind == "rect":
             x      = AnimationMath.component_value(start, "x")      + (AnimationMath.component_value(end, "x")      - AnimationMath.component_value(start, "x"))      * progress
             y      = AnimationMath.component_value(start, "y")      + (AnimationMath.component_value(end, "y")      - AnimationMath.component_value(start, "y"))      * progress
             width  = AnimationMath.component_value(start, "width")  + (AnimationMath.component_value(end, "width")  - AnimationMath.component_value(start, "width"))  * progress
@@ -662,7 +718,7 @@ class AnimationMath:
 
             return AnimationMath.construct_like(start, x, y, width, height)
 
-        if AnimationMath.is_color_like(start):
+        if kind == "color":
             red   = int(AnimationMath.component_value(start, "red")   + (AnimationMath.component_value(end, "red")   - AnimationMath.component_value(start, "red"))   * progress)
             green = int(AnimationMath.component_value(start, "green") + (AnimationMath.component_value(end, "green") - AnimationMath.component_value(start, "green")) * progress)
             blue  = int(AnimationMath.component_value(start, "blue")  + (AnimationMath.component_value(end, "blue")  - AnimationMath.component_value(start, "blue"))  * progress)
@@ -684,24 +740,26 @@ class AnimationMath:
         if isinstance(first, list) and isinstance(second, list):
             return [AnimationMath.add(f, s) for f, s in zip(first, second)]
 
-        if AnimationMath.is_number(first):
+        kind = AnimationMath._classify(first)
+
+        if kind == "number":
             return first + second
 
-        if AnimationMath.is_point_like(first):
+        if kind == "point":
             return AnimationMath.construct_like(
                 first,
                 AnimationMath.component_value(first, "x") + AnimationMath.component_value(second, "x"),
                 AnimationMath.component_value(first, "y") + AnimationMath.component_value(second, "y")
             )
 
-        if AnimationMath.is_size_like(first):
+        if kind == "size":
             return AnimationMath.construct_like(
                 first,
                 AnimationMath.component_value(first, "width")  + AnimationMath.component_value(second, "width"),
                 AnimationMath.component_value(first, "height") + AnimationMath.component_value(second, "height")
             )
 
-        if AnimationMath.is_rect_like(first):
+        if kind == "rect":
             return AnimationMath.construct_like(
                 first,
                 AnimationMath.component_value(first, "x")      + AnimationMath.component_value(second, "x"),
@@ -710,7 +768,7 @@ class AnimationMath:
                 AnimationMath.component_value(first, "height") + AnimationMath.component_value(second, "height")
             )
 
-        if AnimationMath.is_color_like(first):
+        if kind == "color":
             return AnimationMath.construct_like(
                 first,
                 min(255, int(AnimationMath.component_value(first, "red")   + AnimationMath.component_value(second, "red"))),
@@ -733,24 +791,26 @@ class AnimationMath:
         if isinstance(first, list) and isinstance(second, list):
             return [AnimationMath.multiply(f, s) for f, s in zip(first, second)]
 
-        if AnimationMath.is_number(first):
+        kind = AnimationMath._classify(first)
+
+        if kind == "number":
             return first * second
 
-        if AnimationMath.is_point_like(first):
+        if kind == "point":
             return AnimationMath.construct_like(
                 first,
                 AnimationMath.component_value(first, "x") * AnimationMath.component_value(second, "x"),
                 AnimationMath.component_value(first, "y") * AnimationMath.component_value(second, "y")
             )
 
-        if AnimationMath.is_size_like(first):
+        if kind == "size":
             return AnimationMath.construct_like(
                 first,
                 AnimationMath.component_value(first, "width")  * AnimationMath.component_value(second, "width"),
                 AnimationMath.component_value(first, "height") * AnimationMath.component_value(second, "height")
             )
 
-        if AnimationMath.is_rect_like(first):
+        if kind == "rect":
             return AnimationMath.construct_like(
                 first,
                 AnimationMath.component_value(first, "x")      * AnimationMath.component_value(second, "x"),
@@ -759,7 +819,7 @@ class AnimationMath:
                 AnimationMath.component_value(first, "height") * AnimationMath.component_value(second, "height")
             )
 
-        if AnimationMath.is_color_like(first):
+        if kind == "color":
             return AnimationMath.construct_like(
                 first,
                 int(AnimationMath.component_value(first, "red")   * AnimationMath.component_value(second, "red")   / 255),
@@ -786,22 +846,24 @@ class AnimationMath:
         if isinstance(first, list) and isinstance(second, list):
             return any(AnimationMath.is_different(f, s, tolerance) for f, s in zip(first, second))
 
-        if AnimationMath.is_number(first):
+        kind = AnimationMath._classify(first)
+
+        if kind == "number":
             return abs(first - second) > tolerance
 
-        if AnimationMath.is_point_like(first):
+        if kind == "point":
             return (
                 abs(AnimationMath.component_value(first, "x") - AnimationMath.component_value(second, "x")) > tolerance or
                 abs(AnimationMath.component_value(first, "y") - AnimationMath.component_value(second, "y")) > tolerance
             )
 
-        if AnimationMath.is_size_like(first):
+        if kind == "size":
             return (
                 abs(AnimationMath.component_value(first, "width")  - AnimationMath.component_value(second, "width"))  > tolerance or
                 abs(AnimationMath.component_value(first, "height") - AnimationMath.component_value(second, "height")) > tolerance
             )
 
-        if AnimationMath.is_rect_like(first):
+        if kind == "rect":
             return (
                 abs(AnimationMath.component_value(first, "x")      - AnimationMath.component_value(second, "x"))      > tolerance or
                 abs(AnimationMath.component_value(first, "y")      - AnimationMath.component_value(second, "y"))      > tolerance or
@@ -809,7 +871,7 @@ class AnimationMath:
                 abs(AnimationMath.component_value(first, "height") - AnimationMath.component_value(second, "height")) > tolerance
             )
 
-        if AnimationMath.is_color_like(first):
+        if kind == "color":
             return (
                 abs(AnimationMath.component_value(first, "red")   - AnimationMath.component_value(second, "red"))   > tolerance or
                 abs(AnimationMath.component_value(first, "green") - AnimationMath.component_value(second, "green")) > tolerance or
@@ -835,32 +897,34 @@ class AnimationMath:
         if isinstance(value, list) and isinstance(max_val, list):
             return [AnimationMath.soft_limit_max(v, m, softness_factor) for v, m in zip(value, max_val)]
 
-        if AnimationMath.is_number(value):
+        kind = AnimationMath._classify(value)
+
+        if kind == "number":
             threshold = max_val * softness_factor
-            
+
             if value <= threshold:
                 return value
-            
+
             if max_val <= threshold:
                 return max_val
-                
+
             return max_val - (max_val - threshold) * math.exp(-(value - threshold) / (max_val - threshold))
 
-        if AnimationMath.is_point_like(value):
+        if kind == "point":
             return AnimationMath.construct_like(
                 value,
                 AnimationMath.soft_limit_max(AnimationMath.component_value(value, "x"), AnimationMath.component_value(max_val, "x"), softness_factor),
                 AnimationMath.soft_limit_max(AnimationMath.component_value(value, "y"), AnimationMath.component_value(max_val, "y"), softness_factor)
             )
 
-        if AnimationMath.is_size_like(value):
+        if kind == "size":
             return AnimationMath.construct_like(
                 value,
                 AnimationMath.soft_limit_max(AnimationMath.component_value(value, "width"),  AnimationMath.component_value(max_val, "width"), softness_factor),
                 AnimationMath.soft_limit_max(AnimationMath.component_value(value, "height"), AnimationMath.component_value(max_val, "height"), softness_factor)
             )
 
-        if AnimationMath.is_rect_like(value):
+        if kind == "rect":
             return AnimationMath.construct_like(
                 value,
                 AnimationMath.soft_limit_max(AnimationMath.component_value(value, "x"),      AnimationMath.component_value(max_val, "x"), softness_factor),
@@ -869,7 +933,7 @@ class AnimationMath:
                 AnimationMath.soft_limit_max(AnimationMath.component_value(value, "height"), AnimationMath.component_value(max_val, "height"), softness_factor)
             )
 
-        if AnimationMath.is_color_like(value):
+        if kind == "color":
             return AnimationMath.construct_like(
                 value,
                 int(AnimationMath.soft_limit_max(AnimationMath.component_value(value, "red"),   AnimationMath.component_value(max_val, "red"), softness_factor)),
@@ -883,6 +947,11 @@ class AnimationMath:
 # Animation Clip
 
 class AnimationClip:
+    __slots__ = (
+        "scheduler", "mode", "moments", "delay_ms", "easing", "tag", "loop",
+        "elapsed_ms", "is_finished", "finished_callback", "updated", "duration_ms"
+    )
+
     def __init__(
             self,
             scheduler:              Callable[[Callable[[], object]], None],
@@ -1060,6 +1129,14 @@ class AnimationClip:
 # Property Track
 
 class PropertyTrack:
+    __slots__ = (
+        "scheduler", "mix_mode", "backend", "clips", "smoothing_enabled",
+        "smoothing_factor", "max_value", "soft_limit_factor", "base_value",
+        "cached_value", "target_value", "is_targeting", "target_start_value",
+        "target_end_value", "target_duration_ms", "target_elapsed_ms",
+        "target_easing", "updated", "interpolator"
+    )
+
     def __init__(
             self,
             scheduler:           Callable[[Callable[[], object]], None],
@@ -1099,7 +1176,7 @@ class PropertyTrack:
 
         self.updated = EventSignal()
 
-        print(f"Choosing interpolator for {scheduler}, {base_value}")
+        logger.debug(f"Choosing interpolator for {scheduler}, {base_value}")
         self.interpolator = self.choose_interpolator(base_value)
 
     def choose_interpolator(self, value: object) -> Callable[[object, object, float], object]:
@@ -1122,34 +1199,34 @@ class PropertyTrack:
         cast = (lambda number: int(round(number))) if is_integer_target else (lambda number: number)
 
         if isinstance(value, (int, float)):
-            return lambda start, end, progress: cast(start + (end - start) * progress)
+            return lambda start, end, progress: cast(AnimationMath.lerp_scalar(start, end, progress))
 
         if isinstance(value, integer_points + float_points):
             return lambda start, end, progress: v_type(
-                cast(start.x() + (end.x() - start.x()) * progress),
-                cast(start.y() + (end.y() - start.y()) * progress)
+                cast(AnimationMath.lerp_scalar(start.x(), end.x(), progress)),
+                cast(AnimationMath.lerp_scalar(start.y(), end.y(), progress))
             )
 
         if isinstance(value, integer_sizes + float_sizes):
             return lambda start, end, progress: v_type(
-                cast(start.width()  + (end.width()  - start.width())  * progress),
-                cast(start.height() + (end.height() - start.height()) * progress)
+                cast(AnimationMath.lerp_scalar(start.width(),  end.width(),  progress)),
+                cast(AnimationMath.lerp_scalar(start.height(), end.height(), progress))
             )
 
         if isinstance(value, integer_rects + float_rects):
             return lambda start, end, progress: v_type(
-                cast(start.x()      + (end.x()      - start.x())      * progress),
-                cast(start.y()      + (end.y()      - start.y())      * progress),
-                cast(start.width()  + (end.width()  - start.width())  * progress),
-                cast(start.height() + (end.height() - start.height()) * progress)
+                cast(AnimationMath.lerp_scalar(start.x(),      end.x(),      progress)),
+                cast(AnimationMath.lerp_scalar(start.y(),      end.y(),      progress)),
+                cast(AnimationMath.lerp_scalar(start.width(),  end.width(),  progress)),
+                cast(AnimationMath.lerp_scalar(start.height(), end.height(), progress))
             )
 
         if isinstance(value, color_types):
             return lambda start, end, progress: v_type(
-                int(start.red()   + (end.red() - start.red())     * progress),
-                int(start.green() + (end.green() - start.green()) * progress),
-                int(start.blue()  + (end.blue() - start.blue())   * progress),
-                int(start.alpha() + (end.alpha() - start.alpha()) * progress)
+                int(AnimationMath.lerp_scalar(start.red(),   end.red(),   progress)),
+                int(AnimationMath.lerp_scalar(start.green(), end.green(), progress)),
+                int(AnimationMath.lerp_scalar(start.blue(),  end.blue(),  progress)),
+                int(AnimationMath.lerp_scalar(start.alpha(), end.alpha(), progress))
             )
 
         if isinstance(value, tuple):
@@ -1242,7 +1319,6 @@ class PropertyTrack:
     def clear_clips(self, tag: str | None = None) -> None:
         if tag is None:
             self.clips.clear()
-            self.cached_value = self.base_value
             self.updated.emit(self.cached_value)
 
             return
@@ -1283,6 +1359,14 @@ class PropertyTrack:
         self.clips = remaining_clips
 
         self.updated.emit(self.cached_value)
+    
+    def stop_target(self) -> None:
+        self.is_targeting       = False
+
+        self.target_elapsed_ms  = 0
+        self.target_start_value = self.cached_value
+        self.target_end_value   = self.cached_value
+        self.target_value       = self.cached_value
 
     def update(self, delta_ms: int) -> None:
         running_clips        = []
@@ -1382,6 +1466,8 @@ class PropertyNamespace:
 # Property Handle
 
 class PropertyHandle:
+    __slots__ = ("engine", "key")
+
     def __init__(
             self,
             engine: AnimationEngine,
@@ -1501,6 +1587,9 @@ class PropertyHandle:
 
     def stop(self, tag: str | None = None) -> None:
         self.engine.stop_property(self.key, tag)
+    
+    def stop_targeting(self) -> None:
+        self.engine.stop_property_targeting(self.key)
 
     def release(self) -> None:
         self.engine.forget_property(self.key)
@@ -1630,7 +1719,7 @@ class AnimationEngine:
         key = self.namespace.key_for(owner, name)
 
         if key not in self.tracks:
-            print(f"Binding {name} for {owner.__class__}")
+            logger.debug(f"Binding {name} for {owner.__class__}")
             self.tracks[key] = PropertyTrack(
                 scheduler         = self.backend.defer,
                 base_value        = base_value,
@@ -1752,6 +1841,9 @@ class AnimationEngine:
             return
 
         self.tracks[key].clear_clips(tag)
+    
+    def stop_property_targeting(self, key: str) -> None:
+        self.tracks[key].stop_target()
 
     def forget_property(self, key: str) -> None:
         if key not in self.tracks:

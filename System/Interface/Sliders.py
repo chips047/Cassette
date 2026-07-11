@@ -119,7 +119,7 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
 
     def handle_slider_pressed(self) -> None:
         self.slider_is_dragging = True
-        self.value_handle.stop()
+        self.value_handle.stop_targeting()
 
     def handle_slider_released(self) -> None:
         self.slider_is_dragging = False
@@ -128,13 +128,15 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
         self.value_label.setText(str(value))
         self.valueChanged.emit(value)
 
+        self.target_value       = self.slider.value()
+
         if not self.slider_is_dragging:
             return
 
         if self.maximum_value <= self.minimum_value:
             return
 
-        if self.maximum_value >= 20:
+        if self.maximum_value >= 30:
             return
 
         tone = (value - self.minimum_value) / (self.maximum_value - self.minimum_value) + 0.1

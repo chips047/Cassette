@@ -319,11 +319,9 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             owner      = self,
             name       = "rotation_z",
             base_value = 0.0,
-            mix_mode   = LoomEngine.MixMode.ADD,
-            smoothing_enabled = True
+            mix_mode   = LoomEngine.MixMode.ADD
         )
 
-        print("YES", self.maximum_scale())
         self.scale_property = LoomEngine.ui_engine.bind(
             owner      = self,
             name       = "scale",
@@ -765,28 +763,21 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
     # Events
 
-    def keyPressEvent(self, event) -> None:
-        is_alt_f4 = (
-            event.key() == Qt.Key.Key_F4 and
-            event.modifiers() & Qt.KeyboardModifier.AltModifier
-        )
-
-        if not is_alt_f4:
-            super().keyPressEvent(event)
-            return
-
-        event.accept()
-        self.allow_exit = True
-        self.request_close()
-
+    
     def closeEvent(self, event) -> None:
         if self.allow_exit:
             super().closeEvent(event)
             return
-        
+    
+        if self.is_closing:
+            event.ignore()
+            return
+    
+        self.is_closing    = True
+        self.was_cancelled = True
+    
         event.ignore()
         self.request_close()
-        self.was_cancelled = True
 
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.MouseButton.LeftButton:
@@ -899,8 +890,8 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         margin_x         = min(max_margin_x, 300)
         margin_y         = min(max_margin_y, 300)
 
-        self.margin_x    = margin_x
-        self.margin_y    = margin_y
+        self.margin_x    = min(margin_x, self.margin_x)
+        self.margin_y    = min(margin_y, self.margin_y)
 
         self.layout().setContentsMargins(
             self.margin_x, 
@@ -1010,23 +1001,31 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         if content_width <= 0 or content_height <= 0:
             return 1.0
 
-        real_width       = self.geometry().width()
-        real_height      = self.geometry().height()
+        real_width  = self.geometry().width()
+        real_height = self.geometry().height()
 
         screen_geo       = QApplication.primaryScreen().availableGeometry()
         available_width  = screen_geo.width()
         available_height = screen_geo.height()
 
-        is_full_width    = real_width  >= (available_width  - 92)
-        is_full_height   = real_height >= (available_height - 92)
+        is_full_width  = real_width  >= (available_width  - 92)
+        is_full_height = real_height >= (available_height - 92)
 
-        max_scale_x      = float("inf") if is_full_width  else real_width  / content_width
-        max_scale_y      = float("inf") if is_full_height else real_height / content_height
+        tilt_angle_rad = math.radians(self.max_tilt_angle) if self.enable_tilt else 0.0
+        cos_tilt       = math.cos(tilt_angle_rad)
+        sin_tilt       = math.sin(tilt_angle_rad)
 
-        final_scale      = min(max_scale_x, max_scale_y)
+        bounding_width  = content_width * cos_tilt + content_height * sin_tilt
+        bounding_height = content_width * sin_tilt + content_height * cos_tilt
+
+        max_scale_x = float("inf") if is_full_width  else real_width  / bounding_width
+        max_scale_y = float("inf") if is_full_height else real_height / bounding_height
+
+        scale       = min(max_scale_x, max_scale_y)
+        final_scale = scale - 0.1
 
         if final_scale == float("inf"):
-            final_scale  = 2.0
+            final_scale = 2.0
 
         logger.debug(f"Scale property was restricted to {final_scale}")
 
@@ -1098,7 +1097,7 @@ class DialogInputWindow(FloatingWindowGPU):
             ]
         )
 
-        self.button_row.get_button("OK").block_glitch_sound()
+        self.button_row.get_button_by_number(1).block_glitch_sound()
 
         self.content_layout.addWidget(self.input_field)
         self.content_layout.addLayout(self.button_row)
@@ -1107,7 +1106,7 @@ class DialogInputWindow(FloatingWindowGPU):
 
     def on_ok(self) -> None:
         if not self.input_field.text():
-            self.button_row.buttons["OK"].start_glitch()
+            self.button_row.get_button_by_number(1).start_glitch()
             self.play_disturb_animation()
 
             self.process_ee()            
@@ -1657,6 +1656,7 @@ class GlyphVisualizer(FloatingWindowGPU):
             None,
             margin                  = 50,
             max_tilt_angle          = 9,
+            stays_on_top            = True,
             enable_open_animation   = False,
             enable_close_animation  = False
         )

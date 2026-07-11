@@ -574,6 +574,14 @@ class SearchTextbox(Textbox):
             single_shot = True
         )
 
+        QTimer.singleShot(10000, self.set_random_quote)
+
+    def set_random_quote(self) -> None:
+        quotes = open("System/Assets/Songs.txt", "r").read().split("\n")
+        quote  = random.choice(quotes)
+
+        self.setPlaceholderText(quote)
+
     def on_search_box_reset(self) -> None:
         self.search_box_glitch_count = 0
 

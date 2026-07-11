@@ -4,8 +4,10 @@ import sys
 import json
 import time
 import numpy
+import psutil
 import random
 import platform
+import datetime
 import subprocess
 
 from urllib.request import urlopen
@@ -61,7 +63,41 @@ def medfilt_np(data: numpy.ndarray, kernel_size: int) -> numpy.ndarray:
     
     return numpy.median(windows, axis = 1)
 
-def get_time() -> str:
+
+def get_processes() -> list[str]:
+    try:
+        return [proc.name() for proc in psutil.process_iter(attrs=['name'])]
+            
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+
+def is_text_in_list(text: str, list: list) -> bool:
+    return any(text in item for item in list)
+
+def get_process_string() -> str:
+    processes = get_processes()
+
+    if is_text_in_list("obs", processes):
+        return random.choice(
+            [
+                "Why do you record me?",
+                "Are we making content today?",
+                "Don't forget to cut this part out in editing.",
+                "Hope I don't drop the stream bitrate today.",
+                "I don't like cameras.",
+                "On air?"
+            ]
+        )
+    
+    if is_text_in_list("telegram", processes) or is_text_in_list("discord", processes):
+        return random.choice(
+            [
+                "Who is texting you over there?",
+                "Don't get distracted by chats."
+            ]
+        )
+
+def get_time_string() -> str:
     t = time.localtime()
     hours = t.tm_hour
     
@@ -103,6 +139,70 @@ def get_time() -> str:
     
     else:
         return "what the fuck"
+
+def get_time_of_day() -> str:
+    hour = datetime.datetime.now().hour
+    
+    if 5 <= hour < 12:
+        return "morning"
+    
+    elif 12 <= hour < 17:
+        return "afternoon"
+    
+    elif 17 <= hour < 22:
+        return "evening"
+    
+    else:
+        return "night"
+
+def get_ee_string() -> str:
+    return random.choice(
+        [
+            "Turn it up to eleven.",
+            "Video killed the radio star.",
+            "May the Music be with you."
+        ]
+    )
+
+def get_weekday_string() -> str:
+    weekday     = datetime.datetime.now().weekday()
+    time_of_day = get_time_of_day()
+
+    if weekday == 4:
+        return random.choice(
+            [
+                "Friday. Finally.",
+                f"Ahh, friday {time_of_day}.",
+                f"Friday. Weekend. Quiet {time_of_day}."
+            ]
+        )
+    
+    elif weekday in [5, 6]:
+        return random.choice(
+            [
+                "Compose on a weekend.",
+                "Spending your weekends with Cassette?",
+                "Weekend inspiration, I guess."
+            ]
+        )
+
+def get_some_title() -> str:
+    number = random.random()
+
+    if number < 0.01:
+        return get_ee_string()
+
+    elif number < 0.3:
+        string = get_process_string()
+        if string:
+            return string
+    
+    elif number < 0.6:
+        string = get_weekday_string()
+        if string:
+            return string
+    
+    return get_time_string()
 
 def NDot(size: int) -> QFont:
     Ndot = QFont("Ndot 57")
@@ -318,56 +418,60 @@ def run_hidden(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, **kwargs)
 
 class UpdateChecker(QObject):
-    info_received  = pyqtSignal(dict)
-    error_occurred = pyqtSignal()
+    update_info_received  = pyqtSignal(dict)
+    songs_info_receiver   = pyqtSignal(str)
+
+    error_occurred        = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
-
         self.manager = QNetworkAccessManager(self)
         self.manager.finished.connect(self.on_request_finished)
 
-        self.info_received.connect(self.on_info_received)
-        self.error_occurred.connect(self.on_error_occurred)
-
     def fetch_latest_release(self):
-        url = QUrl("https://api.github.com/repos/Chipik0/Cassette/releases")
-
+        url = QUrl("https://api.github.com/repos/chips047/Cassette/releases")
         request = QNetworkRequest(url)
+        
         request.setAttribute(QNetworkRequest.Attribute.User, "get_release")
         request.setRawHeader(b"User-Agent", b"Cassette-Updater-Script")
+        self.manager.get(request)
 
+    def fetch_latest_songs_strings(self):
+        url = QUrl("https://raw.githubusercontent.com/chips047/Cassette/main/System/Assets/Songs.txt")
+        request = QNetworkRequest(url)
+        
+        request.setAttribute(QNetworkRequest.Attribute.User, "get_source_file")
+        request.setRawHeader(b"User-Agent", b"Cassette-Updater-Script")
         self.manager.get(request)
 
     def on_request_finished(self, reply):
         reply.deleteLater()
         
+        request_type = reply.request().attribute(QNetworkRequest.Attribute.User)
+        
         if reply.error() != reply.NetworkError.NoError:
-            logger.error(f"Network error: {reply.errorString()}")
-            self.error_occurred.emit()
-
+            logger.error(f"Network error [{request_type}]: {reply.errorString()}")
+            self.error_occurred.emit(request_type)
             return
 
         try:
-            data = json.loads(bytes(reply.readAll()))
+            raw_bytes = bytes(reply.readAll())
+            data = json.loads(raw_bytes)
 
-            if data:
-                self.info_received.emit(data[0])
-            
-            else:
-                logger.error("No release info found in response")
-                self.error_occurred.emit()
-        
-        except:
-            logger.exception("Failed to parse release info")
-            self.error_occurred.emit()
-    
-    def on_info_received(self, info: dict):
-        logger.debug("Latest release info received:")
-        logger.debug(info)
-    
-    def on_error_occurred(self):
-        logger.error("Failed to fetch latest release info")
+            if not data:
+                logger.error(f"Empty data received for {request_type}")
+                self.error_occurred.emit(request_type)
+                return
+
+            if request_type == "get_release":
+                self.update_info_received.emit(data[0])
+                
+            elif request_type == "get_source_file":
+                self.songs_info_receiver.emit(data)
+
+        except Exception:
+            logger.exception(f"Failed to parse data for {request_type}")
+            self.error_occurred.emit(request_type)
 
 def check_dynamic_library(module: object):
     file = module.__file__

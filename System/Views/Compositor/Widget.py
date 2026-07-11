@@ -6,6 +6,7 @@ from PyQt6.QtGui import QIcon
 
 from PyQt6.QtCore import (
     Qt,
+    QTimer,
     pyqtSignal
 )
 
@@ -38,12 +39,18 @@ from System.Interface import (
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
+    loading_finished            = pyqtSignal()
+
+    EJECT_FADE_DURATION_MS       = 3000
+    INTERRUPTED_FADE_DURATION_MS = 1000
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e;")
 
         self.playback_manager = Player.player
+
+        self.is_ejecting = False
 
         self.overall_layout = QVBoxLayout(self)
         self.overall_layout.setContentsMargins(8, 8, 8, 8)
@@ -136,6 +143,34 @@ class CompositorWidget(QWidget):
     # Lifecycle
 
     def load_composition(self, composition: ProjectSaver.Composition) -> None:
+        if self.is_ejecting:
+            self.interrupt_eject_and_load(composition)
+            return
+
+        self.finish_composition_loading(composition)
+
+    def interrupt_eject_and_load(self, composition: ProjectSaver.Composition) -> None:
+        logger.debug("Eject fade interrupted by a new project load, fast-forwarding audio slowdown")
+
+        self.is_ejecting = False
+
+        self.content_widget.playhead_timer.stop()
+
+        self.playback_manager.set_speed(
+            0.0,
+            self.INTERRUPTED_FADE_DURATION_MS,
+            Player.Easing.ease_out_quart,
+            use_engine_multiplier = False
+        )
+
+        QTimer.singleShot(
+            self.INTERRUPTED_FADE_DURATION_MS,
+            lambda: self.finish_composition_loading(composition)
+        )
+    
+    def finish_composition_loading(self, composition: ProjectSaver.Composition):
+        self.is_ejecting = False
+
         path = composition.get_playback_audio_path()
         Player.bpm_informer.set_bpm(composition.bpm)
         self.playback_manager.load_audio(path)
@@ -149,6 +184,8 @@ class CompositorWidget(QWidget):
 
         self.setEnabled(True)
 
+        self.loading_finished.emit()
+
         self.window().activateWindow()
         self.content_widget.check_tutorial()
 
@@ -160,8 +197,20 @@ class CompositorWidget(QWidget):
         self.back_to_main_menu_requested.emit()
 
         if self.playback_manager.is_playing:
+            self.is_ejecting = True
+
             self.content_widget.playhead_timer.stop()
-            self.playback_manager.set_speed(0.0, 3000, Player.Easing.ease_out_quart)
+            self.playback_manager.set_speed(
+                0.0,
+                self.EJECT_FADE_DURATION_MS,
+                Player.Easing.ease_out_quart,
+                use_engine_multiplier = True
+            )
+
+            animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
+            scaled_fade_duration  = int(self.EJECT_FADE_DURATION_MS * animation_multiplier)
+
+            QTimer.singleShot(scaled_fade_duration, self.clear_ejecting_flag)
 
         self.content_widget.composition.syncer.stop()
 
@@ -174,6 +223,9 @@ class CompositorWidget(QWidget):
         self.playspeed_button.reset()
         self.glyph_dur_control.reset()
         self.brightness_control.reset()
+
+    def clear_ejecting_flag(self) -> None:
+        self.is_ejecting = False
 
     # Misc
 
