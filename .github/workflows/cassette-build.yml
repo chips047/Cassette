@@ -7,6 +7,15 @@ on:
         description: 'Reason'
         required: false
         default: 'Manual Building'
+      qt_binding:
+        description: 'Qt binding'
+        required: false
+        type: choice
+        default: 'auto'
+        options:
+          - 'auto'
+          - 'pyqt5'
+          - 'pyqt6'
 
 jobs:
   build:
@@ -39,6 +48,24 @@ jobs:
           python-version: '3.10'
           cache: 'pip'
 
+      - name: Determine Qt Binding
+        shell: bash
+        run: |
+          requested="${{ inputs.qt_binding }}"
+
+          if [ "$requested" == "auto" ] || [ -z "$requested" ]; then
+            if [ "${{ runner.os }}" == "Windows" ]; then
+              effective="pyqt5"
+            else
+              effective="pyqt6"
+            fi
+          else
+            effective="$requested"
+          fi
+
+          echo "QT_BINDING=$effective" >> "$GITHUB_ENV"
+          echo "Effective Qt binding for ${{ runner.os }}: $effective"
+
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -57,8 +84,8 @@ jobs:
           python setup.py bdist_wheel
           cd ..
 
-      - name: Switch to PyQt5 for Windows build
-        if: runner.os == 'Windows'
+      - name: Switch to PyQt5
+        if: env.QT_BINDING == 'pyqt5'
         shell: bash
         run: |
           python - <<'PY'
@@ -185,9 +212,14 @@ jobs:
           python -m venv venv
           if [ "${{ runner.os }}" == "Windows" ]; then
             source venv/Scripts/activate
-            pip install PyQt5
           else
             source venv/bin/activate
+          fi
+
+          if [ "$QT_BINDING" == "pyqt5" ]; then
+            pip install PyQt5
+          else
+            pip install PyQt6
           fi
 
           pip install aubio/dist/*.whl
@@ -268,7 +300,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cassette-${{ matrix.artifact_name }}
+          name: cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}
           path: |
             ${{ runner.os == 'macOS' && 'dist/' || 'dist/Cassette' }}
             ${{ runner.os == 'macOS' && '!dist/Cassette' || '' }}
