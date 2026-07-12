@@ -4,6 +4,7 @@ import time
 import math
 import threading
 import traceback
+import importlib.util
 
 from enum import Enum
 from itertools import count
@@ -1880,6 +1881,24 @@ class AnimationEngine:
 
         self.tracks.clear()
 
+# Backend Detection
+
+def detect_qt_backend() -> str:
+    module_names = {
+        "pyqt6":   "PyQt6",
+        "pyside6": "PySide6",
+        "pyqt5":   "PyQt5",
+        "pyside2": "PySide2"
+    }
+
+    for backend_name, module_name in module_names.items():
+        if importlib.util.find_spec(module_name) is not None:
+            return backend_name
+
+    logger.warning("No supported Qt backend found. Falling back to pure mode.")
+
+    return "pure"
+
 # Singleton Access
 
-ui_engine = AnimationEngine("pyqt6")
+ui_engine = AnimationEngine(detect_qt_backend())
