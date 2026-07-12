@@ -62,12 +62,94 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
 
           root = Path('.')
           skip_dirs = {'.git', '.venv', 'venv', '__pycache__', 'build', 'dist'}
           skip_files = {'System/Interface/Animation/LoomEngine.py'}
           suffixes = {'.py', '.txt'}
+
+          moved_to_widgets_in_qt5 = {
+              'QAction',
+              'QActionGroup',
+              'QFileSystemModel',
+              'QShortcut',
+              'QUndoCommand',
+              'QUndoGroup',
+              'QUndoStack'
+          }
+
+          import_block_pattern = re.compile(
+              r'from\s+PyQt5\.(QtGui|QtWidgets)\s+import\s+\(([^)]*)\)',
+              re.DOTALL
+          )
+
+          def parse_names(block_text):
+              names = [name.strip() for name in block_text.split(',')]
+              return [name for name in names if name]
+
+          def format_block(module_name, names):
+              if not names:
+                  return ''
+
+              ordered_names = sorted(names, key = len)
+              body           = ',\n    '.join(ordered_names)
+
+              return f'from PyQt5.{module_name} import (\n    {body}\n)'
+
+          def fix_moved_symbols(text):
+              matches = list(import_block_pattern.finditer(text))
+
+              if not matches:
+                  return text
+
+              gui_names     = []
+              widgets_names = []
+              gui_match     = None
+              widgets_match = None
+
+              for match in matches:
+                  module_name, block_text = match.group(1), match.group(2)
+                  names                   = parse_names(block_text)
+
+                  if module_name == 'QtGui':
+                      gui_names = names
+                      gui_match = match
+
+                  elif module_name == 'QtWidgets':
+                      widgets_names = names
+                      widgets_match = match
+
+              if gui_match is None:
+                  return text
+
+              moved = [name for name in gui_names if name in moved_to_widgets_in_qt5]
+
+              if not moved:
+                  return text
+
+              remaining_gui_names  = [name for name in gui_names if name not in moved_to_widgets_in_qt5]
+              merged_widgets_names = widgets_names + [name for name in moved if name not in widgets_names]
+
+              new_gui_block     = format_block('QtGui', remaining_gui_names)
+              new_widgets_block = format_block('QtWidgets', merged_widgets_names)
+
+              if widgets_match is not None:
+                  replacements = sorted(
+                      [(gui_match.span(), new_gui_block), (widgets_match.span(), new_widgets_block)],
+                      key     = lambda item: item[0][0],
+                      reverse = True
+                  )
+
+                  for span, replacement in replacements:
+                      text = text[:span[0]] + replacement + text[span[1]:]
+
+              else:
+                  replacement = f'{new_widgets_block}\n\n{new_gui_block}' if new_gui_block else new_widgets_block
+                  text        = text[:gui_match.span()[0]] + replacement + text[gui_match.span()[1]:]
+
+              return text
 
           for path in root.rglob('*'):
               if any(part in skip_dirs for part in path.parts):
@@ -77,17 +159,21 @@ jobs:
                   continue
 
               relative_path = path.relative_to(root).as_posix()
+
               if relative_path in skip_files:
                   continue
 
               text = path.read_text(encoding='utf-8')
-              
+
               # Сначала меняем специфичный для Qt6 импорт OpenGL-виджета на корректный для Qt5
               updated = text.replace('from PyQt6.QtOpenGLWidgets import QOpenGLWidget', 'from PyQt5.QtWidgets import QOpenGLWidget')
-              
+
               # Затем проводим общую замену регистров PyQt6 -> PyQt5
               updated = updated.replace('PyQt6', 'PyQt5').replace('pyqt6', 'pyqt5')
-              
+
+              # Переносим символы, сменившие модуль между Qt5 и Qt6 (QtGui -> QtWidgets)
+              updated = fix_moved_symbols(updated)
+
               if updated != text:
                   path.write_text(updated, encoding='utf-8')
                   print(relative_path)
@@ -125,7 +211,7 @@ jobs:
             if grep -q "pythran export" "$file"; then
               FILENAME=$(basename "$file" .py)
               DIR_NAME=$(dirname "$file")
-              
+
               pythran "$file" -o "$DIR_NAME/$FILENAME$PYTHRAN_EXT"
             fi
           done
@@ -144,7 +230,7 @@ jobs:
             rm System/FFmpeg/ffmpeg-macos-silicon
             rm System/FFmpeg/ffprobe-macos-intel
             rm System/FFmpeg/ffprobe-macos-silicon
-          
+
             elif [ "${{ runner.os }}" == "Windows" ]; then
             rm System/ADB/adb-macos
             rm System/ADB/adb-linux
@@ -154,7 +240,7 @@ jobs:
             rm System/FFmpeg/ffprobe-macos-silicon
             rm System/FFmpeg/ffmpeg-linux
             rm System/FFmpeg/ffprobe-linux
-          
+
             elif [ "${{ runner.os }}" == "macOS" ]; then
             rm System/ADB/adb-linux
             rm System/ADB/adb.exe
