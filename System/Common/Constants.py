@@ -977,19 +977,6 @@ SettingsDict = {
     "Interface": [
         {
             "type": "selector",
-            "title": "Interface Scale (Requires restart)",
-            "key": "ui_scale_factor",
-            "map": {
-                "0.75x": "0.75",
-                "1.0x":  "1.0",
-                "1.25x": "1.25",
-                "1.5x":  "1.5",
-                "2.0x":  "2.0"
-            },
-            "default": "1.0x"
-        },
-        {
-            "type": "selector",
             "title": "Animation Multiplier",
             "key": "animation_multiplier",
             "map": {

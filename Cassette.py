@@ -857,14 +857,6 @@ def main() -> None:
     Constants.prepare_default_settings(Constants.SettingsDict)
     Constants.load_settings()
 
-    ui_scale_factor = Constants.current_settings.get("ui_scale_factor", 1.0)
-    ui_scale_factor = float(ui_scale_factor)
-    
-    if ui_scale_factor > 0:
-        os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
-        os.environ["QT_SCALE_FACTOR"] = str(ui_scale_factor)
-        logger.debug(f"Applied Qt UI scale factor: {ui_scale_factor}")
-
     if Constants.current_settings.get("msaa"):
         logger.debug(f"Enabling MSAA with {Constants.current_settings['msaa']} samples")
         surface_format.setSamples(Constants.current_settings["msaa"])
