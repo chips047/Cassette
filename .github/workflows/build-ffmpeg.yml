@@ -16,10 +16,26 @@ jobs:
             static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
             extra_flags: ""
 
+          - os: ubuntu-24.04-arm
+            artifact_name: linux-arm64
+            static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
+            extra_flags: ""
+
           - os: windows-latest
             artifact_name: windows-x64
             static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
             extra_flags: ""
+            msys2_msystem: MINGW64
+            msys2_prefix: mingw-w64-x86_64
+            asm_tools: mingw-w64-x86_64-yasm mingw-w64-x86_64-nasm
+
+          - os: windows-11-arm
+            artifact_name: windows-arm64
+            static_flags: --pkg-config-flags="--static" --extra-ldflags="-static"
+            extra_flags: ""
+            msys2_msystem: CLANGARM64
+            msys2_prefix: mingw-w64-clang-aarch64
+            asm_tools: ""
 
           - os: macos-15-intel
             artifact_name: macos-intel
@@ -44,23 +60,26 @@ jobs:
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: ${{ matrix.msys2_msystem }}
           update: true
           path-type: inherit
           install: >-
             base-devel
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-yasm
-            mingw-w64-x86_64-nasm
-            mingw-w64-x86_64-lame
-            mingw-w64-x86_64-libvorbis
-            mingw-w64-x86_64-opus
+            ${{ matrix.msys2_prefix }}-toolchain
+            ${{ matrix.msys2_prefix }}-lame
+            ${{ matrix.msys2_prefix }}-libvorbis
+            ${{ matrix.msys2_prefix }}-opus
+            ${{ matrix.asm_tools }}
 
       - name: Install Dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential yasm nasm libmp3lame-dev libvorbis-dev libopus-dev
+          sudo apt-get install -y build-essential libmp3lame-dev libvorbis-dev libopus-dev
+
+          if [ "${{ runner.arch }}" == "X64" ]; then
+            sudo apt-get install -y yasm nasm
+          fi
 
       - name: Install Dependencies (macOS)
         if: runner.os == 'macOS'
@@ -72,7 +91,7 @@ jobs:
       - name: Download and Extract Source
         if: runner.os != 'Windows'
         run: curl -L https://ffmpeg.org/releases/ffmpeg-7.1.tar.bz2 | tar xj && mv ffmpeg-7.1 ffmpeg
-                
+
       - name: Download and Extract Source (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
@@ -141,10 +160,22 @@ jobs:
             --disable-doc
           make -j$(nproc)
 
+      - name: Rename outputs to platform-suffixed names
+        shell: bash
+        run: |
+          cd ffmpeg
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            mv ffmpeg.exe  "ffmpeg-${{ matrix.artifact_name }}.exe"
+            mv ffprobe.exe "ffprobe-${{ matrix.artifact_name }}.exe"
+          else
+            mv ffmpeg  "ffmpeg-${{ matrix.artifact_name }}"
+            mv ffprobe "ffprobe-${{ matrix.artifact_name }}"
+          fi
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            ffmpeg/ffmpeg${{ runner.os == 'Windows' && '.exe' || '' }}
-            ffmpeg/ffprobe${{ runner.os == 'Windows' && '.exe' || '' }}
+            ffmpeg/ffmpeg-${{ matrix.artifact_name }}${{ runner.os == 'Windows' && '.exe' || '' }}
+            ffmpeg/ffprobe-${{ matrix.artifact_name }}${{ runner.os == 'Windows' && '.exe' || '' }}
