@@ -456,18 +456,18 @@ class UpdateChecker(QObject):
 
         try:
             raw_bytes = bytes(reply.readAll())
-            data = json.loads(raw_bytes)
 
-            if not data:
+            if not raw_bytes:
                 logger.error(f"Empty data received for {request_type}")
                 self.error_occurred.emit(request_type)
                 return
 
             if request_type == "get_release":
+                data = json.loads(raw_bytes)
                 self.update_info_received.emit(data[0])
                 
             elif request_type == "get_source_file":
-                self.songs_info_receiver.emit(data)
+                self.songs_info_receiver.emit(raw_bytes.decode('utf-8'))
 
         except Exception:
             logger.exception(f"Failed to parse data for {request_type}")

@@ -242,6 +242,8 @@ class ValuePopup(Lifecycle.LoomAnimationMixin, QWidget):
 class MiniWaveformPreview(QWidget):
     preview_clicked = pyqtSignal(float)
 
+    PLAYHEAD_UPDATE_INTERVAL_MS = 40
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
@@ -252,6 +254,8 @@ class MiniWaveformPreview(QWidget):
         self.pixmap            = None
         self.mouse_pressed     = False
         self.playhead_position = 0.0
+        self.painted_playhead_position = 0.0
+        self.pending_playhead_position = None
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(Styles.Controls.MiniWaveformPreview)
@@ -264,6 +268,11 @@ class MiniWaveformPreview(QWidget):
         self.cached_gradient_fade_opaque      = QColor(0, 0, 0, 255)
         self.cached_gradient_fade_transparent = QColor(0, 0, 0, 0)
 
+        self.playhead_update_timer = QTimer(self)
+        self.playhead_update_timer.setInterval(self.PLAYHEAD_UPDATE_INTERVAL_MS)
+        self.playhead_update_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.playhead_update_timer.timeout.connect(self.apply_pending_playhead_position)
+
     # Data
 
     def set_audio_data(self, audio: np.ndarray) -> None:
@@ -275,7 +284,37 @@ class MiniWaveformPreview(QWidget):
 
     def set_playhead_position(self, value: float) -> None:
         self.playhead_position = float(np.clip(value, 0.0, 1.0))
-        self.update()
+
+        if not self.playhead_update_timer.isActive():
+            self.apply_pending_playhead_position()
+            self.playhead_update_timer.start()
+            return
+
+        self.pending_playhead_position = self.playhead_position
+
+    def apply_pending_playhead_position(self) -> None:
+        if self.pending_playhead_position is None and self.playhead_update_timer.isActive() and self.painted_playhead_position == self.playhead_position:
+            self.playhead_update_timer.stop()
+            return
+
+        target = self.pending_playhead_position if self.pending_playhead_position is not None else self.playhead_position
+        self.pending_playhead_position = None
+
+        self.repaint_playhead_region(target)
+
+    def repaint_playhead_region(self, new_position: float) -> None:
+        old_x = float(self.width()) * self.painted_playhead_position
+        new_x = float(self.width()) * new_position
+
+        self.painted_playhead_position = new_position
+
+        half_pen = self.cached_playhead_pen.widthF() / 2.0 + 1.0
+        left     = min(old_x, new_x) - half_pen
+        right    = max(old_x, new_x) + half_pen
+
+        dirty_rect = QRectF(left, 0.0, right - left, float(self.height())).toAlignedRect()
+
+        self.update(dirty_rect)
 
     def prepare_audio_data(self) -> None:
         audio = self.audio
@@ -397,9 +436,12 @@ class MiniWaveformPreview(QWidget):
 
         painter = QPainter(self)
 
+        clip_rect = event.rect()
+        painter.setClipRect(clip_rect)
+
         painter.drawPixmap(2, 5, self.pixmap)
 
-        x = float(self.width()) * self.playhead_position
+        x = float(self.width()) * self.painted_playhead_position
 
         painter.setPen(self.cached_playhead_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -927,8 +969,9 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
                 duration_ms     = duration_ms,
                 easing_function = LoomEngine.Easing.ease_out_expo
             )
+        
         else:
-            self.x_anim.stop()
+            self.x_anim.stop_targeting()
             self.x_anim.set_base(x)
 
     def update_actual_position(self, x: float) -> None:

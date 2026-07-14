@@ -186,7 +186,7 @@ class ScrollableContent(QGraphicsView):
 
             self.setViewport(self.gl_viewport)
         
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.MinimalViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setOptimizationFlags(
             QGraphicsView.OptimizationFlag.DontSavePainterState |
             QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing
@@ -286,9 +286,6 @@ class ScrollableContent(QGraphicsView):
             x:       float,
             animate: bool = False
         ) -> None:
-        
-        if not animate:
-            self.playhead_moved.emit(x / self.total_content_width)
 
         target_x = max(0.0, min(x, self.total_content_width))
         self.playhead.set_target_x(target_x, animate)
@@ -900,13 +897,17 @@ class ScrollableContent(QGraphicsView):
         painter.setPen(self.cached_beat_pen)
 
         line_height  = Styles.Metrics.Waveform.Height + Styles.Metrics.Tracks.RulerHeight
-        rect_right   = rect.x() + rect.width()
+        rect_right   = rect.right()
+        rect_left    = rect.left()
         beat_lines   = []
 
         for beat in self.composition.beats:
             x = beat * self.px_per_sec
+    
+            if x > rect_right:
+                break
             
-            if 0 <= x <= rect_right:
+            if x >= rect_left:
                 beat_lines.append(QLineF(x, 0, x, line_height))
 
         if beat_lines:

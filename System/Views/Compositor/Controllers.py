@@ -449,41 +449,43 @@ class GlyphController(QObject):
 
         self.composition.start_batching()
 
-        for glyph_identifier in selected_glyph_identifiers:
-            glyph_data = self.composition.get_glyph(glyph_identifier)
+        try:
+            for glyph_identifier in selected_glyph_identifiers:
+                glyph_data = self.composition.get_glyph(glyph_identifier)
+    
+                if not glyph_data:
+                    continue
+                
+                current_brightness = glyph_data["brightness"]
+                new_brightness     = max(0, min(100, current_brightness + delta))
+    
+                if new_brightness == current_brightness:
+                    continue
+                
+                before_state[glyph_identifier] = copy.deepcopy(glyph_data)
+                after_state[glyph_identifier]  = {**copy.deepcopy(glyph_data), "brightness": new_brightness}
 
-            if not glyph_data:
-                continue
+            if after_state:
+                self.push_action(Actions.ActionModify(self, before_state, after_state))
+                self.composition.update_bunch_of_glyphs(after_state)
+                self.update_glyphs(after_state)
+                self.elements_changed.emit()
 
-            current_brightness = glyph_data["brightness"]
-            new_brightness     = max(0, min(100, current_brightness + delta))
+                target_sound = f"Glyphs/Brightness/{'Lower' if delta < 0 else 'Higher'}"
+                Player.ui_player.play_sound(target_sound, setting_key = "brightness_adjustment_sounds")
 
-            if new_brightness == current_brightness:
-                continue
+                if len(after_state) == 1:
+                    target_glyph_id = next(iter(after_state))
+                    glyph_item      = self.glyph_items[target_glyph_id]
 
-            before_state[glyph_identifier] = copy.deepcopy(glyph_data)
-            after_state[glyph_identifier]  = {**copy.deepcopy(glyph_data), "brightness": new_brightness}
-
-        if after_state:
-            self.push_action(Actions.ActionModify(self, before_state, after_state))
-            self.composition.update_bunch_of_glyphs(after_state)
-            self.update_glyphs(after_state)
-            self.elements_changed.emit()
-
-            target_sound = f"Glyphs/Brightness/{'Lower' if delta < 0 else 'Higher'}"
-            Player.ui_player.play_sound(target_sound, setting_key = "brightness_adjustment_sounds")
-
-            if len(after_state) == 1:
-                target_glyph_id = next(iter(after_state))
-                glyph_item      = self.glyph_items[target_glyph_id]
-
-                self.conductor.tooltip.show_tooltip_at(
-                    f"Brightness: {after_state[target_glyph_id]['brightness']}%",
-                    glyph_item,
-                    True
-                )
-
-        self.composition.stop_batching()
+                    self.conductor.tooltip.show_tooltip_at(
+                        f"Brightness: {after_state[target_glyph_id]['brightness']}%",
+                        glyph_item,
+                        True
+                    )
+        
+        finally:
+            self.composition.stop_batching()
 
     def push_action(
         self,
@@ -742,6 +744,8 @@ class GlyphController(QObject):
 
             item.update_geometry()
             self.composition.glyphs.mark_dirty(item.glyph_id)
+        
+        self.composition.stop_batching()
 
         if popup_text:
             self.conductor.tooltip.show_tooltip_at(popup_text, active_item_ref)
@@ -873,11 +877,13 @@ class GlyphController(QObject):
     def stop_running_stack_animations(self) -> None:
         for animation in self.expand_animations:
             animation.stop()
+            animation.deleteLater()
         
         self.expand_animations = []
 
         for animation in self.collapse_animations:
             animation.stop()
+            animation.deleteLater()
         
         self.collapse_animations = []
 
@@ -987,7 +993,7 @@ class GlyphController(QObject):
 
         direction, step = self.calculate_expansion_params(group_size, base_y, box_h)
 
-        self.animate_stack_items(group, direction, step, group_size)
+        self.animate_stack_items(group, step, direction, group_size)
 
         Player.ui_player.play_sound("Glyphs/Stack/Expand", setting_key = "glyph_stack_sounds")
     
@@ -1187,6 +1193,17 @@ class MouseController:
                 playhead_hover.hide()
 
     def force_mouse_update(self) -> None:
+        glyph_controller = self.conductor.glyph_controller
+
+        is_dragging_glyphs = bool(glyph_controller and glyph_controller.drag_session)
+
+        if (
+            not self.is_marquee_selecting and
+            not is_dragging_glyphs        and
+            not self.conductor.playhead_hover.isVisible()
+        ):
+            return
+
         global_pos = QCursor.pos()
         local_pos  = self.conductor.viewport().mapFromGlobal(global_pos)
 
@@ -1214,7 +1231,7 @@ class MouseController:
 
         scene_pos = self.conductor.mapToScene(event.pos())
 
-        if self.conductor.scene.itemAt(scene_pos, self.conductor.transform()):
+        if self.conductor.itemAt(event.pos()):
             return event.ignore()
 
         if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
