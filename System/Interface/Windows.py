@@ -282,42 +282,42 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         self.x_offset_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "x_offset",
+            name       = "xOffset",
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.ADD
         )
 
         self.y_offset_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "y_offset",
+            name       = "yOffset",
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.ADD
         )
 
         self.z_offset_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "z_offset",
+            name       = "zOffset",
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.ADD
         )
 
         self.rotation_x_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "rotation_x",
+            name       = "rotationX",
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.ADD
         )
 
         self.rotation_y_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "rotation_y",
+            name       = "rotationY",
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.ADD
         )
 
         self.rotation_z_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "rotation_z",
+            name       = "rotationZ",
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.ADD
         )
@@ -332,14 +332,14 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         self.opacity_background_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "opacity_background",
+            name       = "opacityBackground",
             base_value = 1.0,
             mix_mode   = LoomEngine.MixMode.MULTIPLY
         )
 
         self.opacity_content_property = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "opacity_content",
+            name       = "opacityContent",
             base_value = 1.0,
             mix_mode   = LoomEngine.MixMode.MULTIPLY,
             on_change  = self.on_opacity_content_changed

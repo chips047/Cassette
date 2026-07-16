@@ -104,7 +104,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
         self.glitch_text_handle = ui_engine.bind(
             owner      = self,
-            name       = "glitch_text",
+            name       = "glitchText",
             base_value = "",
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_glitch_text_changed

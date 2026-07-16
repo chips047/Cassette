@@ -925,7 +925,7 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         self.x_anim = LoomEngine.ui_engine.bind(
             owner      = self,
-            name       = "playhead_x",
+            name       = "playheadX",
             base_value = 0.0,
             on_change  = self.update_actual_position
         )

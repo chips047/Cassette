@@ -74,14 +74,14 @@ class Checkbox(QCheckBox):
 
         self.indicator_scale = ui_engine.bind(
             owner      = self,
-            name       = "indicator_scale",
+            name       = "indicatorScale",
             base_value = 1.0,
             on_change  = self.on_indicator_property_changed
         )
 
         self.indicator_radius = ui_engine.bind(
             owner      = self,
-            name       = "indicator_radius",
+            name       = "indicatorRadius",
             base_value = self.resting_radius,
             on_change  = self.on_indicator_property_changed
         )

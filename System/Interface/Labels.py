@@ -50,7 +50,7 @@ class TitleLabel(Lifecycle.LoomAnimationMixin, QLabel):
 
         self.scale_handle = ui_engine.bind(
             owner      = self,
-            name       = "title_scale",
+            name       = "titleScale",
             base_value = 1.0,
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_transform_changed
@@ -58,7 +58,7 @@ class TitleLabel(Lifecycle.LoomAnimationMixin, QLabel):
 
         self.rotation_handle = ui_engine.bind(
             owner      = self,
-            name       = "title_rotation",
+            name       = "titleRotation",
             base_value = 0.0,
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_transform_changed
