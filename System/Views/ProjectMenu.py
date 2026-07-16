@@ -774,8 +774,10 @@ class MainMenu(QWidget):
         modifiers = QApplication.keyboardModifiers()
 
         if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            Windows.ByteBeatWindow().exec()
-            return
+            return Windows.ByteBeatWindow().exec()
+        
+        if modifiers & Qt.KeyboardModifier.AltModifier:
+            return Windows.About(more_info = True).exec()
 
         Windows.About().exec()
 

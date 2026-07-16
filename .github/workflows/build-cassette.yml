@@ -17,6 +17,7 @@ on:
           - '3.11'
           - '3.12'
           - '3.13'
+          - '3.14'
       upload_to_draft_release:
         description: 'Upload build artifacts to draft release'
         required: false

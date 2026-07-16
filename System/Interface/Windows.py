@@ -4,6 +4,7 @@ import sys
 import math
 import numpy
 import random
+import platform
 import traceback
 import mimetypes
 import webbrowser
@@ -1340,15 +1341,25 @@ class UpdateWindow(FloatingWindowGPU):
         self.content_layout.addWidget(self.close_button)
 
 class About(FloatingWindowGPU):
-    def __init__(self):
+    def __init__(self, more_info: bool = False):
         super().__init__(f"Cassette {open(Utils.get_resource_path('version')).read()} by chips047")
 
-        text = (
-            "The best open - source compositor. Currently in active development!\n\n"
-            "`Inspirations and credits`\n"
-            "- Most UI sounds from `R.E.P.O.` game by `semiwork`.\n"
-            "- UI Open sound from `The Upturned` game by `Zeekers`."
-        )
+        if more_info:
+            text = (
+                f"System {sys.platform} {platform.machine()}"
+                f"Python: {sys.version}"
+            )
+        
+        else:
+            text = (
+                "The best open - source compositor. Currently in active development!\n\n"
+                "`Inspirations and credits`\n"
+                "- UI sounds from `R.E.P.O.` by `semiwork`.\n"
+                "- Open sound from `The Upturned` by `Zeekers`.\n"
+                "- Open sounds from `Simulacra` by `Kaigan Games`.\n"
+                "- Sounds from `Pacific Drive` by `Ironwood Studios`.\n\n"
+                "Made with care, way too much profiling, and a genuine love for smooth interfaces."
+            )
 
         self.about_label = Labels.DescriptionLabel(text, 500)
 
