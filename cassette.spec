@@ -114,8 +114,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon=icon_file,
-    contents_directory='.'
+    icon=icon_file
 )
 
 if not is_darwin:
