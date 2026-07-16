@@ -7,15 +7,16 @@ on:
         description: 'Reason'
         required: false
         default: 'Manual Building'
-      qt_binding:
-        description: 'Qt binding'
-        required: false
+      python_version:
+        description: 'Python version'
+        required: true
         type: choice
-        default: 'auto'
+        default: '3.13'
         options:
-          - 'auto'
-          - 'pyqt5'
-          - 'pyqt6'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
       upload_to_draft_release:
         description: 'Upload build artifacts to draft release'
         required: false
@@ -57,26 +58,8 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: ${{ inputs.python_version }}
           cache: 'pip'
-
-      - name: Determine Qt Binding
-        shell: bash
-        run: |
-          requested="${{ inputs.qt_binding }}"
-
-          if [ "$requested" == "auto" ] || [ -z "$requested" ]; then
-            if [ "${{ runner.os }}" == "Windows" ]; then
-              effective="pyqt5"
-            else
-              effective="pyqt6"
-            fi
-          else
-            effective="$requested"
-          fi
-
-          echo "QT_BINDING=$effective" >> "$GITHUB_ENV"
-          echo "Effective Qt binding for ${{ runner.os }} (${{ runner.arch }}): $effective"
 
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -96,128 +79,6 @@ jobs:
           python setup.py bdist_wheel
           cd ..
 
-      - name: Switch to PyQt5
-        if: env.QT_BINDING == 'pyqt5'
-        shell: bash
-        run: |
-          python - <<'PY'
-          import re
-          from pathlib import Path
-
-          root = Path('.')
-          skip_dirs = {'.git', '.venv', 'venv', '__pycache__', 'build', 'dist'}
-          skip_files = {'System/Interface/Animation/LoomEngine.py'}
-          suffixes = {'.py', '.txt'}
-
-          moved_to_widgets_in_qt5 = {
-              'QAction',
-              'QActionGroup',
-              'QFileSystemModel',
-              'QShortcut',
-              'QUndoCommand',
-              'QUndoGroup',
-              'QUndoStack'
-          }
-
-          import_block_pattern = re.compile(
-              r'from\s+PyQt5\.(QtGui|QtWidgets)\s+import\s+\(([^)]*)\)',
-              re.DOTALL
-          )
-
-          def parse_names(block_text):
-              names = [name.strip() for name in block_text.split(',')]
-              return [name for name in names if name]
-
-          def format_block(module_name, names):
-              if not names:
-                  return ''
-
-              ordered_names = sorted(names, key = len)
-              body           = ',\n    '.join(ordered_names)
-
-              return f'from PyQt5.{module_name} import (\n    {body}\n)'
-
-          def fix_moved_symbols(text):
-              matches = list(import_block_pattern.finditer(text))
-
-              if not matches:
-                  return text
-
-              gui_names     = []
-              widgets_names = []
-              gui_match     = None
-              widgets_match = None
-
-              for match in matches:
-                  module_name, block_text = match.group(1), match.group(2)
-                  names                   = parse_names(block_text)
-
-                  if module_name == 'QtGui':
-                      gui_names = names
-                      gui_match = match
-
-                  elif module_name == 'QtWidgets':
-                      widgets_names = names
-                      widgets_match = match
-
-              if gui_match is None:
-                  return text
-
-              moved = [name for name in gui_names if name in moved_to_widgets_in_qt5]
-
-              if not moved:
-                  return text
-
-              remaining_gui_names  = [name for name in gui_names if name not in moved_to_widgets_in_qt5]
-              merged_widgets_names = widgets_names + [name for name in moved if name not in widgets_names]
-
-              new_gui_block     = format_block('QtGui', remaining_gui_names)
-              new_widgets_block = format_block('QtWidgets', merged_widgets_names)
-
-              if widgets_match is not None:
-                  replacements = sorted(
-                      [(gui_match.span(), new_gui_block), (widgets_match.span(), new_widgets_block)],
-                      key     = lambda item: item[0][0],
-                      reverse = True
-                  )
-
-                  for span, replacement in replacements:
-                      text = text[:span[0]] + replacement + text[span[1]:]
-
-              else:
-                  replacement = f'{new_widgets_block}\n\n{new_gui_block}' if new_gui_block else new_widgets_block
-                  text        = text[:gui_match.span()[0]] + replacement + text[gui_match.span()[1]:]
-
-              return text
-
-          for path in root.rglob('*'):
-              if any(part in skip_dirs for part in path.parts):
-                  continue
-
-              if not path.is_file() or path.suffix.lower() not in suffixes:
-                  continue
-
-              relative_path = path.relative_to(root).as_posix()
-
-              if relative_path in skip_files:
-                  continue
-
-              text = path.read_text(encoding='utf-8')
-
-              # Сначала меняем специфичный для Qt6 импорт OpenGL-виджета на корректный для Qt5
-              updated = text.replace('from PyQt6.QtOpenGLWidgets import QOpenGLWidget', 'from PyQt5.QtWidgets import QOpenGLWidget')
-
-              # Затем проводим общую замену регистров PyQt6 -> PyQt5
-              updated = updated.replace('PyQt6', 'PyQt5').replace('pyqt6', 'pyqt5')
-
-              # Переносим символы, сменившие модуль между Qt5 и Qt6 (QtGui -> QtWidgets)
-              updated = fix_moved_symbols(updated)
-
-              if updated != text:
-                  path.write_text(updated, encoding='utf-8')
-                  print(relative_path)
-          PY
-
       - name: Setup Venv and Install Project
         shell: bash
         run: |
@@ -228,12 +89,7 @@ jobs:
             source venv/bin/activate
           fi
 
-          if [ "$QT_BINDING" == "pyqt5" ]; then
-            pip install PyQt5
-          else
-            pip install PyQt6
-          fi
-
+          pip install PyQt6
           pip install aubio/dist/*.whl
           pip install -r requirements.txt
           pip install pyinstaller
@@ -339,21 +195,21 @@ jobs:
         run: |
           cd dist
           if [ "${{ runner.os }}" == "macOS" ]; then
-            zip -r -y "../cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.zip" .
+            zip -r -y "../cassette-${{ matrix.artifact_name }}.zip" .
           elif [ "${{ runner.os }}" == "Windows" ]; then
-            7z a -mx=5 "../cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.zip" Cassette
+            7z a -mx=5 "../cassette-${{ matrix.artifact_name }}.zip" Cassette
           else
-            tar czf "../cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.tar.gz" Cassette
+            tar czf "../cassette-${{ matrix.artifact_name }}.tar.gz" Cassette
           fi
           ls -lh ..
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}
+          name: cassette-${{ matrix.artifact_name }}
           path: |
-            cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.tar.gz
-            cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.zip
+            cassette-${{ matrix.artifact_name }}.tar.gz
+            cassette-${{ matrix.artifact_name }}.zip
           include-hidden-files: true
 
   publish-draft-release:

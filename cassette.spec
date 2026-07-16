@@ -111,10 +111,11 @@ exe = EXE(
     name='Cassette',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
+    strip=True,
+    upx=False,
     console=False,
     icon=icon_file,
+    contents_directory='.'
 )
 
 if not is_darwin:
@@ -123,7 +124,7 @@ if not is_darwin:
         a.binaries,
         a.zipfiles,
         a.datas,
-        strip=False,
+        strip=True,
         upx=False,
         name='Cassette',
     )
