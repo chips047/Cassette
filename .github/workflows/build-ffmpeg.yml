@@ -31,7 +31,7 @@ jobs:
 
           - os: windows-11-arm
             artifact_name: windows-arm64
-            static_flags: --pkg-config-flags="--static" --extra-ldflags="-static" --disable-x86asm
+            static_flags: --pkg-config-flags="--static" --extra-ldflags="-static" --disable-x86asm --cc=clang --target-os=mingw32 --arch=aarch64
             extra_flags: ""
             msys2_msystem: CLANGARM64
             msys2_prefix: mingw-w64-clang-aarch64
