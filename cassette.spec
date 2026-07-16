@@ -124,7 +124,7 @@ if not is_darwin:
         a.zipfiles,
         a.datas,
         strip=True,
-        upx=False,
+        upx=True,
         name='Cassette',
     )
 
