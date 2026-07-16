@@ -373,23 +373,25 @@ def get_resource_path(relative_path: str) -> str:
 def get_ffmpeg_path(name: str = "ffmpeg") -> str:
     logger.debug(f"Searching for {name}...")
 
-    plat = sys.platform
-    arch = platform.machine().lower()
-    is_arm = "arm" in arch
+    plat    = sys.platform
+    arch    = platform.machine().lower()
+    is_arm  = "arm" in arch or "aarch64" in arch
 
     logger.debug(f"Platform: {plat}")
     logger.debug(arch)
     logger.debug(f"Is ARM: {is_arm}")
-    
+
     if plat == "win32":
-        file_name = f"{name}-windows.exe"
-    
+        suffix    = "arm64" if is_arm else "x64"
+        file_name = f"{name}-windows-{suffix}.exe"
+
     elif plat == "darwin":
-        suffix = "silicon" if is_arm else "intel"
+        suffix    = "silicon" if is_arm else "intel"
         file_name = f"{name}-macos-{suffix}"
-    
+
     elif plat == "linux":
-        file_name = f"{name}-linux"
+        suffix    = "arm64" if is_arm else "x64"
+        file_name = f"{name}-linux-{suffix}"
 
     full_path = get_resource_path(f"System/FFmpeg/{file_name}")
 

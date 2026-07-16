@@ -16,6 +16,11 @@ on:
           - 'auto'
           - 'pyqt5'
           - 'pyqt6'
+      upload_to_draft_release:
+        description: 'Upload build artifacts to draft release'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -29,8 +34,15 @@ jobs:
             artifact_name: linux-x64
             sep: ":"
 
+          - os: ubuntu-24.04-arm
+            artifact_name: linux-arm64
+            sep: ":"
+
           - os: windows-latest
             artifact_name: windows-x64
+
+          - os: windows-11-arm
+            artifact_name: windows-arm64
 
           - os: macos-15-intel
             artifact_name: macos-intel
@@ -64,7 +76,7 @@ jobs:
           fi
 
           echo "QT_BINDING=$effective" >> "$GITHUB_ENV"
-          echo "Effective Qt binding for ${{ runner.os }}: $effective"
+          echo "Effective Qt binding for ${{ runner.os }} (${{ runner.arch }}): $effective"
 
       - name: Install System Dependencies (Linux)
         if: runner.os == 'Linux'
@@ -251,40 +263,22 @@ jobs:
       - name: Cleanup unnecessary files
         shell: bash
         run: |
-          if [ "${{ runner.os }}" == "Linux" ]; then
-            rm System/ADB/adb-macos
-            rm System/ADB/adb.exe
-            rm System/ADB/AdbWinApi.dll
-            rm System/ADB/AdbWinUsbApi.dll
-            rm System/FFmpeg/ffmpeg-windows.exe
-            rm System/FFmpeg/ffprobe-windows.exe
-            rm System/FFmpeg/ffmpeg-macos-intel
-            rm System/FFmpeg/ffmpeg-macos-silicon
-            rm System/FFmpeg/ffprobe-macos-intel
-            rm System/FFmpeg/ffprobe-macos-silicon
+          all_targets="linux-x64 linux-arm64 windows-x64 windows-arm64 macos-intel macos-silicon"
 
-            elif [ "${{ runner.os }}" == "Windows" ]; then
-            rm System/ADB/adb-macos
-            rm System/ADB/adb-linux
-            rm System/FFmpeg/ffmpeg-macos-intel
-            rm System/FFmpeg/ffmpeg-macos-silicon
-            rm System/FFmpeg/ffprobe-macos-intel
-            rm System/FFmpeg/ffprobe-macos-silicon
-            rm System/FFmpeg/ffmpeg-linux
-            rm System/FFmpeg/ffprobe-linux
+          for target in $all_targets; do
+            if [ "$target" != "${{ matrix.artifact_name }}" ]; then
+              rm -f "System/ADB/adb-$target" "System/ADB/adb-$target.exe"
+              rm -f "System/FFmpeg/ffmpeg-$target" "System/FFmpeg/ffmpeg-$target.exe"
+              rm -f "System/FFmpeg/ffprobe-$target" "System/FFmpeg/ffprobe-$target.exe"
+            fi
+          done
 
-            elif [ "${{ runner.os }}" == "macOS" ]; then
-            rm System/ADB/adb-linux
-            rm System/ADB/adb.exe
-            rm System/ADB/AdbWinApi.dll
-            rm System/ADB/AdbWinUsbApi.dll
-            rm System/FFmpeg/ffmpeg-linux
-            rm System/FFmpeg/ffprobe-linux
-            rm System/FFmpeg/ffmpeg-windows.exe
-            rm System/FFmpeg/ffprobe-windows.exe
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            rm -f System/ADB/AdbWinApi.dll
+            rm -f System/ADB/AdbWinUsbApi.dll
           fi
 
-          rm System/ADB/CassetteReceiver.apk
+          rm -f System/ADB/CassetteReceiver.apk
 
       - name: Run PyInstaller
         shell: bash
@@ -297,11 +291,105 @@ jobs:
 
           pyinstaller --noconfirm cassette.spec
 
+      - name: Deduplicate identical files via hardlinks
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from collections import defaultdict
+
+          root = 'dist/Cassette'
+          hash_to_paths = defaultdict(list)
+
+          for dirpath, dirnames, filenames in os.walk(root):
+              for filename in filenames:
+                  full_path = os.path.join(dirpath, filename)
+
+                  if os.path.islink(full_path):
+                      continue
+
+                  with open(full_path, 'rb') as file_handle:
+                      digest = hashlib.sha256(file_handle.read()).hexdigest()
+
+                  hash_to_paths[digest].append(full_path)
+
+          saved_bytes  = 0
+          linked_count = 0
+
+          for digest, paths in hash_to_paths.items():
+              if len(paths) < 2:
+                  continue
+
+              canonical_path = paths[0]
+              file_size      = os.path.getsize(canonical_path)
+
+              for duplicate_path in paths[1:]:
+                  os.remove(duplicate_path)
+                  os.link(canonical_path, duplicate_path)
+                  saved_bytes  += file_size
+                  linked_count += 1
+
+          print(f'Hardlinked {linked_count} duplicate files, saved {saved_bytes / (1024*1024):.1f} MB on disk')
+          PY
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            zip -r -y "../cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.zip" .
+          elif [ "${{ runner.os }}" == "Windows" ]; then
+            7z a -mx=5 "../cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.zip" Cassette
+          else
+            tar czf "../cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.tar.gz" Cassette
+          fi
+          ls -lh ..
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}
           path: |
-            ${{ runner.os == 'macOS' && 'dist/' || 'dist/Cassette' }}
-            ${{ runner.os == 'macOS' && '!dist/Cassette' || '' }}
+            cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.tar.gz
+            cassette-${{ matrix.artifact_name }}-${{ env.QT_BINDING }}.zip
           include-hidden-files: true
+
+  publish-draft-release:
+    name: Publish draft release
+    needs: build
+    if: ${{ inputs.upload_to_draft_release == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version_value=$(cat version | tr -d '[:space:]')
+          echo "value=$version_value" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cassette-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: List downloaded assets
+        shell: bash
+        run: ls -lh release-assets
+
+      - name: Create or update draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          name: Cassette v${{ steps.version.outputs.value }}
+          draft: true
+          files: release-assets/*
