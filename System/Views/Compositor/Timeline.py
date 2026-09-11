@@ -287,7 +287,7 @@ class ScrollableContent(QGraphicsView):
         logger.warning("Controllers and caches cleared")
 
     def check_tutorial(self) -> bool:
-        if not Constants.current_settings.get("tutorial_shown", Constants.current_settings.get("_tutorial_shown")):
+        if Constants.current_settings.get("_tutorial_shown"):
             return False
 
         self.tutorial_window = Windows.Tutorial(self.composition.get_playback_audio_path(), self)

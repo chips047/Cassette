@@ -278,6 +278,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         )
 
         LoomEngine.ui_engine.updated.connect(self.update_tilt_smoothing)
+        LoomEngine.ui_engine.updated.connect(self.update)
 
         self.animations_active = True
 
@@ -308,8 +309,6 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         self.current_tilt_x += (self.target_tilt_x - self.current_tilt_x) * self.tilt_smoothing
         self.current_tilt_y += (self.target_tilt_y - self.current_tilt_y) * self.tilt_smoothing
-
-        self.update()
 
     def setup_timers(self) -> None:
         self.shake_timer = Timing.Timer(
@@ -1072,6 +1071,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
     def really_close(self) -> None:
         if self.animations_active:
             LoomEngine.ui_engine.updated.disconnect(self.update_tilt_smoothing)
+            LoomEngine.ui_engine.updated.disconnect(self.update)
 
             self.shake_timer.stop()
             self.shake_timer = None

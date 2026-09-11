@@ -888,6 +888,7 @@ class Tutorial(FloatingWindowGPU):
         self.close()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        Constants.current_settings.set_value("tutorial_shown", True)
+        Constants.current_settings.set_value("_tutorial_shown", True)
+        
         self.teardown()
         super().closeEvent(event)

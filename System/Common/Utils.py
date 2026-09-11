@@ -371,6 +371,8 @@ class SettingsController(QObject):
         
         self.setting_changed.emit(key, value)
 
+        self.instance.sync()
+
     def get(self, key: str, default: object = None) -> object:
         return self._data.get(key, default)
 

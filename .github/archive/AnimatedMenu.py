@@ -36,7 +36,6 @@ from System.Common import (
 )
 
 from System.Interface import (
-    Basic,
     Inputs,
     Widgets
 )
@@ -52,7 +51,7 @@ class TriangleGuard:
         self.triangle:        tuple    | None = None
         self.expire_callback: callable | None = None
 
-        self.timer = Basic.Timer(
+        self.timer = Timing.Timer(
             self.GUARD_MS,
             self.expire,
             True
@@ -124,7 +123,7 @@ class AnimatedMenu(QMenu):
 
         self.owns_engine: bool                        = engine is None
         self.engine:      LoomEngine.AnimationEngine = (
-            engine if engine is not None else LoomEngine.AnimationEngine("PyQt6")
+            engine if engine else LoomEngine.AnimationEngine("PyQt6")
         )
 
         self.k_rect:    str = f"rect_{id(self)}"
@@ -134,7 +133,7 @@ class AnimatedMenu(QMenu):
         self.final_geometry:   QRect | None = None
         self.pending_close:    bool         = False
 
-        self.close_timer = Basic.Timer(
+        self.close_timer = Timing.Timer(
             150,
             self.do_close,
             single_shot = True,
@@ -143,8 +142,8 @@ class AnimatedMenu(QMenu):
 
         self.engine.add_properties(
             [
-                (self.k_rect,    QRect(), LoomEngine.MixMode.NOMIX, self.setGeometry),
-                (self.k_opacity, 1.0,     LoomEngine.MixMode.NOMIX, self.setWindowOpacity)
+                (self.k_rect,    QRect(), LoomEngine.MixMode.REPLACE, self.setGeometry),
+                (self.k_opacity, 1.0,     LoomEngine.MixMode.REPLACE, self.setWindowOpacity)
             ]
         )
 
@@ -210,7 +209,6 @@ class AnimatedMenu(QMenu):
         self.final_geometry = None
 
     def close_animated(self) -> None:
-        print("CLOSE")
         current_geometry: QRect = self.geometry()
 
         self.engine.set_property_base_value(self.k_opacity, float(self.windowOpacity()))
@@ -375,7 +373,7 @@ class ContextMenu(AnimatedMenu):
         self.entries:      list                                 = entries
         self.widget_cache: dict[QAction, CustomWidgetPopup]     = {}
 
-        self.hover_timer = Basic.Timer(
+        self.hover_timer = Timing.Timer(
             70,
             self.open_hovered_submenu,
             single_shot = True,
@@ -599,13 +597,13 @@ class EffectPreviewWidget(QWidget):
         self.live_preview_bar: Widgets.ScheduledSegmentedBar = Widgets.ScheduledSegmentedBar(30, loop=True)
         self.main_layout.addWidget(self.live_preview_bar)
 
-        self.apply_button: Basic.NothingButton = Basic.NothingButton("Apply")
+        self.apply_button: Widgets.NothingButton = Widgets.NothingButton("Apply")
         self.apply_button.clicked.connect(self.on_apply)
 
     def populate_controls(self) -> None:
         types_map: dict = {
-            "checkbox": (Inputs.Checkbox,          "stateChanged"),
-            "slider":   (Inputs.SliderWithLabel,   "valueChanged"),
+            "checkbox": (Widgets.Checkbox,          "stateChanged"),
+            "slider":   (Widgets.SliderWithLabel,   "valueChanged"),
             "selector": (Inputs.SelectorWithLabel, "selectionChanged")
         }
 
@@ -640,14 +638,14 @@ class EffectPreviewWidget(QWidget):
         settings: dict = {}
 
         for key, widget in self.controls.items():
-            if isinstance(widget, Inputs.Checkbox):
+            if isinstance(widget, Widgets.Checkbox):
                 settings[key] = widget.isChecked()
 
-            elif isinstance(widget, Inputs.SliderWithLabel):
+            elif isinstance(widget, Widgets.SliderWithLabel):
                 settings[key] = widget.value()
 
             elif isinstance(widget, Inputs.SelectorWithLabel):
-                settings[key] = widget.currentData()
+                settings[key] = widget.current_data()
 
         return settings
 

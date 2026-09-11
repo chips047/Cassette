@@ -1,83 +1,157 @@
-![Hello.](.github/title.png)
-
 # Cassette
-**Cross - platform. Smooth. Precise. Optimized. Designed.**
 
-<div>
-  <a href="https://github.com/chips047/Cassette/releases">
-    <img src="https://img.shields.io/github/v/release/cbips047/Cassette?include_prereleases&style=flat-square&color=white&labelColor=black" alt="Latest Alpha Version">
-  </a>
-  <img src="https://img.shields.io/github/languages/top/chips047/Cassette?style=flat-square&color=white&labelColor=black" alt="Top Language">
-  <a href="https://github.com/chips047/Cassette/releases">
-    <img src="https://img.shields.io/github/downloads/chips047/Cassette/total?style=flat-square&color=white&labelColor=black" alt="Total Downloads">
-  </a>
-  <img src="https://img.shields.io/github/created-at/chips047/Cassette?style=flat-square&color=white&labelColor=black" alt="Created At">
-</div>
+> An over - engineered, Glyph Composer for Nothing Phones.
 
-<div>
-  <img src="https://img.shields.io/badge/Windows-black?style=flat-square&logo=windows&logoColor=white">
-  <img src="https://img.shields.io/badge/Linux-black?style=flat-square&logo=linux&logoColor=white">
-  <img src="https://img.shields.io/badge/macOS-black?style=flat-square&logo=apple&logoColor=white">
-</div>
+## Overview
 
-<p>
+Most lighting editors treat LEDs like binary on / off states in a spreadsheet...
 
-![Compositor](.github/compositor.png)
-![Glyph Effects](.github/context.png)
-![Audio Import Window](.github/import.png)
+Meet **Cassette.** An editor built from the ground up to feel like a tactile hardware instrument.
 
-## Table of contents
+<img src=".github/compositor.png" style="border-radius: 20px;" alt="Wow!!! A! A.. A WindowwwwwwwwAH!!!!!">
 
-* [System requirements](#system-requirements)
-* [Installation](#installation-and-running)
-* [Real - time preview on your phone](#real---time-preview-on-your-phone)
-* [FAQ & Troubleshooting](#faq--troubleshooting)
-* [Roadmap](#roadmap)
-* [Contact](#contact)
+## Core Features
 
-## System requirements
+### Available Phones
+* Phone (1)
+* Phone (2)
+* Phone (2a)
+* Phone (3a)
+* Phone (4a)
+* Phone (4b)
 
-Recommended for a smooth experience:
+### Interactive Onboarding
+* **"Do to Continue" Tutorial** - A hands - on onboarding sequence that guides you through real interactions before letting you into the workspace. Fully skippable if you already know the ropes.
 
-* **Memory**: 8 GB RAM or more
-* **CPU**: 4 - core processor
-* **Clock speed**: 2.0 GHz or higher
-* **Free disk space**: 300 MB+
+<img src=".github/tutorial.GIF" style="border-radius: 20px;" alt="Wow! A tutorial!!!">
 
-## Installation and running
+### The Timeline & Lighting Engine
+* **Keyframe Lighting Curves** - Switch any glyph into Keyframes mode (`Alt` + Click) to plot precise brightness envelopes over time. Adjust nodes across axes with smooth easing curves.
 
-1. Download the appropriate release from the Releases page.
-2. Unpack the archive.
-3. Start Cassette:
+<video src=".github/keyframes.mp4" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
 
-* **Windows**: `Cassette.exe`
-* **Linux / macOS**: `Cassette`
+* **Stacking & Peak Dominance Blending** - Glyphs can be placed directly on top of each other. The engine applies peak dominance logic - the highest brightness layer always takes visual priority, allowing multi - layer light blending on a single channel.
 
-## Real - time preview on your phone
+* **Stack Inspection** - Double - click any stacked cluster to fan it out and inspect or edit each glyph individually.
 
-To enable live ringtone preview on a connected phone:
+<video src=".github/stacking.mp4" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
 
-1. Enable **Developer Options → USB debugging** on your Phone:
-* Settings → About phone → Press on Phone image → Tap Build number 7 times
-* System → Developer options → Enable USB debugging.
-2. Connect your Phone to the PC: **USB - C** or **USB - A** cable.
-3. Accept the connection prompt on the phone. **Recommended to enable "Always allow" checkbox.
-4. Install the **Cassette Receiver** app on your Nothing Phone. Cassette will ask you if you want to install it automatically
+* **Sub - Millisecond Waveform Slicing** - Fast ~0.5 s automatic BPM detection on import, sub - millisecond audio trimming, and customizable fade - in / fade - out envelopes.
 
-**Note:** Live preview has been tested on Nothing Phone 3a and 1. Other devices may not work, if so, please text me in discord.
+<img src=".github/audiosetup.GIF" style="border-radius: 20px;" alt="Wow!!! A! A.. A Window!!!!!">
 
-## FAQ & Troubleshooting
+* **Channel "A" (Global Track)** - A dedicated universal channel that triggers all phone zones simultaneously, allowing you to animate the entire device as one unified light source.
 
-### Phone not detected by Cassette
+<img src=".github/mastertrack.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
 
-1. Try a different cable and port. Some cables are power - only.
-2. Confirm Cassette Receiver is installed on the phone. But, you don't have to start it.
-3. Ensure USB debugging is enabled and the phone has accepted the PC's connection.
+### Interface & Tactile Physics
+* **Animations. They're everywhere. You will see it.**
 
-## Roadmap
+<video src=".github/pageswitch.mp4" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
 
-* Enhance cross - platform stability.
-* MAYBE an auto ringtone creator.
+<video src=".github/calibration.mp4" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
 
-## Contact
-- Discord only: **chips047**
+<video src=".github/checkbox.mp4" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+
+## Nothing Phone Integration
+
+* **Live USB Hardware Mirroring** - Connect your Nothing Phone via USB to mirror timeline playback straight onto the physical back panel in real time.
+
+* **Cross - Model Porting** - Projects authored for one phone can be automatically compiled and adapted across supported models: Phone (1), Phone (2), Phone (2a), Phone (3a), Phone (4a), and Phone (4b).
+
+* **The Dot - Matrix Signature** - When Nothing's system Composer renders preview dots, Cassette's compiler allows you to encode custom text (Latin, Cyrillic, numbers, and symbols) directly into that dot matrix as an author signature.
+
+<img src=".github/export.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+
+* **Standalone Glyphtone Trimmer** - Trim and re - export already - compiled `.ogg` glyphtone files directly without needing to rebuild project files.
+
+<img src=".github/trimmer.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+
+* **Universal Importer** - Native project import from BNGC and Audacity formats.
+
+<img src=".github/import.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+
+---
+
+## Engine & Performance
+
+Under the hood runs **LoomEngine** - an internal animation driver:
+
+* Handles overlapping state interruptions smoothly (e.g., aborting an action mid - transition)
+
+* Complete offscreen and occlusion culling: glyphs concealed behind dominant layers or outside the viewport consume zero render passes.
+
+* Hardware - accelerated OpenGL rendering with configurable MSAA (up to 8x) and NumPy / Pythran - optimized audio math.
+
+* Built to maintain high frame rates even on entry - level hardware (tested on dual - core AMD 3020e configurations).
+
+<video src=".github/playback.mp4" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| :--- | :--- |
+| `Space` | Play / Pause playback |
+| `S` | Cycle playback speed (`1.0x` -> `0.5x` -> `0.2x`) |
+| `D` | Quick duration editor for selected glyphs |
+| `B` | Quick brightness editor |
+| `[` / `]` | Nudge brightness (or shift keyframe envelopes up / down) |
+| `Ctrl + D` | Duplicate selection |
+| `Alt + Click` | Insert keyframe node on selected glyph |
+| `Alt + RMB` | Remove keyframe node |
+| `Eject` | Decelerate audio tape and return to project hub |
+
+More in tutorial.
+
+## Real - Time Phone Setup (USB Preview)
+
+To preview light sequences directly on your device:
+
+1. **Enable Developer Options & USB Debugging:**
+   * Open `Settings` -> `About phone` -> tap `Build number` **7 times**.
+   * Open `System` -> `Developer options` -> enable **USB debugging**.
+2. **Connect via USB:**
+   * Plug your phone into your computer using a data - capable USB cable.
+   * When prompted on your phone screen, authorize the computer connection (select *"Always allow from this computer"*).
+3. **Automatic Link:**
+   * Launch Cassette. The app detects the connected device and will prompt to install the lightweight companion receiver automatically.
+   * Play the timeline to view synced lighting on the physical phone back.
+
+## Audio Latency Calibration
+
+Different operating systems and audio drivers introduce distinct latency buffers. 
+
+To calibrate sync:
+* Open `Settings` -> `Audio` -> **Audio Latency Calibration**.
+* Tap `Space` to the rhythmic beat prompt to align waveform visuals with audio playback down to the exact millisecond.
+
+---
+
+## Installation
+
+Download the latest precompiled binaries from the **[Releases Page](https://github.com/chips047/Cassette/releases)**.
+
+### Windows
+Unpack the archive and launch:
+```text
+Cassette.exe
+```
+
+### Linux
+Unpack the archive, ensure execution permissions, and run:
+```bash
+chmod +x Cassette
+./Cassette
+```
+
+## System Requirements
+
+* **Operating System:** Windows 10/11 (64 - bit / ARM), MacOS (Silicon / Intel), Linux (64 - bit / ARM)
+* **Memory:** 4 GB RAM minimum (8 GB recommended)
+* **Graphics:** OpenGL 3.3+ capable hardware
+* **Disk Space:** 300 MB free space
+
+## Community & Feedback
+
+* **Author:** `chips047` on Discord
+* **Bugs & Feature Requests:** Please open an issue via the GitHub tracker.
