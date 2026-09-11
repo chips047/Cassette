@@ -28,13 +28,13 @@ Meet **Cassette.** An editor built from the ground up to feel like a tactile har
 ### The Timeline & Lighting Engine
 * **Keyframe Lighting Curves** - Switch any glyph into Keyframes mode (`Alt` + Click) to plot precise brightness envelopes over time. Adjust nodes across axes with smooth easing curves.
 
-<video src="https://github.com/chips047/Cassette/blob/main/.github/keyframes.mp4?raw=true" title="Wowie, keyframes!!!" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+https://github.com/user-attachments/assets/4ea0798d-023e-48c5-a447-ee7fdab68367
 
 * **Stacking & Peak Dominance Blending** - Glyphs can be placed directly on top of each other. The engine applies peak dominance logic - the highest brightness layer always takes visual priority, allowing multi - layer light blending on a single channel.
 
 * **Stack Inspection** - Double - click any stacked cluster to fan it out and inspect or edit each glyph individually.
 
-<video src="https://github.com/chips047/Cassette/blob/main/.github/stacking.mp4?raw=true" title="So much glyphs..."></video>" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+https://github.com/user-attachments/assets/cf447040-db70-4b8a-a2d0-eb63b59a6f66
 
 * **Sub - Millisecond Waveform Slicing** - Fast ~0.5 s automatic BPM detection on import, sub - millisecond audio trimming, and customizable fade - in / fade - out envelopes.
 
@@ -47,11 +47,11 @@ Meet **Cassette.** An editor built from the ground up to feel like a tactile har
 ### Interface & Tactile Physics
 * **Animations. They're everywhere. You will see it.**
 
-<video src="https://github.com/chips047/Cassette/blob/main/.github/pageswitch.mp4?raw=true" title="Just jumping around, idk..." controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+https://github.com/user-attachments/assets/e820d6e8-95ae-497e-b845-95d4bab22bd4
 
-<video src="https://github.com/chips047/Cassette/blob/main/.github/calibration.mp4?raw=true" title="Getting my shit calibrated." controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+https://github.com/user-attachments/assets/179374fe-b88d-482d-bf03-78d4f9be015b
 
-<video src="https://github.com/chips047/Cassette/blob/main/.github/checkbox.mp4?raw=true" title="I like animations :3" controls autoplay muted style="border-radius: 20px; overflow: hidden;"></video>
+https://github.com/user-attachments/assets/b83f87e4-1bbe-4ab4-89c8-c59ca864f451
 
 ## Nothing Phone Integration
 
