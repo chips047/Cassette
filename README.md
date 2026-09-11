@@ -23,7 +23,7 @@ Meet **Cassette.** An editor built from the ground up to feel like a tactile har
 ### Interactive Onboarding
 * **"Do to Continue" Tutorial** - A hands - on onboarding sequence that guides you through real interactions before letting you into the workspace. Fully skippable if you already know the ropes.
 
-<img src=".github/tutorial.GIF" style="border-radius: 20px;" alt="Wow! A tutorial!!!">
+<img src=".github/tutorial.png" style="border-radius: 20px;" alt="Wow! A tutorial!!!">
 
 ### The Timeline & Lighting Engine
 * **Keyframe Lighting Curves** - Switch any glyph into Keyframes mode (`Alt` + Click) to plot precise brightness envelopes over time. Adjust nodes across axes with smooth easing curves.
@@ -38,7 +38,7 @@ Meet **Cassette.** An editor built from the ground up to feel like a tactile har
 
 * **Sub - Millisecond Waveform Slicing** - Fast ~0.5 s automatic BPM detection on import, sub - millisecond audio trimming, and customizable fade - in / fade - out envelopes.
 
-<img src=".github/audiosetup.GIF" style="border-radius: 20px;" alt="Wow!!! A! A.. A Window!!!!!">
+<img src=".github/audiosetup.png" style="border-radius: 20px;" alt="Wow!!! A! A.. A Window!!!!!">
 
 * **Channel "A" (Global Track)** - A dedicated universal channel that triggers all phone zones simultaneously, allowing you to animate the entire device as one unified light source.
 
