@@ -9,67 +9,19 @@ from PyQt6.QtWidgets import (
     QSizePolicy
 )
 
-from System.Common import Constants
-
+from System.Common   import Constants
 from System.Services import Player
 
 from System.Interface import (
     Timing,
-    Labels,
-    Buttons
+    Widgets
 )
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
-
-from System.Interface.Widgets import TutorialProgressBar
+from System.Interface.Windows import FloatingWindowGPU
 
 # Tutorial
 
 class Tutorial(FloatingWindowGPU):
-    UNDERWATER_FREQUENCY_HZ  = 550.0
-    UNDERWATER_Q             = 0.9
-    UNDERWATER_BLIP_MS       = 260
-
-    MIN_AUDIO_MS             = 30000.0
-    LOOP_GUARD_MS            = 220.0
-    LOOP_WATCHDOG_MS         = 150
-
-    BASELINE_SPEED           = 1.0
-    INTRO_RAMP_MS            = 2600
-    RELEASE_RAMP_MS          = 900
-
-    PAGE_PULSE_SPEED         = 0.8
-    PAGE_PULSE_DOWN_MS       = 120
-    PAGE_PULSE_UP_MS         = 160
-
-    PLAY_PAUSE_ACCEL_RAMP_MS = 900
-    PLAY_PAUSE_HOLD_MS       = 1500
-    PLAY_PAUSE_STOP_RAMP_MS  = 700
-    PLAY_PAUSE_TEXT_HOLD_MS  = 1600
-
-    PLAY_PAUSE_GOOD_TEXT = (
-        "Good.\n"
-        "Let's put a glyph on the timeline next."
-    )
-
-    PLAY_PAUSE_QUICK_TEXT = (
-        "Wow. You learn quick.\n"
-        "Let's put a glyph on the timeline next."
-    )
-
-    COUNT_STAGE_TARGET      = 3
-    SPEED_STAGE_TARGET      = 3
-    SCROLL_TARGET_PX        = 1000.0
-
-    ZOOM_TARGET_MULTIPLIER  = 120
-
-    PLAYHEAD_MOVE_TARGET    = 3
-    PLAYHEAD_MOVE_GAP_MS    = 250
-
-    DRAG_PROGRESS_TARGET_MS = 750.0
-
-    RESUME_AUDIO_RAMP_MS    = 1400
-
     def __init__(
             self,
             path:       str,
@@ -174,7 +126,7 @@ class Tutorial(FloatingWindowGPU):
                             "identifier": "brightness",
                             "get":        lambda tutorial: tutorial.conductor.glyph_controller.glyph_property_changed,
                             "predicate":  lambda key: key == "brightness",
-                            "target":     self.COUNT_STAGE_TARGET
+                            "target":     Constants.COUNT_STAGE_TARGET
                         }
                     ],
                     "cancel_hint":     "Closed the brightness editor empty - handed? No stress - type a number, or just tap `[` / `]` instead.",
@@ -186,7 +138,7 @@ class Tutorial(FloatingWindowGPU):
                 "text":         "Press `S` to cycle the playback speed, or use the `button` at the top of window.",
                 "bpm_peak":     1.04,
                 "resume_audio": True,
-                "wait":         {"kind": "speed", "target": self.SPEED_STAGE_TARGET}
+                "wait":         {"kind": "speed", "target": Constants.SPEED_STAGE_TARGET}
             },
             {
                 "label":        "Resize or move",
@@ -204,7 +156,7 @@ class Tutorial(FloatingWindowGPU):
                             "live_get":       lambda tutorial: tutorial.conductor.glyph_controller.glyph_drag_progress,
                             "live_predicate": lambda mode, delta_ms: mode == "move",
                             "live_metric":    lambda mode, delta_ms: delta_ms,
-                            "live_scale":     self.DRAG_PROGRESS_TARGET_MS
+                            "live_scale":     Constants.DRAG_PROGRESS_TARGET_MS
                         },
                         {
                             "identifier":     "resize",
@@ -214,7 +166,7 @@ class Tutorial(FloatingWindowGPU):
                             "live_get":       lambda tutorial: tutorial.conductor.glyph_controller.glyph_drag_progress,
                             "live_predicate": lambda mode, delta_ms: mode in ("resize_left", "resize_right"),
                             "live_metric":    lambda mode, delta_ms: delta_ms,
-                            "live_scale":     self.DRAG_PROGRESS_TARGET_MS
+                            "live_scale":     Constants.DRAG_PROGRESS_TARGET_MS
                         }
                     ]
                 }
@@ -273,7 +225,7 @@ class Tutorial(FloatingWindowGPU):
                         {
                             "identifier": "playhead",
                             "get":        lambda tutorial: tutorial.conductor.playhead.playhead_pressed,
-                            "target":     self.PLAYHEAD_MOVE_TARGET
+                            "target":     Constants.PLAYHEAD_MOVE_TARGET
                         }
                     ]
                 }
@@ -288,7 +240,7 @@ class Tutorial(FloatingWindowGPU):
                             "identifier": "scroll",
                             "get":        lambda tutorial: tutorial.conductor.content_scrolled,
                             "amount":     lambda magnitude: magnitude,
-                            "target":     self.SCROLL_TARGET_PX
+                            "target":     Constants.SCROLL_TARGET_PX
                         }
                     ]
                 }
@@ -321,7 +273,7 @@ class Tutorial(FloatingWindowGPU):
     def zoom_stage_target(self) -> float:
         zoom_step = self.conductor.wheel_controller.zoom_step
 
-        return zoom_step * self.ZOOM_TARGET_MULTIPLIER
+        return zoom_step * Constants.ZOOM_TARGET_MULTIPLIER
 
     def playhead_progress_delta(self, normalized: float) -> float:
         last                        = self.playhead_progress_last
@@ -333,17 +285,17 @@ class Tutorial(FloatingWindowGPU):
         return abs(normalized - last)
 
     def initialize_ui(self) -> None:
-        self.text_label = Labels.DescriptionLabel("Hello.")
+        self.text_label = Widgets.DescriptionLabel("Hello.")
         self.text_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
         self.text_label.setMinimumWidth(320)
 
-        self.progress_bar = TutorialProgressBar()
+        self.progress_bar = Widgets.TutorialProgressBar()
         self.progress_bar.setVisible(False)
 
-        self.next_button = Buttons.NothingButton("Next?")
+        self.next_button = Widgets.NothingButton("Next?")
         self.next_button.clicked.connect(self.next_button_callback)
 
-        self.skip_button = Buttons.ConfirmButton("Skip tutorial", "Press again to confirm")
+        self.skip_button = Widgets.ConfirmButton("Skip tutorial", "Press again to confirm")
         self.skip_button.confirmed.connect(self.skip_tutorial)
 
         self.content_layout.addWidget(self.text_label)
@@ -568,7 +520,7 @@ class Tutorial(FloatingWindowGPU):
 
     def arm_speed_stage(self, wait: dict) -> None:
         self.progress_speed_current = 0.0
-        self.progress_speed_target  = float(wait.get("target", self.SPEED_STAGE_TARGET))
+        self.progress_speed_target  = float(wait.get("target", Constants.SPEED_STAGE_TARGET))
 
         self.progress_bar.set_total(self.progress_speed_target)
         self.progress_bar.set_completed(0.0)
@@ -662,14 +614,14 @@ class Tutorial(FloatingWindowGPU):
         if not self.audio_enabled or not self.player.is_playing:
             return
 
-        self.animate_speed(0.0, self.PLAY_PAUSE_STOP_RAMP_MS, on_finish = self.player.stop)
+        self.animate_speed(0.0, Constants.PLAY_PAUSE_STOP_RAMP_MS, on_finish = self.player.stop)
 
     def on_play_pause_started(self) -> None:
         self.return_focus_to_tutorial()
-        self.text_label.setText(self.PLAY_PAUSE_GOOD_TEXT)
+        self.text_label.setText(Constants.PLAY_PAUSE_GOOD_TEXT)
 
         if not self.audio_enabled:
-            QTimer.singleShot(self.PLAY_PAUSE_TEXT_HOLD_MS, self.on_action_completed)
+            QTimer.singleShot(Constants.PLAY_PAUSE_TEXT_HOLD_MS, self.on_action_completed)
             return
 
         baseline = self.target_speed_baseline()
@@ -680,10 +632,10 @@ class Tutorial(FloatingWindowGPU):
 
             self.disarm_play_pause_watch()
 
-            self.text_label.setText(self.PLAY_PAUSE_QUICK_TEXT)
-            self.animate_speed(baseline, self.PAGE_PULSE_UP_MS)
+            self.text_label.setText(Constants.PLAY_PAUSE_QUICK_TEXT)
+            self.animate_speed(baseline, Constants.PAGE_PULSE_UP_MS)
 
-            QTimer.singleShot(self.PLAY_PAUSE_TEXT_HOLD_MS, self.on_action_completed)
+            QTimer.singleShot(Constants.PLAY_PAUSE_TEXT_HOLD_MS, self.on_action_completed)
 
         self.player.playback_state_changed.connect(early_pause_slot)
         self.play_pause_pause_slot = early_pause_slot
@@ -693,15 +645,15 @@ class Tutorial(FloatingWindowGPU):
                 return
 
             self.disarm_play_pause_watch()
-            self.animate_speed(0.0, self.PLAY_PAUSE_STOP_RAMP_MS, on_finish = self.finish_play_pause_stage)
+            self.animate_speed(0.0, Constants.PLAY_PAUSE_STOP_RAMP_MS, on_finish = self.finish_play_pause_stage)
 
         def hold_then_wind_down() -> None:
             if self.play_pause_pause_slot is not early_pause_slot:
                 return
 
-            QTimer.singleShot(self.PLAY_PAUSE_HOLD_MS, wind_down)
+            QTimer.singleShot(Constants.PLAY_PAUSE_HOLD_MS, wind_down)
 
-        self.animate_speed(baseline, self.PLAY_PAUSE_ACCEL_RAMP_MS, on_finish = hold_then_wind_down)
+        self.animate_speed(baseline, Constants.PLAY_PAUSE_ACCEL_RAMP_MS, on_finish = hold_then_wind_down)
 
     def finish_play_pause_stage(self) -> None:
         self.player.stop()
@@ -737,7 +689,7 @@ class Tutorial(FloatingWindowGPU):
         if self.user_took_speed_control:
             return self.user_baseline_speed
 
-        return self.BASELINE_SPEED
+        return Constants.BASELINE_SPEED
 
     def animate_speed(
             self,
@@ -756,7 +708,7 @@ class Tutorial(FloatingWindowGPU):
     def initialize_audio(self) -> None:
         self.player.load_audio(self.audio_path)
 
-        self.audio_enabled = self.player.duration_ms >= self.MIN_AUDIO_MS
+        self.audio_enabled = self.player.duration_ms >= Constants.MIN_AUDIO_MS
 
         if not self.audio_enabled:
             return
@@ -764,12 +716,12 @@ class Tutorial(FloatingWindowGPU):
         self.animate_speed(0.0)
 
         self.player.play()
-        self.player.set_passes([self.UNDERWATER_FREQUENCY_HZ], q = self.UNDERWATER_Q, mix = 1.0)
+        self.player.set_passes([Constants.UNDERWATER_FREQUENCY_HZ], q = Constants.UNDERWATER_Q, mix = 1.0)
 
-        self.animate_speed(self.target_speed_baseline(), self.INTRO_RAMP_MS)
-        self.player.set_passes([self.UNDERWATER_FREQUENCY_HZ], mix = 0.0, duration_ms = self.INTRO_RAMP_MS)
+        self.animate_speed(self.target_speed_baseline(), Constants.INTRO_RAMP_MS)
+        self.player.set_passes([Constants.UNDERWATER_FREQUENCY_HZ], mix = 0.0, duration_ms = Constants.INTRO_RAMP_MS)
 
-        self.loop_watchdog = Timing.Timer(self.LOOP_WATCHDOG_MS, self.check_audio_loop, parent = self)
+        self.loop_watchdog = Timing.Timer(Constants.LOOP_WATCHDOG_MS, self.check_audio_loop, parent = self)
         self.loop_watchdog.start()
 
     def check_audio_loop(self) -> None:
@@ -778,7 +730,7 @@ class Tutorial(FloatingWindowGPU):
 
         remaining = self.player.duration_ms - self.player.get_position()
 
-        if remaining > self.LOOP_GUARD_MS:
+        if remaining > Constants.LOOP_GUARD_MS:
             return
 
         self.player.set_volume(0.0, 120)
@@ -804,15 +756,15 @@ class Tutorial(FloatingWindowGPU):
 
         baseline = self.target_speed_baseline()
 
-        self.animate_speed(baseline, self.RELEASE_RAMP_MS)
+        self.animate_speed(baseline, Constants.RELEASE_RAMP_MS)
 
         filter_mix = 0.35 if wait else 0.0
 
         self.player.set_passes(
-            [self.UNDERWATER_FREQUENCY_HZ],
-            q           = self.UNDERWATER_Q,
+            [Constants.UNDERWATER_FREQUENCY_HZ],
+            q           = Constants.UNDERWATER_Q,
             mix         = filter_mix,
-            duration_ms = self.RELEASE_RAMP_MS
+            duration_ms = Constants.RELEASE_RAMP_MS
         )
 
     def resume_tutorial_audio(self) -> None:
@@ -831,14 +783,14 @@ class Tutorial(FloatingWindowGPU):
         self.player.play(resume_position_ms)
 
         self.player.set_volume(0.0)
-        self.player.set_volume(1.0, self.RESUME_AUDIO_RAMP_MS)
+        self.player.set_volume(1.0, Constants.RESUME_AUDIO_RAMP_MS)
 
-        self.animate_speed(speed, self.RESUME_AUDIO_RAMP_MS)
+        self.animate_speed(speed, Constants.RESUME_AUDIO_RAMP_MS)
 
         self.player.set_passes(
-            [self.UNDERWATER_FREQUENCY_HZ],
+            [Constants.UNDERWATER_FREQUENCY_HZ],
             mix         = 0.0,
-            duration_ms = self.RESUME_AUDIO_RAMP_MS
+            duration_ms = Constants.RESUME_AUDIO_RAMP_MS
         )
 
     def stop_tutorial_audio(self) -> None:
@@ -853,7 +805,7 @@ class Tutorial(FloatingWindowGPU):
             self.player.stop()
             self.player.set_speed(baseline, 0)
 
-        self.animate_speed(0.0, self.PLAY_PAUSE_STOP_RAMP_MS, on_finish = finish_stop)
+        self.animate_speed(0.0, Constants.PLAY_PAUSE_STOP_RAMP_MS, on_finish = finish_stop)
 
     def play_page_transition_pulse(self) -> None:
         if not self.audio_enabled:
@@ -867,9 +819,9 @@ class Tutorial(FloatingWindowGPU):
         baseline = self.target_speed_baseline()
 
         def pulse_up() -> None:
-            self.animate_speed(baseline, self.PAGE_PULSE_UP_MS, on_finish = self.release_stage_effects)
+            self.animate_speed(baseline, Constants.PAGE_PULSE_UP_MS, on_finish = self.release_stage_effects)
 
-        self.animate_speed(self.PAGE_PULSE_SPEED, self.PAGE_PULSE_DOWN_MS, on_finish = pulse_up)
+        self.animate_speed(Constants.PAGE_PULSE_SPEED, Constants.PAGE_PULSE_DOWN_MS, on_finish = pulse_up)
 
     def setup_feedback_audio(self) -> None:
         if not self.audio_enabled:
@@ -896,17 +848,17 @@ class Tutorial(FloatingWindowGPU):
             return
 
         self.player.set_passes(
-            [self.UNDERWATER_FREQUENCY_HZ],
-            q           = self.UNDERWATER_Q,
+            [Constants.UNDERWATER_FREQUENCY_HZ],
+            q           = Constants.UNDERWATER_Q,
             mix         = 1.0,
             duration_ms = 0
         )
 
         self.player.set_passes(
-            [self.UNDERWATER_FREQUENCY_HZ],
-            q           = self.UNDERWATER_Q,
+            [Constants.UNDERWATER_FREQUENCY_HZ],
+            q           = Constants.UNDERWATER_Q,
             mix         = 0.0,
-            duration_ms = self.UNDERWATER_BLIP_MS
+            duration_ms = Constants.UNDERWATER_BLIP_MS
         )
 
     # Cleanup

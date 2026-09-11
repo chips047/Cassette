@@ -25,13 +25,13 @@ from System.Interface.Animation import (
     LoomEngine
 )
 
-from System.Services import Player
-from System.Interface.Controls import BaseControlContainer
+from System.Services  import Player
+from System.Interface import Widgets
 
 # Slider With Label
 
 @Dev.track_ram
-class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
+class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer):
     valueChanged = pyqtSignal(int)
 
     def __init__(
@@ -121,10 +121,9 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
         self.slider_is_dragging = False
 
     def handle_slider_value_changed(self, value: int) -> None:
+        self.target_value = value
         self.value_label.setText(str(value))
         self.valueChanged.emit(value)
-
-        self.target_value = self.slider.value()
 
         if not self.slider_is_dragging:
             return
@@ -181,6 +180,9 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, BaseControlContainer):
         self.value_handle.stop()
 
     def value(self) -> int:
+        if self.slider_is_dragging:
+            return self.slider.value()
+
         return self.target_value
 
     def setValue(self, value: int | float | str) -> None:

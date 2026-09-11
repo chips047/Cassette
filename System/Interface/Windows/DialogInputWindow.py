@@ -6,12 +6,9 @@ from PyQt6.QtWidgets import QWidget
 from System.Common   import Constants
 from System.Services import Player
 
-from System.Interface import (
-    Buttons,
-    Textboxes
-)
+from System.Interface import Widgets
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # Dialog Input Window
 
@@ -31,14 +28,14 @@ class DialogInputWindow(FloatingWindowGPU):
 
         self.close_attempt_count = 0
 
-        self.input_field = Textboxes.Textbox(input_type, min_number, max_number, max_length)
+        self.input_field = Widgets.Textbox(input_type, min_number, max_number, max_length)
         self.input_field.setMinimumWidth(160)
         self.input_field.setPlaceholderText(placeholder)
 
-        self.button_row = Buttons.ButtonRow(
+        self.button_row = Widgets.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
-                (Buttons.NothingButton,     random.choice(Constants.OK_TEXTS), self.on_ok)
+                (Widgets.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
+                (Widgets.NothingButton,     random.choice(Constants.OK_TEXTS), self.on_ok)
             ]
         )
 

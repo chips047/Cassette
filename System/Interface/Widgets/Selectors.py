@@ -32,8 +32,8 @@ from System.Common import (
     Styles
 )
 
-from System.Services import Player
-from System.Interface.Controls import BaseControlContainer
+from System.Services  import Player
+from System.Interface import Widgets
 
 from System.Interface.Animation import (
     Lifecycle,
@@ -517,7 +517,7 @@ class Selector(QWidget):
         return self.current_text()
 
 @Dev.track_ram
-class SelectorWithLabel(BaseControlContainer):
+class SelectorWithLabel(Widgets.BaseControlContainer):
     selectionChanged = pyqtSignal(int, str, object)
 
     def __init__(

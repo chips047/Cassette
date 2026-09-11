@@ -3,11 +3,12 @@ from PyQt6.QtWidgets import (
     QHBoxLayout
 )
 
-from System.Common import    Constants
-from System.Services import  Player
-from System.Interface import Selectors
+from System.Common import   Constants
+from System.Services import Player
 
-from System.Interface.Windows.AudioDialogBase import BPMEditorBase
+from System.Interface import Widgets
+
+from System.Interface.Windows import BPMEditorBase
 
 # Audio Setup Dialog
 
@@ -43,7 +44,7 @@ class AudioSetupDialog(BPMEditorBase):
         self.ok_button.setMaximumWidth(56)
         self.cancel_button.setMaximumWidth(80)
 
-        self.model_selector = Selectors.Selector(["1", "2", "2a", "3a", "4a", "4b"])
+        self.model_selector = Widgets.Selector(["1", "2", "2a", "3a", "4a", "4b"])
         self.model_selector.setMinimumWidth(240)
 
         settings_layout = QHBoxLayout()
@@ -64,7 +65,7 @@ class AudioSetupDialog(BPMEditorBase):
         if self.player.is_playing:
             self.title_label.setText(self.filename)
             self.stop_playback()
-            self.trim_widget.set_playback_position(self.trim_widget.start_time)
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec)
 
         else:
             self.play_selection()

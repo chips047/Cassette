@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import QWidget
 
-from System.Interface import Labels
+from System.Interface import Widgets
 
-from System.Interface.Windows.DialogWindow import DialogWindow
+from System.Interface.Windows import DialogWindow
 
 # Trim Warning Dialog
 
@@ -21,8 +21,9 @@ class TrimWarningDialog(DialogWindow):
             f"that fall outside the new selection. This cannot be undone."
         )
 
-        self.description_label = Labels.DescriptionLabel(description, 600)
+        self.description_label = Widgets.DescriptionLabel(description, 600)
         self.content_layout.insertWidget(1, self.description_label)
 
         self.title_label.start_glitch()
+        
         self.adjustSize()

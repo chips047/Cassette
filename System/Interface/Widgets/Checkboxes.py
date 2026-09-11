@@ -32,8 +32,8 @@ from System.Interface.Animation import (
     LoomEngine
 )
 
-from System.Services import Player
-from System.Interface.Controls import BaseControlContainer
+from System.Services  import Player
+from System.Interface import Widgets
 
 # Pixel Parsing
 
@@ -214,7 +214,7 @@ class Checkbox(Lifecycle.LoomAnimationMixin, QCheckBox):
         painter.restore()
 
 @Dev.track_ram
-class CheckboxWithLabel(BaseControlContainer):
+class CheckboxWithLabel(Widgets.BaseControlContainer):
     stateChanged = pyqtSignal(bool)
 
     def __init__(

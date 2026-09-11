@@ -25,7 +25,6 @@ from System.Interface import (
 )
 
 from System.Interface.Animation import LoomEngine
-
 from .OcclusionController import OcclusionController
 
 from .. import (
@@ -134,7 +133,7 @@ class GlyphController(QObject):
         for item in self.glyph_items.values():
             item.setSelected(True)
 
-    # Modification and History
+    # Modification And History
 
     def modify_selected_glyphs(
             self,
@@ -172,6 +171,33 @@ class GlyphController(QObject):
         if property_name in ("start", "duration", "track"):
             self.refresh_all_occlusion()
 
+    def adjust_keyframes_brightness(
+            self,
+            keyframes: list[tuple[float, int]],
+            delta:     int
+        ) -> list[tuple[float, int]] | None:
+
+        adjusted_keyframes = [
+            (
+                round(float(time_fraction), 2),
+                max(0, min(100, int(round(float(brightness_value))) + delta))
+            )
+            for time_fraction, brightness_value in keyframes
+        ]
+
+        normalized_keyframes = [
+            (
+                round(float(time_fraction), 2),
+                int(round(float(brightness_value)))
+            )
+            for time_fraction, brightness_value in keyframes
+        ]
+
+        if adjusted_keyframes == normalized_keyframes:
+            return None
+
+        return adjusted_keyframes
+
     def adjust_selected_brightness(self, delta: int) -> None:
         selected_glyph_identifiers = self.get_selected_glyph_ids()
 
@@ -186,18 +212,47 @@ class GlyphController(QObject):
         try:
             for glyph_identifier in selected_glyph_identifiers:
                 glyph_data = self.composition.get_glyph(glyph_identifier)
+                glyph_item = self.glyph_items.get(glyph_identifier)
 
                 if not glyph_data:
                     continue
 
-                current_brightness = glyph_data.get("brightness", 100)
-                new_brightness     = max(0, min(100, current_brightness + delta))
+                if glyph_item and glyph_item.keyframes:
+                    new_keyframes = self.adjust_keyframes_brightness(glyph_item.keyframes, delta)
 
-                if new_brightness == current_brightness:
-                    continue
+                    if new_keyframes is None:
+                        continue
 
-                before_state[glyph_identifier] = copy.deepcopy(glyph_data)
-                after_state[glyph_identifier]  = {**copy.deepcopy(glyph_data), "brightness": new_brightness}
+                    before_state[glyph_identifier] = copy.deepcopy(glyph_data)
+
+                    if "effect" in glyph_data and glyph_data["effect"].get("name") == "Fade":
+                        effect_settings = glyph_data["effect"].get("settings", {})
+                        new_settings    = {**effect_settings, "keyframes": new_keyframes}
+
+                        after_state[glyph_identifier] = GlyphEffects.apply_visual_effect(
+                            copy.deepcopy(glyph_data),
+                            "Fade",
+                            new_settings
+                        )
+
+                    elif "keyframes" in glyph_data:
+                        after_state[glyph_identifier] = {
+                            **copy.deepcopy(glyph_data),
+                            "keyframes": new_keyframes
+                        }
+
+                elif "brightness" in glyph_data:
+                    current_brightness = glyph_data["brightness"]
+                    new_brightness     = max(0, min(100, current_brightness + delta))
+
+                    if new_brightness == current_brightness:
+                        continue
+
+                    before_state[glyph_identifier] = copy.deepcopy(glyph_data)
+                    after_state[glyph_identifier]  = {
+                        **copy.deepcopy(glyph_data),
+                        "brightness": new_brightness
+                    }
 
             if after_state:
                 self.push_action(Actions.ActionModify(self, before_state, after_state))
@@ -214,11 +269,19 @@ class GlyphController(QObject):
 
                 if len(after_state) == 1:
                     target_glyph_id = next(iter(after_state))
-                    glyph_item      = self.glyph_items[target_glyph_id]
+                    item_ref        = self.glyph_items[target_glyph_id]
+                    target_data     = after_state[target_glyph_id]
+
+                    if item_ref.keyframes:
+                        delta_prefix    = "+" if delta > 0 else ""
+                        tooltip_message = f"Keyframes: {delta_prefix}{delta}%"
+
+                    else:
+                        tooltip_message = f"Brightness: {target_data.get('brightness', 100)}%"
 
                     self.conductor.tooltip.show_tooltip_at(
-                        f"Brightness: {after_state[target_glyph_id]['brightness']}%",
-                        glyph_item,
+                        tooltip_message,
+                        item_ref,
                         True
                     )
 
@@ -292,15 +355,21 @@ class GlyphController(QObject):
 
     # Glyph Management
 
-    def update_glyphs(self, glyph_ids: dict[int, dict] | None = None) -> None:
+    def update_glyphs(
+            self,
+            glyph_ids:        dict[int, dict] | list[int] | None = None,
+            animate_movement: bool                               = False
+        ) -> None:
+
         if glyph_ids:
             for glyph_id in glyph_ids:
                 if glyph_id in self.glyph_items:
-                    self.glyph_items[glyph_id].update_geometry()
+                    self.glyph_items[glyph_id].update_geometry(animate_movement = animate_movement)
+
             return
 
         for glyph in self.glyph_items.values():
-            glyph.update_geometry()
+            glyph.update_geometry(animate_movement = animate_movement)
 
     def clear_glyphs(self) -> None:
         for item in self.glyph_items.values():
@@ -481,7 +550,7 @@ class GlyphController(QObject):
             if first_item is None:
                 return
 
-            base_y     = float(first_item.fixed_y)
+            base_y     = float(first_item.fixed_y_px)
             box_height = float(Styles.Metrics.Tracks.BoxHeight)
 
             direction, step = self.calculate_expansion_params(len(group), base_y, box_height)
@@ -597,6 +666,7 @@ class GlyphController(QObject):
     def commit_fade_keyframes(
             self,
             glyph_id:      int,
+            old_keyframes: list[tuple[float, int]],
             new_keyframes: list[tuple[float, int]]
         ) -> None:
 
@@ -610,24 +680,26 @@ class GlyphController(QObject):
         if effect.get("name") != "Fade":
             return
 
-        settings      = effect["settings"]
-        old_keyframes = settings["keyframes"]
-        new_glyph     = copy.deepcopy(original_glyph)
-        new_settings  = {**settings, "keyframes": new_keyframes}
+        clean_old = [(round(float(time_part), 2), int(round(float(brightness_part)))) for time_part, brightness_part in old_keyframes]
+        clean_new = [(round(float(time_part), 2), int(round(float(brightness_part)))) for time_part, brightness_part in new_keyframes]
+
+        settings     = effect["settings"]
+        new_glyph    = copy.deepcopy(original_glyph)
+        new_settings = {**settings, "keyframes": clean_new}
 
         new_glyph = GlyphEffects.apply_visual_effect(new_glyph, "Fade", new_settings)
         self.conductor.composition.replace_glyph(glyph_id, new_glyph)
 
         self.push_action(
             Actions.EditFadeKeyframesCommand(
-                self.conductor.composition,
+                self,
                 glyph_id,
-                old_keyframes,
-                new_keyframes,
+                clean_old,
+                clean_new
             )
         )
 
-    # Stacking and Groups
+    # Stacking And Groups
 
     def get_overlapping_group(self, glyph_id: int) -> list[int]:
         data = self.composition.get_glyph(glyph_id)
@@ -678,11 +750,11 @@ class GlyphController(QObject):
             entries.sort()
             count = len(entries)
 
-            for i in range(count):
-                start_a, end_a, glyph_id_a = entries[i]
+            for first_index in range(count):
+                start_a, end_a, glyph_id_a = entries[first_index]
 
-                for j in range(i + 1, count):
-                    start_b, _, glyph_id_b = entries[j]
+                for second_index in range(first_index + 1, count):
+                    start_b, end_b, glyph_id_b = entries[second_index]
 
                     if start_b >= end_a:
                         break
@@ -808,7 +880,7 @@ class GlyphController(QObject):
         if first_item is None:
             return
 
-        base_y     = float(first_item.fixed_y)
+        base_y     = float(first_item.fixed_y_px)
         box_height = float(Styles.Metrics.Tracks.BoxHeight)
 
         direction, step = self.calculate_expansion_params(group_size, base_y, box_height)

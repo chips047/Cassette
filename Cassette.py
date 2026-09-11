@@ -582,12 +582,6 @@ class StartupFadeOverlay(QWidget):
             painter.drawText(self.egg_text_rect, Qt.AlignmentFlag.AlignCenter, self.egg_text)
 
 class ApplicationWindow(QMainWindow):
-    EXIT_FADE_BASE_MS            = 3000
-    EXIT_EFFECTS_DELAY_MS        = 1700
-    EXIT_CLOSE_SOUND_DURATION_MS = 1500
-    NO_AUDIO_EXIT_DELAY_MS       = 1800
-    ENTRY_VERTICAL_OFFSET_PX     = 150
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -845,7 +839,7 @@ class ApplicationWindow(QMainWindow):
         self.entry_move_animation.setStartValue(
             QRect(
                 stack_rectangle.x(),
-                stack_rectangle.y() + self.ENTRY_VERTICAL_OFFSET_PX,
+                stack_rectangle.y() + Constants.ENTRY_VERTICAL_OFFSET_PX,
                 stack_rectangle.width(),
                 stack_rectangle.height()
             )
@@ -914,8 +908,8 @@ class ApplicationWindow(QMainWindow):
         player               = Player.player
 
         remaining_ms  = max(0.0, player.duration_ms - player.get_position())
-        fade_duration = self.EXIT_FADE_BASE_MS     * animation_multiplier
-        effects_delay = self.EXIT_EFFECTS_DELAY_MS * animation_multiplier
+        fade_duration = Constants.EXIT_FADE_BASE_MS     * animation_multiplier
+        effects_delay = Constants.EXIT_EFFECTS_DELAY_MS * animation_multiplier
         quit_delay    = effects_delay * 2
 
         if quit_delay > remaining_ms:
@@ -925,7 +919,7 @@ class ApplicationWindow(QMainWindow):
             effects_delay *= scale
             quit_delay    *= scale
 
-        quit_delay = max(quit_delay, effects_delay + self.EXIT_CLOSE_SOUND_DURATION_MS)
+        quit_delay = max(quit_delay, effects_delay + Constants.EXIT_CLOSE_SOUND_DURATION_MS)
 
         fade_duration = int(fade_duration)
         effects_delay = int(effects_delay)
@@ -948,9 +942,9 @@ class ApplicationWindow(QMainWindow):
         has_exit_effects     = self.play_exit_effects()
 
         duration = (
-            int(self.NO_AUDIO_EXIT_DELAY_MS * animation_multiplier)
+            int(Constants.NO_AUDIO_EXIT_DELAY_MS * animation_multiplier)
             if has_exit_effects
-            else self.NO_AUDIO_EXIT_DELAY_MS
+            else Constants.NO_AUDIO_EXIT_DELAY_MS
         )
 
         QTimer.singleShot(duration, self.complete_shutdown)
@@ -1002,7 +996,7 @@ def main() -> None:
     application.setStyle("Fusion")
 
     font_paths = [
-        "System/Assets/Fonts/NDot57.otf",
+        "System/Assets/Fonts/NDot57.otf",   
         "System/Assets/Fonts/NType82.otf"
     ]
 

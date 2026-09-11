@@ -8,10 +8,11 @@ from PyQt6.QtCore import (
     QEvent,
     QPoint,
     QTimer,
-    pyqtSignal,
+    pyqtSignal
 )
 
 from PyQt6.QtGui import (
+    QMoveEvent,
     QFontMetrics,
     QKeySequence
 )
@@ -29,7 +30,7 @@ from System.Common import (
 )
 
 from System.Services import Player
-
+from System.Interface.Timing import Timer
 from System.Interface.Animation import Lifecycle
 
 from System.Interface.Animation.LoomEngine import (
@@ -38,46 +39,44 @@ from System.Interface.Animation.LoomEngine import (
     ui_engine
 )
 
-from System.Interface.Timing import Timer
-
 # Textbox
 
 @Dev.track_ram
 class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
-    safeTextChanged = pyqtSignal(str)
-    glitchStarted   = pyqtSignal()
+    safeTextChanged: pyqtSignal = pyqtSignal(str)
+    glitchStarted:   pyqtSignal = pyqtSignal()
 
-    glitch_step_count = 7
-    glitch_step_ms    = 36
+    glitch_step_count: int = 7
+    glitch_step_ms:    int = 36
 
     def __init__(
             self,
             input_type:   str,
-            min_number:   int = 0,
-            max_number:   int = 0,
-            max_length:   int = None,
-            default_text: str = None,
-            placeholder:  str = None
+            min_number:   int        = 0,
+            max_number:   int        = 0,
+            max_length:   int | None = None,
+            default_text: str | None = None,
+            placeholder:  str | None = None
         ) -> None:
 
         super().__init__()
 
-        self.input_type   = input_type
-        self.min_number   = min_number
-        self.max_number   = max_number
-        self.max_length   = max_length
-        self.default_text = default_text
-
+        self.input_type          = input_type
+        self.min_number          = min_number
+        self.max_number          = max_number
+        self.max_length          = max_length
+        self.default_text        = default_text
         self.is_default_text_set = False
-        self.animating            = False
-        self.is_key_pressed       = False
-        self.arrow_pressed        = False
-        self.arrow_direction      = 0
-        self.glitch_blocked       = False
-        self.is_glitching         = False
+        self.animating           = False
+        self.is_key_pressed      = False
+        self.arrow_pressed       = False
+        self.arrow_direction     = 0
+        self.glitch_blocked      = False
+        self.is_glitching        = False
+        self.is_wiggling         = False
 
-        self.original_position         = QPoint()
-        self.original_textbox_position = QPoint()
+        self.layout_position = QPoint()
+        self.current_offset  = QPoint()
 
         if placeholder:
             self.setPlaceholderText(placeholder)
@@ -91,8 +90,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
         self.setup_animations()
 
-        self.original_text = super().text()
-
+        self.original_text  = super().text()
         self.error_messages = ["FATALERROR", "SYSTEM_FAILURE", "CRITICAL_MISS", "NULL_POINTER", "VOID_DATA"]
 
     def setup_animations(self) -> None:
@@ -101,7 +99,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         self.position_handle = ui_engine.bind(
             owner      = self,
             name       = "position",
-            base_value = QPoint(),
+            base_value = QPoint(0, 0),
             mix_mode   = MixMode.REPLACE,
             on_change  = self.on_position_changed
         )
@@ -114,29 +112,30 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             on_change  = self.on_glitch_text_changed
         )
 
-    # Pan helper
+    # Pan Helper
 
-    def calculate_screen_pan(self, global_pos: QPoint) -> float:
+    def calculate_screen_pan(self, global_position: QPoint) -> float:
         screen = self.screen()
-        
+
         if not screen:
-            screen = QApplication.screenAt(global_pos) or QApplication.primaryScreen()
-    
+            screen = QApplication.screenAt(global_position) or QApplication.primaryScreen()
+
         if not screen:
             return 0.0
-    
+
         screen_rectangle = screen.geometry()
-    
+
         if screen_rectangle.width() <= 0:
             return 0.0
-    
-        relative_x = (global_pos.x() - screen_rectangle.x()) / screen_rectangle.width()
-        pan = relative_x * 2.0 - 1.0
-    
+
+        relative_x = (global_position.x() - screen_rectangle.x()) / screen_rectangle.width()
+        pan        = relative_x * 2.0 - 1.0
+
         return max(-1.0, min(1.0, pan))
 
-    def get_cursor_global_pos(self) -> QPoint:
+    def get_cursor_global_position(self) -> QPoint:
         cursor_center = self.cursorRect().center()
+
         return self.mapToGlobal(cursor_center)
 
     # Events
@@ -144,38 +143,47 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
     def showEvent(self, event: QEvent) -> None:
         super().showEvent(event)
 
-        if self.original_textbox_position.isNull():
-            QTimer.singleShot(0, self.initialize_start_position)
+        if self.layout_position.isNull() and not self.pos().isNull():
+            self.layout_position = self.pos()
 
         if not self.is_default_text_set and self.default_text is not None:
+            self.blockSignals(True)
             self.setText(self.default_text)
+            self.blockSignals(False)
             self.is_default_text_set = True
 
-    def initialize_start_position(self) -> None:
-        if not self.isVisible():
+    def moveEvent(self, event: QMoveEvent) -> None:
+        super().moveEvent(event)
+
+        if self.current_offset.isNull():
+            self.layout_position = event.pos()
+
+    def on_position_changed(self, offset: QPoint) -> None:
+        self.current_offset = offset
+
+        if self.layout_position.isNull():
             return
 
-        self.original_textbox_position = self.pos()
-        self.position_handle.set_base(self.original_textbox_position)
-
-    def on_position_changed(self, position: QPoint) -> None:
-        self.move(position)
+        self.move(self.layout_position + offset)
 
     def on_glitch_text_changed(self, text: str) -> None:
         super().setText(text)
 
     def keyPressEvent(self, event: QEvent) -> None:
-        key          = event.key()
-        current_text = super().text()
-        new_char     = event.text()
+        key           = event.key()
+        current_text  = super().text()
+        new_character = event.text()
 
         if event.matches(QKeySequence.StandardKey.Paste):
-            self.start_glitch()
+            self.start_glitch(sound = True)
             event.ignore()
+
             return
 
         if self.handle_arrow_keys(key, current_text):
-            return super().keyPressEvent(event)
+            super().keyPressEvent(event)
+
+            return
 
         control_keys = {
             Qt.Key.Key_End,
@@ -192,12 +200,14 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         if key in control_keys:
             super().keyPressEvent(event)
 
-        elif new_char:
-            if not self.validate_and_insert_char(current_text, new_char, event):
+        elif new_character:
+            if not self.validate_and_insert_character(current_text, new_character, event):
                 return
 
         else:
-            return super().keyPressEvent(event)
+            super().keyPressEvent(event)
+
+            return
 
         if not (key in (Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_Enter) or self.is_key_pressed):
             self.start_shake_animation()
@@ -212,16 +222,16 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         can_animate = self.animations_enabled and not self.arrow_pressed and current_text
 
         if is_arrow and can_animate:
-            direction  = -1 if key == Qt.Key.Key_Left else 1
-            position   = self.cursorPosition() + direction
-            tone       = 0.85 + (position / len(current_text)) * 0.4
-            cursor_pos = self.get_cursor_global_pos()
+            direction       = -1 if key == Qt.Key.Key_Left else 1
+            position        = self.cursorPosition() + direction
+            tone            = 0.85 + (position / len(current_text)) * 0.4
+            cursor_position = self.get_cursor_global_position()
 
             Player.ui_player.play_sound(
                 "Textbox/ArrowTick",
                 speed       = tone,
                 setting_key = "textbox_sounds",
-                pan         = self.calculate_screen_pan(cursor_pos)
+                pan         = self.calculate_screen_pan(cursor_position)
             )
 
             self.arrow_pressed   = True
@@ -230,21 +240,21 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
         return is_arrow
 
-    def validate_and_insert_char(
+    def validate_and_insert_character(
             self,
-            current_text: str,
-            new_char:     str,
-            event:        QEvent
+            current_text:  str,
+            new_character: str,
+            event:         QEvent
         ) -> bool:
 
         selection_start  = self.selectionStart()
         insert_at        = selection_start if selection_start != -1 else self.cursorPosition()
         selection_length = len(self.selectedText()) if selection_start != -1 else 0
 
-        new_text = current_text[:insert_at] + new_char + current_text[insert_at + selection_length:]
+        new_text = current_text[:insert_at] + new_character + current_text[insert_at + selection_length :]
 
-        if not self.validate_new_text(new_text, new_char):
-            self.start_glitch()
+        if not self.validate_new_text(new_text, new_character):
+            self.start_glitch(sound = True)
             self.glitch_blocked = True
 
             return False
@@ -277,9 +287,9 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         if not self.animations_enabled:
             return
 
-        if Constants.current_settings["textbox_animations"]:
+        if Constants.current_settings["textbox_animations"] and not self.is_glitching:
             self.position_handle.set_target(
-                value                      = self.original_textbox_position,
+                value                      = QPoint(0, 0),
                 duration_ms                = 250,
                 easing_function            = Easing.ease_out_quad,
                 multiply_duration_by_speed = False
@@ -311,6 +321,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
     def setText(self, text: str | int) -> None:
         if self.input_type == ":time":
             super().setText(self.seconds_to_time_text(int(text)))
+
             return
 
         super().setText(str(text))
@@ -367,8 +378,8 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
     def validate_new_text(
             self,
-            new_text: str,
-            new_char: str
+            new_text:      str,
+            new_character: str
         ) -> bool:
 
         if self.input_type == "number":
@@ -378,7 +389,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             return self.validate_text(new_text)
 
         if self.input_type == ":time":
-            return self.validate_time(new_text, new_char)
+            return self.validate_time(new_text, new_character)
 
         return True
 
@@ -402,11 +413,11 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
     def validate_time(
             self,
-            new_text: str,
-            new_char: str
+            new_text:      str,
+            new_character: str
         ) -> bool:
 
-        if not all(character.isdigit() or character == ":" for character in new_char):
+        if not all(character.isdigit() or character == ":" for character in new_character):
             return False
 
         if new_text.count(":") > 1:
@@ -436,8 +447,8 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             elif remaining_characters <= 1:
                 tone = 1.2
 
-        cursor_global_pos = self.get_cursor_global_pos()
-        current_pan       = self.calculate_screen_pan(cursor_global_pos)
+        cursor_global_position = self.get_cursor_global_position()
+        current_pan            = self.calculate_screen_pan(cursor_global_position)
 
         Player.ui_player.play_sound(
             "Textbox/Tick",
@@ -450,9 +461,18 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         if not self.animations_enabled:
             return
 
-        self.position_handle.set_base(self.original_textbox_position + QPoint(-5, -5))
+        if self.is_wiggling:
+            shake_radius = 4
+            delta_x      = random.randint(-shake_radius, shake_radius)
+            delta_y      = random.randint(-shake_radius, shake_radius)
+            target_pos   = QPoint(delta_x, delta_y)
+
+        else:
+            target_pos = QPoint(0, 0)
+
+        self.position_handle.set_base(target_pos + QPoint(-5, -5))
         self.position_handle.set_target(
-            value                      = self.original_textbox_position,
+            value                      = target_pos,
             duration_ms                = 250,
             easing_function            = Easing.ease_out_expo,
             multiply_duration_by_speed = False
@@ -460,18 +480,26 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
 
     # Glitch
 
-    def start_glitch(self, sound: bool = True) -> None:
+    def start_glitch(
+            self,
+            duration_ms: int | None = None,
+            interval_ms: int | None = None,
+            wiggle:      bool       = False,
+            sound:       bool       = True
+        ) -> None:
+
         if self.glitch_blocked:
             return
 
         self.glitchStarted.emit()
 
         if sound:
-            cursor_pos = self.get_cursor_global_pos()
+            cursor_position = self.get_cursor_global_position()
+
             Player.ui_player.play_sound(
                 "Reject",
                 setting_key = "textbox_sounds",
-                pan         = self.calculate_screen_pan(cursor_pos)
+                pan         = self.calculate_screen_pan(cursor_position)
             )
 
         if not Constants.current_settings["textbox_animations"]:
@@ -480,74 +508,131 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         if self.is_glitching:
             return
 
-        self.is_glitching      = True
-        self.animating         = True
-        self.original_position = self.pos()
-        self.original_text     = super().text()
+        self.is_glitching  = True
+        self.animating     = True
+        self.original_text = super().text()
+        self.is_wiggling   = wiggle
+
+        frames = self.build_glitch_frames(duration_ms, interval_ms)
 
         self.glitch_text_handle.play_steps(
-            steps    = self.build_glitch_frames(),
+            steps    = frames,
             finished = self.finish_glitch
         )
 
     def get_fill_text(self) -> str:
-        fm = QFontMetrics(self.font())
-        char_width = fm.horizontalAdvance("W") 
-        
-        count = self.width() // char_width
-        
-        msg = random.choice(self.error_messages)
-        full_string = (msg * (count // len(msg) + 1))[:count]
+        font_metrics    = QFontMetrics(self.font())
+        character_width = font_metrics.horizontalAdvance("W")
+
+        count       = self.width() // character_width
+        message     = random.choice(self.error_messages)
+        full_string = (message * (count // len(message) + 1))[:count]
 
         return full_string
 
-    def generate_noisy_text(self, text: str, intensity: float) -> str:
-        chars = string.ascii_letters + string.punctuation
-        result = []
-        
-        for char in text:
-            if char.isspace():
-                result.append(char)
-            
-            elif random.random() < intensity:
-                result.append(random.choice(chars))
-            
-            else:
-                result.append(char)
-        
-        return "".join(result)
+    def generate_noisy_text(
+            self,
+            text:          str,
+            intensity:     float,
+            previous_text: str = ""
+        ) -> str:
 
-    def build_glitch_frames(self) -> list[tuple[int, str]]:
+        characters = string.ascii_letters + string.punctuation
+        result     = []
+
+        for character in text:
+            if character.isspace():
+                result.append(character)
+
+            elif random.random() < intensity:
+                result.append(random.choice(characters))
+
+            else:
+                result.append(character)
+
+        noisy_text = "".join(result)
+
+        if intensity > 0.0 and noisy_text == previous_text and text.strip():
+            non_whitespace_indices = [
+                index
+                for index, character in enumerate(text)
+                if not character.isspace()
+            ]
+
+            if non_whitespace_indices:
+                target_index        = random.choice(non_whitespace_indices)
+                forbidden_character = previous_text[target_index] if target_index < len(previous_text) else ""
+                replacement_pool    = [
+                    character
+                    for character in characters
+                    if character != forbidden_character
+                ]
+
+                noisy_characters               = list(noisy_text)
+                noisy_characters[target_index] = random.choice(replacement_pool)
+                noisy_text                     = "".join(noisy_characters)
+
+        return noisy_text
+
+    def build_glitch_frames(
+            self,
+            duration_ms: int | None = None,
+            interval_ms: int | None = None
+        ) -> list[tuple[int, str]]:
+
         if not self.original_text or self.original_text.strip() == "":
             fill_text = self.get_fill_text()
-        
+
         else:
             fill_text = self.original_text
 
-        intensities = [0.0, 0.2, 0.4, 0.7, 1.0, 0.7, 0.4, 0.2, 0.0]
-        frames = []
-        
+        if duration_ms is not None and interval_ms is not None:
+            step_ms    = interval_ms
+            step_count = max(2, round(duration_ms / interval_ms))
+
+            intensities = [
+                round(0.25 + 0.75 * (1.0 - abs((index / (step_count - 1)) * 2.0 - 1.0)), 2)
+                for index in range(step_count)
+            ]
+
+        else:
+            step_ms     = self.glitch_step_ms
+            intensities = [0.25, 0.45, 0.70, 1.0, 0.70, 0.45, 0.25]
+
+        frames              = []
+        previous_frame_text = self.original_text
+
         for intensity in intensities:
-            noisy_text = self.generate_noisy_text(fill_text, intensity)
-            frames.append((self.glitch_step_ms, noisy_text))
-            
+            noisy_text          = self.generate_noisy_text(fill_text, intensity, previous_frame_text)
+            previous_frame_text = noisy_text
+            frames.append((step_ms, noisy_text))
+
         if not self.original_text or self.original_text.strip() == "":
-            frames.append((self.glitch_step_ms, ""))
-            
+            frames.append((step_ms, ""))
+
         return frames
 
     def finish_glitch(self) -> None:
-        self.move(self.original_position)
+        self.is_wiggling = False
+
+        if not self.layout_position.isNull():
+            self.position_handle.set_target(
+                value                      = QPoint(0, 0),
+                duration_ms                = 180,
+                easing_function            = Easing.ease_out_quad,
+                multiply_duration_by_speed = False
+            )
+
         super().setText(self.original_text)
 
         self.is_glitching = False
-        self.animating     = False
+        self.animating    = False
 
     # Arrows
 
     def animate_arrow_hold(self, offset: int) -> None:
         self.position_handle.set_target(
-            value                      = self.original_textbox_position + QPoint(offset, 0),
+            value                      = QPoint(offset, 0),
             duration_ms                = 120,
             easing_function            = Easing.ease_out_cubic,
             multiply_duration_by_speed = False
@@ -558,7 +643,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             return
 
         self.position_handle.set_target(
-            value                      = self.original_textbox_position,
+            value                      = QPoint(0, 0),
             duration_ms                = 180,
             easing_function            = Easing.ease_out_elastic,
             multiply_duration_by_speed = False
@@ -568,7 +653,7 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
         shake_radius = 5
         delta_x      = random.randint(-shake_radius, shake_radius)
         delta_y      = random.randint(-shake_radius, shake_radius)
-        target_pos   = self.original_textbox_position + QPoint(delta_x, delta_y)
+        target_pos   = QPoint(delta_x, delta_y)
 
         self.position_handle.set_target(
             value                      = target_pos,
@@ -577,9 +662,29 @@ class Textbox(Lifecycle.LoomAnimationMixin, QLineEdit):
             multiply_duration_by_speed = False
         )
 
+    # Transforms
+
+    def pulse_scale(
+            self,
+            peak_scale:  float = 1.2,
+            duration_ms: int   = 100
+        ) -> None:
+
+        if not self.animations_enabled:
+            return
+
+        self.position_handle.set_base(QPoint(0, -5))
+        self.position_handle.set_target(
+            value                      = QPoint(0, 0),
+            duration_ms                = duration_ms,
+            easing_function            = Easing.ease_out_back,
+            multiply_duration_by_speed = False
+        )
+
+# Search Textbox
+
 @Dev.track_ram
 class SearchTextbox(Textbox):
-
     random_titles: tuple = (
         "CYCLE",
         "BREAK",
@@ -599,7 +704,7 @@ class SearchTextbox(Textbox):
         "FIX IT"
     )
 
-    dick_lengths: dict = {
+    easter_lengths: dict = {
         1: (
             "A small dick. You just typed a small dick. What the fuck are you doing?",
             "Microscopic. Genuinely impressive in the wrong direction.",
@@ -694,8 +799,7 @@ class SearchTextbox(Textbox):
             self.deleteLater()
 
     def on_random_title_timer(self) -> None:
-        title = random.choice(self.random_titles)
-
+        title         = random.choice(self.random_titles)
         active_window = QApplication.activeWindow()
 
         if active_window:
@@ -703,7 +807,7 @@ class SearchTextbox(Textbox):
 
         self.random_title_timer.start(random.randint(30, 400))
 
-    def get_dick_response(self, text: str) -> str | None:
+    def get_easter_response(self, text: str) -> str | None:
         match = re.fullmatch(r"[38](=+)3", text)
 
         if not match:
@@ -714,17 +818,17 @@ class SearchTextbox(Textbox):
         if length > 8:
             return random.choice(self.glitch_lengths)
 
-        bucket = self.dick_lengths.get(length, self.dick_lengths[max(self.dick_lengths)])
+        bucket = self.easter_lengths.get(length, self.easter_lengths[max(self.easter_lengths)])
 
         return random.choice(bucket)
 
     def on_text_changed(self, text: str) -> None:
-        text = (text or "").lower().strip().replace(" ", "")
+        normalized_text = (text or "").lower().strip().replace(" ", "")
+        easter_response = self.get_easter_response(normalized_text)
 
-        dick_response = self.get_dick_response(text)
+        if easter_response:
+            self.setText(easter_response)
 
-        if dick_response:
-            self.setText(dick_response)
             return
 
         easter_eggs = {
@@ -733,5 +837,5 @@ class SearchTextbox(Textbox):
             "hello":      lambda: self.setText("well uhH hello Hi Hello Hello Hellliio hiiii")
         }
 
-        if text in easter_eggs:
-            easter_eggs[text]()
+        if normalized_text in easter_eggs:
+            easter_eggs[normalized_text]()

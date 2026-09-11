@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 
 from loguru import logger
+
 from PyQt6.QtGui import QContextMenuEvent
 
 from PyQt6.QtCore import (

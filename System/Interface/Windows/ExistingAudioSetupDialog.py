@@ -11,10 +11,10 @@ from System.Services import (
     ProjectSaver
 )
 
-from System.Interface import Buttons
+from System.Interface import Widgets
 
-from System.Interface.Windows.TrimWarningDialog import TrimWarningDialog
-from System.Interface.Windows.AudioDialogBase   import BPMEditorBase
+from System.Interface.Windows import TrimWarningDialog
+from System.Interface.Windows import BPMEditorBase
 
 # Existing Audio Setup Dialog
 
@@ -50,7 +50,7 @@ class ExistingAudioSetupDialog(BPMEditorBase):
         self.ok_button.setMaximumWidth(56)
         self.cancel_button.setMaximumWidth(80)
 
-        self.auto_bpm_button = Buttons.ButtonWithOutline("Auto")
+        self.auto_bpm_button = Widgets.ButtonWithOutline("Auto")
         self.auto_bpm_button.setMaximumWidth(80)
         self.auto_bpm_button.clicked.connect(self.on_auto_detect_bpm)
 
@@ -87,7 +87,7 @@ class ExistingAudioSetupDialog(BPMEditorBase):
         super().on_audio_ready()
 
         current_start = float(self.composition.start_ms or 0) / 1000.0
-        current_end   = float(self.composition.end_ms) / 1000.0 if self.composition.end_ms is not None else self.trim_widget.duration
+        current_end   = float(self.composition.end_ms) / 1000.0 if self.composition.end_ms is not None else self.trim_widget.duration_sec
 
         self.trim_widget.set_times(current_start, current_end)
         self.update_textboxes(current_start, current_end)

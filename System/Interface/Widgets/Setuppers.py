@@ -3,8 +3,8 @@ import random
 
 from PyQt6.QtCore import (
     Qt,
-    QTimer,
     QEvent,
+    QTimer,
     QObject
 )
 
@@ -13,28 +13,16 @@ from PyQt6.QtWidgets import (
     QApplication
 )
 
-from System.Common import (
-    Dev,
-    Utils
-)
-
-from System.Interface import (
-    Labels,
-    Buttons
-)
-
+from System.Common import Dev
 from System.Services import Player
-from System.Interface.Controls import BaseControlContainer
+from System.Interface import Widgets
 
 @Dev.track_ram
-class DelaySetupper(BaseControlContainer):
-    metronome_bpm      = 120
-    click_frequency    = 1000.0
-    click_duration_ms  = 30.0
-    click_sample_rate  = 44100
+class DelaySetupper(Widgets.BaseControlContainer):
+    metronome_bpm:      int = 120
 
-    warmup_tap_count   = 5
-    required_tap_count = 10
+    warmup_tap_count:   int = 3
+    required_tap_count: int = 6
 
     def __init__(
             self,
@@ -44,7 +32,7 @@ class DelaySetupper(BaseControlContainer):
 
         super().__init__(inner_layout_type = QHBoxLayout)
 
-        self.beat_interval_ms = 60000.0 / self.metronome_bpm
+        self.beat_interval_ms   = 60000.0 / self.metronome_bpm
 
         self.is_calibrating     = False
         self.tap_timestamps     = []
@@ -64,21 +52,32 @@ class DelaySetupper(BaseControlContainer):
         ) -> None:
 
         self.inner_layout.setContentsMargins(10, 10, 10, 10)
-        self.inner_layout.setSpacing(15)
+        self.inner_layout.setSpacing(10)
 
-        self.label       = Labels.DescriptionLabel(description)
-        self.delay_label = Labels.DescriptionLabel(str(default_ms))
+        self.label            = Widgets.DescriptionLabel(description)
+        self.delay_textbox    = Widgets.Textbox(
+            input_type   = "number",
+            min_number   = 0,
+            max_number   = 1000,
+            default_text = str(default_ms)
+        )
 
-        self.delay_label.setFont(Utils.NType(12))
-        self.delay_label.set_animation_alignment(0)
+        self.delay_textbox.setFixedSize(60, 40)
+        self.delay_textbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.calibrate_button = Buttons.ButtonWithOutline("Calibrate")
+        self.reset_button     = Widgets.ButtonWithOutline("Reset")
+        self.calibrate_button = Widgets.ButtonWithOutline("Calibrate")
+
+        self.reset_button.setMinimumWidth(80)
+        self.reset_button.clicked.connect(self.reset_delay)
+
         self.calibrate_button.setMinimumWidth(140)
         self.calibrate_button.clicked.connect(self.toggle_calibration)
 
         self.inner_layout.addWidget(self.label)
         self.inner_layout.addStretch()
-        self.inner_layout.addWidget(self.delay_label)
+        self.inner_layout.addWidget(self.delay_textbox)
+        self.inner_layout.addWidget(self.reset_button)
         self.inner_layout.addWidget(self.calibrate_button)
 
     def play_click(self) -> None:
@@ -87,11 +86,32 @@ class DelaySetupper(BaseControlContainer):
 
     # Calibration
 
+    def reset_delay(self) -> None:
+        if self.current_value() == 0:
+            self.reset_button.start_glitch()
+            self.delay_textbox.start_glitch(sound = False)
+
+            return
+
+        self.delay_textbox.start_glitch(
+            duration_ms = 580,
+            interval_ms = 70,
+            wiggle      = True,
+            sound       = False
+        )
+
+        QTimer.singleShot(580, self.on_delay_reset)
+        Player.ui_player.play_sound("Signals/Success/DelayFound")
+
+    def on_delay_reset(self) -> None:
+        self.delay_textbox.setText("0")
+        self.on_delay_set()
+
     def toggle_calibration(self) -> None:
         if self.is_calibrating:
             self.stop_calibration()
             self.calibrate_button.setText("Calibrate")
-            
+
             return
 
         self.start_calibration()
@@ -141,9 +161,9 @@ class DelaySetupper(BaseControlContainer):
     def register_tap(self) -> None:
         timestamp = time.time() * 1000.0
 
-        if len(self.tap_timestamps) and timestamp - self.tap_timestamps[-1] < 250:
+        if self.tap_timestamps and (timestamp - self.tap_timestamps[-1]) < 250:
             self.stop_calibration()
-            
+
             self.calibrate_button.setText(
                 random.choice(
                     [
@@ -156,7 +176,7 @@ class DelaySetupper(BaseControlContainer):
             )
 
             self.calibrate_button.start_glitch()
-            
+
             return
 
         self.tap_timestamps.append(timestamp)
@@ -194,8 +214,15 @@ class DelaySetupper(BaseControlContainer):
         if offset_ms is None:
             return
 
-        self.delay_label.setText(str(offset_ms))
-        self.delay_label.start_glitch(580, 70)
+        clamped_offset_ms = max(0, min(1000, offset_ms))
+
+        self.delay_textbox.setText(str(clamped_offset_ms))
+        self.delay_textbox.start_glitch(
+            duration_ms = 580,
+            interval_ms = 70,
+            wiggle      = True,
+            sound       = False
+        )
 
         self.calibrate_button.setText("Calibrated")
 
@@ -203,40 +230,44 @@ class DelaySetupper(BaseControlContainer):
         Player.ui_player.play_sound("Signals/Success/DelayFound")
 
     def on_delay_set(self) -> None:
-        self.delay_label.pulse_scale(1.5, 200)
+        self.delay_textbox.pulse_scale(1.5, 200)
         Player.ui_player.play_sound("Signals/Success/DelayFoundFinal")
 
     def calculate_average_offset(self) -> int | None:
-        relevant_taps = self.tap_timestamps[self.warmup_tap_count:]
+        relevant_taps = self.tap_timestamps[self.warmup_tap_count :]
 
         if not relevant_taps:
             return None
 
         offsets = []
-        
-        bias_shift = self.beat_interval_ms * 0.35 
+
+        bias_shift = self.beat_interval_ms * 0.35
 
         for tap_time_ms in relevant_taps:
             biased_tap = tap_time_ms - bias_shift
-            
+
             closest_click = min(
-                self.actual_click_times, 
+                self.actual_click_times,
                 key = lambda click: abs(biased_tap - click)
             )
-            
+
             offsets.append(tap_time_ms - closest_click)
 
         offsets.sort()
+
         trim_count = max(1, len(offsets) // 5)
-        
+
         if len(offsets) > trim_count * 2:
-            offsets = offsets[trim_count:-trim_count]
+            offsets = offsets[trim_count : -trim_count]
 
         return int(sum(offsets) / len(offsets))
 
     # Value
 
     def current_value(self) -> int:
-        value = self.delay_label.text()
+        value = self.delay_textbox.text()
 
-        return int(value) if value is not None else 0.0
+        if value is None:
+            return 0
+
+        return int(value)

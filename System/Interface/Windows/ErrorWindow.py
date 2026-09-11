@@ -7,14 +7,10 @@ from PyQt6.QtWidgets import (
 
 from System.Services import Player
 
-from System.Interface import (
-    Labels,
-    Buttons
-)
+from System.Interface import Widgets
 
 from System.Interface.Animation import LoomEngine
-
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows   import FloatingWindowGPU
 
 # Error Window
 
@@ -29,10 +25,10 @@ class ErrorWindow(FloatingWindowGPU):
 
         super().__init__(title, parent = parent)
 
-        ok_button   = Buttons.NothingButton(button_text)
-        copy_button = Buttons.ButtonWithOutline("Copy error details")
+        ok_button   = Widgets.NothingButton(button_text)
+        copy_button = Widgets.ButtonWithOutline("Copy error details")
 
-        self.description_label = Labels.DescriptionLabel(description, 600)
+        self.description_label = Widgets.DescriptionLabel(description, 600)
 
         self.content_layout.addWidget(self.description_label)
         self.content_layout.addWidget(copy_button)

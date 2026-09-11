@@ -28,13 +28,7 @@ from System.Services import (
     GlyphEffects
 )
 
-from System.Interface import (
-    Sliders,
-    Widgets,
-    Buttons,
-    Selectors,
-    Checkboxes
-)
+from System.Interface import Widgets
 
 @Dev.track_ram
 class ContextMenu(QMenu):
@@ -148,7 +142,7 @@ class EffectPreviewWidget(QWidget):
         logger.debug(f"Created Effect Previewer for {effect_name}")
 
     def setup_ui(self) -> None:
-        self.setFixedWidth(400)
+        self.setFixedWidth(550)
         self.setStyleSheet(Styles.Controls.EffectSetupper)
 
         self.main_layout = QVBoxLayout(self)
@@ -158,14 +152,14 @@ class EffectPreviewWidget(QWidget):
         self.live_preview_bar = Widgets.ScheduledSegmentedBar(30, loop = True)
         self.main_layout.addWidget(self.live_preview_bar)
 
-        self.apply_button = Buttons.NothingButton("Apply")
+        self.apply_button = Widgets.NothingButton("Apply")
         self.apply_button.clicked.connect(self.on_apply)
 
     def populate_controls(self) -> None:
         types_map = {
-            "checkbox": (Checkboxes.Checkbox,          "stateChanged"),
-            "slider":   (Sliders.SliderWithLabel,   "valueChanged"),
-            "selector": (Selectors.SelectorWithLabel, "selectionChanged")
+            "checkbox": (Widgets.Checkbox,          "stateChanged"),
+            "slider":   (Widgets.SliderWithLabel,   "valueChanged"),
+            "selector": (Widgets.SelectorWithLabel, "selectionChanged")
         }
 
         logger.debug(f"Populating controls for Effect {self.effect_name}")
@@ -197,13 +191,13 @@ class EffectPreviewWidget(QWidget):
         settings = {}
 
         for key, widget in self.controls.items():
-            if isinstance(widget, Checkboxes.Checkbox):
+            if isinstance(widget, Widgets.Checkbox):
                 settings[key] = widget.isChecked()
 
-            elif isinstance(widget, Sliders.SliderWithLabel):
+            elif isinstance(widget, Widgets.SliderWithLabel):
                 settings[key] = widget.value()
 
-            elif isinstance(widget, Selectors.SelectorWithLabel):
+            elif isinstance(widget, Widgets.SelectorWithLabel):
                 settings[key] = widget.current_data()
 
         return settings

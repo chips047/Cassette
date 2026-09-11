@@ -1,31 +1,14 @@
+from loguru import logger
 
-from collections.abc import (
-    Callable
-)
-from loguru import (
-    logger
-)
-from PyQt6.QtCore import (
-    QPoint
-)
-from PyQt6.QtWidgets import (
-    QWidget
-)
+from collections.abc import Callable
 
-from System.Services import (
-    Player
-)
-from System.Interface import (
-    Labels,
-    Buttons,
-    Sliders,
-    Widgets,
-    Selectors,
-    Checkboxes
-)
-from System.Interface.Windows.FloatingWindowGPU import (
-    FloatingWindowGPU
-)
+from PyQt6.QtCore    import QPoint
+from PyQt6.QtWidgets import QWidget
+
+from System.Services  import Player
+from System.Interface import Widgets
+
+from System.Interface.Windows import FloatingWindowGPU
 
 # Playground
 
@@ -50,7 +33,7 @@ class Playground(FloatingWindowGPU):
             title:   str,
             widgets: list[QWidget]
         ) -> None:
-        self.scroll_area.add_widget(Labels.DescriptionLabel(title))
+        self.scroll_area.add_widget(Widgets.DescriptionLabel(title))
 
         for widget in widgets:
             self.scroll_area.add_widget(widget)
@@ -60,19 +43,19 @@ class Playground(FloatingWindowGPU):
             control:  QWidget,
             callback: Callable[[], None]
         ) -> None:
-        if isinstance(control, Checkboxes.CheckboxWithLabel):
+        if isinstance(control, Widgets.CheckboxWithLabel):
             control.stateChanged.connect(lambda *unused_arguments: callback())
             return
 
-        if isinstance(control, Sliders.SliderWithLabel):
+        if isinstance(control, Widgets.SliderWithLabel):
             control.valueChanged.connect(lambda *unused_arguments: callback())
             return
 
-        if isinstance(control, Selectors.SelectorWithLabel):
+        if isinstance(control, Widgets.SelectorWithLabel):
             control.selectionChanged.connect(lambda *unused_arguments: callback())
             return
 
-        if isinstance(control, Selectors.Selector):
+        if isinstance(control, Widgets.Selector):
             control.selectionChanged.connect(lambda *unused_arguments: callback())
             return
 
@@ -82,80 +65,80 @@ class Playground(FloatingWindowGPU):
         animation_styles = ["bouncy", "smooth", "roll", "glitch", "classic"]
         default_index    = animation_styles.index(self.animation_style) if self.animation_style in animation_styles else 0
 
-        self.margin_slider                        = Sliders.SliderWithLabel("Margin", 0, 600, self.margin_x)
-        self.max_tilt_slider                      = Sliders.SliderWithLabel("Max Tilt Angle", 0, 45, self.max_tilt_angle)
-        self.shake_frequency_slider               = Sliders.SliderWithLabel("Shake Frequency (ms)", 10, 200, self.shake_frequency_ms)
-        self.shake_deviation_slider               = Sliders.SliderWithLabel("Shake Deviation", 0, 100, int(self.shake_deviation * 10))
-        self.tilt_smoothing_slider                = Sliders.SliderWithLabel("Tilt Smoothing", 0, 100, int(self.tilt_smoothing * 100))
-        self.bpm_peak_slider                      = Sliders.SliderWithLabel("BPM Peak", 100, 200, int(self.bpm_peak_scale * 100))
+        self.margin_slider                        = Widgets.SliderWithLabel("Margin", 0, 600, self.margin_x)
+        self.max_tilt_slider                      = Widgets.SliderWithLabel("Max Tilt Angle", 0, 45, self.max_tilt_angle)
+        self.shake_frequency_slider               = Widgets.SliderWithLabel("Shake Frequency (ms)", 10, 200, self.shake_frequency_ms)
+        self.shake_deviation_slider               = Widgets.SliderWithLabel("Shake Deviation", 0, 100, int(self.shake_deviation * 10))
+        self.tilt_smoothing_slider                = Widgets.SliderWithLabel("Tilt Smoothing", 0, 100, int(self.tilt_smoothing * 100))
+        self.bpm_peak_slider                      = Widgets.SliderWithLabel("BPM Peak", 100, 200, int(self.bpm_peak_scale * 100))
 
-        self.start_position_enabled_checkbox      = Checkboxes.CheckboxWithLabel("Start Position", "Use custom spawn position", self.start_position is not None)
-        self.start_position_x_slider              = Sliders.SliderWithLabel("Start X", 0, 4000, self.start_position.x() if self.start_position else 0)
-        self.start_position_y_slider              = Sliders.SliderWithLabel("Start Y", 0, 4000, self.start_position.y() if self.start_position else 0)
+        self.start_position_enabled_checkbox      = Widgets.CheckboxWithLabel("Start Position", "Use custom spawn position", self.start_position is not None)
+        self.start_position_x_slider              = Widgets.SliderWithLabel("Start X", 0, 4000, self.start_position.x() if self.start_position else 0)
+        self.start_position_y_slider              = Widgets.SliderWithLabel("Start Y", 0, 4000, self.start_position.y() if self.start_position else 0)
 
-        self.dialog_checkbox                      = Checkboxes.CheckboxWithLabel("Dialog", "Use dialog window flags", True)
-        self.stays_on_top_checkbox                = Checkboxes.CheckboxWithLabel("Stays On Top", "Stay above other windows", True)
-        self.enable_tilt_checkbox                 = Checkboxes.CheckboxWithLabel("Enable Tilt", "Mouse hover tilt", self.enable_tilt)
-        self.enable_open_animation_checkbox       = Checkboxes.CheckboxWithLabel("Open Animation", "Animate on open", self.enable_open_animation)
-        self.enable_close_animation_checkbox      = Checkboxes.CheckboxWithLabel("Close Animation", "Animate on close", self.enable_close_animation)
-        self.enable_audio_effects_checkbox        = Checkboxes.CheckboxWithLabel("Transition Audio", "Use audio pulses on transitions", self.enable_transition_audio_effects)
-        self.enable_advanced_beat_checkbox        = Checkboxes.CheckboxWithLabel("Advanced Beats", "Use heavy and normal beat hooks", self.enable_advanced_beat_animations)
-        self.enable_shake_animation_checkbox      = Checkboxes.CheckboxWithLabel("Shake Animation", "Shake animation loop")
-        self.style_selector                       = Selectors.Selector(animation_styles, default_index)
-        self.apply_window_button                  = Buttons.ButtonWithOutlineSlim("Apply Window Settings")
+        self.dialog_checkbox                      = Widgets.CheckboxWithLabel("Dialog", "Use dialog window flags", True)
+        self.stays_on_top_checkbox                = Widgets.CheckboxWithLabel("Stays On Top", "Stay above other windows", True)
+        self.enable_tilt_checkbox                 = Widgets.CheckboxWithLabel("Enable Tilt", "Mouse hover tilt", self.enable_tilt)
+        self.enable_open_animation_checkbox       = Widgets.CheckboxWithLabel("Open Animation", "Animate on open", self.enable_open_animation)
+        self.enable_close_animation_checkbox      = Widgets.CheckboxWithLabel("Close Animation", "Animate on close", self.enable_close_animation)
+        self.enable_audio_effects_checkbox        = Widgets.CheckboxWithLabel("Transition Audio", "Use audio pulses on transitions", self.enable_transition_audio_effects)
+        self.enable_advanced_beat_checkbox        = Widgets.CheckboxWithLabel("Advanced Beats", "Use heavy and normal beat hooks", self.enable_advanced_beat_animations)
+        self.enable_shake_animation_checkbox      = Widgets.CheckboxWithLabel("Shake Animation", "Shake animation loop")
+        self.style_selector                       = Widgets.Selector(animation_styles, default_index)
+        self.apply_window_button                  = Widgets.ButtonWithOutlineSlim("Apply Window Settings")
 
-        self.volume_slider                        = Sliders.SliderWithLabel("Volume", 0, 100, 100)
-        self.player_speed_slider                  = Sliders.SliderWithLabel("Speed (%)", 10, 300, 100)
+        self.volume_slider                        = Widgets.SliderWithLabel("Volume", 0, 100, 100)
+        self.player_speed_slider                  = Widgets.SliderWithLabel("Speed (%)", 10, 300, 100)
 
-        self.bitcrush_mix_slider                  = Sliders.SliderWithLabel("BC Mix", 0, 100, 0)
-        self.bitcrush_bits_slider                 = Sliders.SliderWithLabel("BC Bits", 1, 24, 16)
-        self.bitcrush_downsample_slider           = Sliders.SliderWithLabel("Downsample", 1, 32, 1)
+        self.bitcrush_mix_slider                  = Widgets.SliderWithLabel("BC Mix", 0, 100, 0)
+        self.bitcrush_bits_slider                 = Widgets.SliderWithLabel("BC Bits", 1, 24, 16)
+        self.bitcrush_downsample_slider           = Widgets.SliderWithLabel("Downsample", 1, 32, 1)
 
-        self.pass_mix_slider                      = Sliders.SliderWithLabel("Filter Mix", 0, 100, 0)
-        self.pass_freq_slider                     = Sliders.SliderWithLabel("Freq (Hz)", 100, 10000, 1000)
-        self.pass_q_slider                        = Sliders.SliderWithLabel("Resonance", 1, 100, 10)
-        self.pass_gain_slider                     = Sliders.SliderWithLabel("Gain", 0, 200, 100)
+        self.pass_mix_slider                      = Widgets.SliderWithLabel("Filter Mix", 0, 100, 0)
+        self.pass_freq_slider                     = Widgets.SliderWithLabel("Freq (Hz)", 100, 10000, 1000)
+        self.pass_q_slider                        = Widgets.SliderWithLabel("Resonance", 1, 100, 10)
+        self.pass_gain_slider                     = Widgets.SliderWithLabel("Gain", 0, 200, 100)
 
-        self.eq_low_slider                        = Sliders.SliderWithLabel("EQ Low", 0, 200, 100)
-        self.eq_mid_slider                        = Sliders.SliderWithLabel("EQ Mid", 0, 200, 100)
-        self.eq_high_slider                       = Sliders.SliderWithLabel("EQ High", 0, 200, 100)
+        self.eq_low_slider                        = Widgets.SliderWithLabel("EQ Low", 0, 200, 100)
+        self.eq_mid_slider                        = Widgets.SliderWithLabel("EQ Mid", 0, 200, 100)
+        self.eq_high_slider                       = Widgets.SliderWithLabel("EQ High", 0, 200, 100)
 
-        self.background_noise_slider              = Sliders.SliderWithLabel("Background Noise", 0, 100, 0)
-        self.reverb_mix_slider                    = Sliders.SliderWithLabel("Reverb Mix", 0, 100, 0)
-        self.car_radio_checkbox                   = Checkboxes.CheckboxWithLabel("Car Radio", "Apply radio effect preset", False)
+        self.background_noise_slider              = Widgets.SliderWithLabel("Background Noise", 0, 100, 0)
+        self.reverb_mix_slider                    = Widgets.SliderWithLabel("Reverb Mix", 0, 100, 0)
+        self.car_radio_checkbox                   = Widgets.CheckboxWithLabel("Car Radio", "Apply radio effect preset", False)
 
-        self.delay_left_slider                    = Sliders.SliderWithLabel("Delay L (ms)", 0, 50, 0)
-        self.delay_right_slider                   = Sliders.SliderWithLabel("Delay R (ms)", 0, 50, 0)
+        self.delay_left_slider                    = Widgets.SliderWithLabel("Delay L (ms)", 0, 50, 0)
+        self.delay_right_slider                   = Widgets.SliderWithLabel("Delay R (ms)", 0, 50, 0)
 
-        self.radio_noise_intensity_slider         = Sliders.SliderWithLabel("Burst Intensity", 0, 100, 0)
-        self.radio_noise_mix_slider               = Sliders.SliderWithLabel("Noise Mix", 0, 100, 30)
-        self.radio_noise_color_selector           = Selectors.SelectorWithLabel("Noise Color", ["white", "pink", "brown"], default_text = "brown")
-        self.radio_noise_attack_slider            = Sliders.SliderWithLabel("Attack (ms)", 0, 1000, 100)
-        self.radio_noise_peak_slider              = Sliders.SliderWithLabel("Peak (ms)", 0, 1000, 180)
-        self.radio_noise_release_slider           = Sliders.SliderWithLabel("Release (ms)", 0, 1000, 250)
-        self.radio_noise_mute_slider              = Sliders.SliderWithLabel("Mute Audio", 0, 100, 45)
-        self.radio_noise_permanent_checkbox       = Checkboxes.CheckboxWithLabel("Permanent", "Always active", False)
-        self.radio_noise_random_duration_checkbox = Checkboxes.CheckboxWithLabel("Randomize", "Variable burst duration", True)
+        self.radio_noise_intensity_slider         = Widgets.SliderWithLabel("Burst Intensity", 0, 100, 0)
+        self.radio_noise_mix_slider               = Widgets.SliderWithLabel("Noise Mix", 0, 100, 30)
+        self.radio_noise_color_selector           = Widgets.SelectorWithLabel("Noise Color", ["white", "pink", "brown"], default_text = "brown")
+        self.radio_noise_attack_slider            = Widgets.SliderWithLabel("Attack (ms)", 0, 1000, 100)
+        self.radio_noise_peak_slider              = Widgets.SliderWithLabel("Peak (ms)", 0, 1000, 180)
+        self.radio_noise_release_slider           = Widgets.SliderWithLabel("Release (ms)", 0, 1000, 250)
+        self.radio_noise_mute_slider              = Widgets.SliderWithLabel("Mute Audio", 0, 100, 45)
+        self.radio_noise_permanent_checkbox       = Widgets.CheckboxWithLabel("Permanent", "Always active", False)
+        self.radio_noise_random_duration_checkbox = Widgets.CheckboxWithLabel("Randomize", "Variable burst duration", True)
 
-        self.tape_chew_intensity_slider           = Sliders.SliderWithLabel("Chew Intensity", 0, 100, 0)
-        self.tape_chew_jitter_slider              = Sliders.SliderWithLabel("Jitter (ms)", 0, 500, 8)
-        self.tape_chew_random_duration_checkbox   = Checkboxes.CheckboxWithLabel("Randomize", "Variable burst duration", True)
+        self.tape_chew_intensity_slider           = Widgets.SliderWithLabel("Chew Intensity", 0, 100, 0)
+        self.tape_chew_jitter_slider              = Widgets.SliderWithLabel("Jitter (ms)", 0, 500, 8)
+        self.tape_chew_random_duration_checkbox   = Widgets.CheckboxWithLabel("Randomize", "Variable burst duration", True)
 
-        self.echo_mix_slider                      = Sliders.SliderWithLabel("Echo Mix", 0, 100, 0)
-        self.echo_delay_slider                    = Sliders.SliderWithLabel("Delay (ms)", 1, 2000, 180)
-        self.echo_feedback_slider                 = Sliders.SliderWithLabel("Feedback", 0, 98, 25)
-        self.echo_mode_selector                   = Selectors.SelectorWithLabel("Echo Mode", ["constant", "random"], default_text = "constant")
-        self.echo_focus_selector                  = Selectors.SelectorWithLabel("Echo Focus", ["all", "voice", "bass"], default_text = "all")
+        self.echo_mix_slider                      = Widgets.SliderWithLabel("Echo Mix", 0, 100, 0)
+        self.echo_delay_slider                    = Widgets.SliderWithLabel("Delay (ms)", 1, 2000, 180)
+        self.echo_feedback_slider                 = Widgets.SliderWithLabel("Feedback", 0, 98, 25)
+        self.echo_mode_selector                   = Widgets.SelectorWithLabel("Echo Mode", ["constant", "random"], default_text = "constant")
+        self.echo_focus_selector                  = Widgets.SelectorWithLabel("Echo Focus", ["all", "voice", "bass"], default_text = "all")
 
-        self.beat_threshold_slider                = Sliders.SliderWithLabel("Beat Sens.", 0, 100, 38)
+        self.beat_threshold_slider                = Widgets.SliderWithLabel("Beat Sens.", 0, 100, 38)
 
-        self.button_punch                         = Buttons.ButtonWithOutlineSlim("Title Punch")
-        self.button_wobble                        = Buttons.ButtonWithOutlineSlim("Window Wobble")
-        self.button_disturb                       = Buttons.ButtonWithOutlineSlim("Disturb FX")
-        self.button_test_open                     = Buttons.ButtonWithOutlineSlim("Test Open")
+        self.button_punch                         = Widgets.ButtonWithOutlineSlim("Title Punch")
+        self.button_wobble                        = Widgets.ButtonWithOutlineSlim("Window Wobble")
+        self.button_disturb                       = Widgets.ButtonWithOutlineSlim("Disturb FX")
+        self.button_test_open                     = Widgets.ButtonWithOutlineSlim("Test Open")
 
-        self.play_button                          = Buttons.ButtonWithOutlineSlim("Play")
-        self.close_button                         = Buttons.ButtonWithOutline("Close")
+        self.play_button                          = Widgets.ButtonWithOutlineSlim("Play")
+        self.close_button                         = Widgets.ButtonWithOutline("Close")
 
         self.add_section(
             "Window",

@@ -1,15 +1,10 @@
-from PyQt6.QtGui import QCloseEvent
-
+from PyQt6.QtGui     import QCloseEvent
 from PyQt6.QtWidgets import QWidget
 
-from System.Services import Player
+from System.Services  import Player
+from System.Interface import Widgets
 
-from System.Interface import (
-    Buttons,
-    Textboxes
-)
-
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # ByteBeatWindow
 
@@ -20,21 +15,21 @@ class ByteBeatWindow(FloatingWindowGPU):
         self.bytebeat_player = Player.ByteBeatPlayer()
         self.bytebeat_player.play()
 
-        self.textbox = Textboxes.Textbox("text", placeholder = "Byte Beat?", max_length = 99999)
+        self.textbox = Widgets.Textbox("text", placeholder = "Byte Beat?", max_length = 99999)
         self.textbox.setMinimumWidth(400)
         self.textbox.safeTextChanged.connect(self.on_textbox_changed)
 
-        examples = Buttons.ButtonRow(
+        examples = Widgets.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, "1", lambda: self.example_callback("1")),
-                (Buttons.ButtonWithOutline, "2", lambda: self.example_callback("2")),
-                (Buttons.ButtonWithOutline, "3", lambda: self.example_callback("3")),
-                (Buttons.ButtonWithOutline, "4", lambda: self.example_callback("4")),
-                (Buttons.ButtonWithOutline, "5", lambda: self.example_callback("5"))
+                (Widgets.ButtonWithOutline, "1", lambda: self.example_callback("1")),
+                (Widgets.ButtonWithOutline, "2", lambda: self.example_callback("2")),
+                (Widgets.ButtonWithOutline, "3", lambda: self.example_callback("3")),
+                (Widgets.ButtonWithOutline, "4", lambda: self.example_callback("4")),
+                (Widgets.ButtonWithOutline, "5", lambda: self.example_callback("5"))
             ]
         )
 
-        close_button = Buttons.ButtonWithOutline("Ok?")
+        close_button = Widgets.ButtonWithOutline("Ok?")
         close_button.pressed.connect(self.on_ok)
 
         self.content_layout.addWidget(self.textbox)

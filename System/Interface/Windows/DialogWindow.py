@@ -3,9 +3,9 @@ import random
 from PyQt6.QtWidgets import QWidget
 
 from System.Common    import Constants
-from System.Interface import Buttons
+from System.Interface import Widgets
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # Dialog Window
 
@@ -17,10 +17,10 @@ class DialogWindow(FloatingWindowGPU):
         ) -> None:
         super().__init__(title, parent = parent)
 
-        button_row = Buttons.ButtonRow(
+        button_row = Widgets.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
-                (Buttons.NothingButton,     random.choice(Constants.OK_TEXTS), self.on_ok)
+                (Widgets.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
+                (Widgets.NothingButton,     random.choice(Constants.OK_TEXTS), self.on_ok)
             ]
         )
 

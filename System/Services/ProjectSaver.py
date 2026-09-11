@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import os
-import copy
 import json
-import random
+import copy
 import shutil
+import random
 
-from loguru import (
-    logger
-)
+from loguru import logger
 
 from System.Common import (
     Utils,
     Constants
 )
 
-from System.Interface import (
-    Windows
-)
+from System.Interface import Windows
 
 from System.Services import (
     Player,
@@ -29,18 +25,12 @@ from System.Services import (
 
 # Utility Functions
 
-# Full-track ffprobe duration is measured at the container level and can run
-# ahead of the decoded-PCM duration used by the trim widget (e.g. Opus encoder
-# pre-skip), so trims that cover the whole track still need a tolerance here.
-CROP_TOLERANCE_MS = 100
-
 def is_valid_opus_file(file_path: str) -> bool:
     try:
         with open(file_path, "rb") as f:
             header = f.read(1024)
-            # Ogg контейнер всегда начинается с OggS. 
-            # Для валидности в OggOpus внутри также должен быть пакет OpusHead.
             return header.startswith(b"OggS") and b"OpusHead" in header
+    
     except Exception:
         return False
 
@@ -185,6 +175,7 @@ class SyncedDict(dict):
 
         if not effect or effect["name"] == "None":
             self.visualizator_data[track][glyph_id] = glyph_data
+
         else:
             if glyph_id not in self.composition.cached_effects:
                 return
@@ -389,8 +380,8 @@ class BaseComposition:
         
         full_duration_ms = get_audio_duration_ms(self.full_song_path)
 
-        starts_at_zero = self.start_ms <= CROP_TOLERANCE_MS
-        ends_at_full   = abs(self.end_ms - full_duration_ms) <= CROP_TOLERANCE_MS
+        starts_at_zero = self.start_ms <= Constants.CROP_TOLERANCE_MS
+        ends_at_full   = abs(self.end_ms - full_duration_ms) <= Constants.CROP_TOLERANCE_MS
         
         return not (starts_at_zero and ends_at_full)
 

@@ -15,16 +15,9 @@ from System.Common import (
     Constants
 )
 
-from System.Interface import (
-    Buttons,
-    Sliders,
-    Widgets,
-    Selectors,
-    Setuppers,
-    Checkboxes
-)
+from System.Interface import Widgets
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # Settings Window
 
@@ -44,8 +37,8 @@ class SettingsWindow(FloatingWindowGPU):
 
         self.nav_widget       = self.setup_navigation()
         self.stacked_widget   = QStackedWidget()
-        self.ok_button        = Buttons.NothingButton("Apply!")
-        self.cancel_button    = Buttons.ButtonWithOutline("Cancel")
+        self.ok_button        = Widgets.NothingButton("Apply!")
+        self.cancel_button    = Widgets.ButtonWithOutline("Cancel")
 
         self.stacked_widget.setStyleSheet("background: transparent;")
         self.title_label.setFont(Utils.NType(21))
@@ -115,7 +108,7 @@ class SettingsWindow(FloatingWindowGPU):
         page_area = Widgets.ElasticScrollArea(self)
         page_area.setFixedHeight(360)
 
-        navigation_button = Buttons.NavButton(page_name)
+        navigation_button = Widgets.NavButton(page_name)
         navigation_button.clicked.connect(lambda checked = False, target_page = page_area: self.change_page(target_page))
         self.nav_layout.addWidget(navigation_button)
 
@@ -171,7 +164,7 @@ class SettingsWindow(FloatingWindowGPU):
 
         delay_value = int(value or config["default"])
 
-        return Setuppers.DelaySetupper(
+        return Widgets.DelaySetupper(
             config["description"],
             delay_value
         )
@@ -184,7 +177,7 @@ class SettingsWindow(FloatingWindowGPU):
 
         state = str(value).lower() == "true" if value is not None else config["default"]
 
-        return Checkboxes.CheckboxWithLabel(
+        return Widgets.CheckboxWithLabel(
             config["title"],
             config["description"],
             state
@@ -198,7 +191,7 @@ class SettingsWindow(FloatingWindowGPU):
         
         slider_value = int(value or config["default"])
 
-        return Sliders.SliderWithLabel(
+        return Widgets.SliderWithLabel(
             config["title"],
             config["min"],
             config["max"],
@@ -214,7 +207,7 @@ class SettingsWindow(FloatingWindowGPU):
         default_text  = config["default"] if value is None else None
         default_value = value
 
-        return Selectors.SelectorWithLabel(
+        return Widgets.SelectorWithLabel(
             config["title"],
             config["map"],
             default_text  = default_text,
@@ -238,17 +231,17 @@ class SettingsWindow(FloatingWindowGPU):
             widget: QWidget
         ) -> None:
 
-        if isinstance(widget, Checkboxes.CheckboxWithLabel):
+        if isinstance(widget, Widgets.CheckboxWithLabel):
             self.settings.setValue(key, widget.isChecked())
             return
 
-        if isinstance(widget, Sliders.SliderWithLabel):
+        if isinstance(widget, Widgets.SliderWithLabel):
             self.settings.setValue(key, widget.value())
             return
 
-        if isinstance(widget, Selectors.SelectorWithLabel):
+        if isinstance(widget, Widgets.SelectorWithLabel):
             self.settings.setValue(key, widget.current_data())
             return
 
-        if isinstance(widget, Setuppers.DelaySetupper):
+        if isinstance(widget, Widgets.DelaySetupper):
             self.settings.setValue(key, widget.current_value())

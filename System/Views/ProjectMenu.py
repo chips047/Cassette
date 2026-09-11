@@ -50,8 +50,7 @@ from System.Common import (
 
 from System.Interface import (
     Windows,
-    Buttons,
-    Textboxes
+    Widgets
 )
 
 from System.Services import (
@@ -245,7 +244,7 @@ class TrackItemWidget(QWidget):
         ]
 
         for icon_name, slot in icons_data:
-            button = Buttons.IconButtonSmall(
+            button = Widgets.IconButtonSmall(
                 QIcon(f"System/Assets/Icons/ProjectMenu/{icon_name}")
             )
             
@@ -278,7 +277,7 @@ class TrackItemWidget(QWidget):
         QTimer.singleShot(0, self.main_menu.refresh_tracks)
 
     def on_export_clicked(self) -> None:
-        composition = lambda: ProjectSaver.MinimalComposition(self.project_id)
+        composition = ProjectSaver.MinimalComposition(self.project_id)
         Windows.ExportDialogWindow(composition).exec()
 
 class FadeOverlay(QWidget):
@@ -409,7 +408,7 @@ class MainMenu(QWidget):
 
         self.projects_info:   dict[str, dict[str, object]] = {}
         self.track_widgets:   dict[str, TrackItemWidget]   = {}
-        self.search_box:      Textboxes.Textbox | None        = None
+        self.search_box:      Widgets.Textbox | None        = None
         self.tracks_widget:   QWidget        | None        = None
         
         self.drag_loop_sound: Player.UISound | None        = None
@@ -468,7 +467,7 @@ class MainMenu(QWidget):
         button_panel = self.create_button_panel()
         button_layout.addWidget(button_panel)
 
-        self.search_box = Textboxes.SearchTextbox()
+        self.search_box = Widgets.SearchTextbox()
         self.search_box.safeTextChanged.connect(self.apply_search_filter)
 
         button_layout.addWidget(self.search_box)
@@ -544,7 +543,7 @@ class MainMenu(QWidget):
         ]
 
         for text, is_accent, slot_name in buttons_data:
-            button = Buttons.OptionButton(
+            button = Widgets.OptionButton(
                 text,
                 is_accent,
                 getattr(self, slot_name)
@@ -676,7 +675,7 @@ class MainMenu(QWidget):
         if window.exec():
             composition = ProjectSaver.Composition(
                 file_path,
-                window.settings
+                window.saved_settings
             )
 
             self.composition_created.emit(composition)

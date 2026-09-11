@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 from System.Common   import Utils
 from System.Services import Encoder
 
-from System.Interface.Windows.AudioDialogBase import AudioEditorBase
+from System.Interface.Windows import AudioEditorBase
 
 # Glyphtone Editor
 
@@ -57,7 +57,7 @@ class GlyphtoneEditor(AudioEditorBase):
 
         self.saved_settings = {
             **trim,
-            "duration": self.trim_widget.end_time - self.trim_widget.start_time
+            "duration": self.trim_widget.end_time_sec - self.trim_widget.start_time_sec
         }
 
         if self.folder_id is None:

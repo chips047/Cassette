@@ -20,19 +20,17 @@ class PlaybackController(QObject):
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
 
-        self.conductor        = conductor
-        self.playback_manager = conductor.playback_manager
-
-        self.delay_timer      = QTimer(self)
-        self.playhead_timer   = Timing.Timer(Constants.FPS_120, self.on_playback_position_updated, fps_managed = True)
-
-        self.delay_timer.setSingleShot(True)
-        self.delay_timer.timeout.connect(self.on_delay_finished)
-
+        self.conductor                 = conductor
+        self.playback_manager          = conductor.playback_manager
+        self.delay_timer               = QTimer(self)
+        self.playhead_timer            = Timing.Timer(Constants.FPS_120, self.on_playback_position_updated, fps_managed = True)
         self.pending_start_position_ms = 0.0
         self.playhead_start_ms         = 0.0
         self.playhead_start_time       = 0.0
         self.is_auto_scroll_active     = False
+
+        self.delay_timer.setSingleShot(True)
+        self.delay_timer.timeout.connect(self.on_delay_finished)
 
     # Audio Delay
 
@@ -46,7 +44,7 @@ class PlaybackController(QObject):
         return self.conductor.playhead.pos().x()
 
     def get_target_playhead_position_px(self) -> float:
-        return self.conductor.playhead.target_x
+        return self.conductor.playhead.target_horizontal_px
 
     def set_playhead_position_px(
             self,
@@ -86,8 +84,8 @@ class PlaybackController(QObject):
         horizontal_bar = self.conductor.horizontalScrollBar()
         playhead_x     = self.get_target_playhead_position_px()
         viewport_width = self.conductor.viewport().width()
+        target_scroll  = int(playhead_x - viewport_width / 2.0)
 
-        target_scroll = int(playhead_x - viewport_width / 2.0)
         horizontal_bar.setValue(target_scroll)
 
     def scroll_to_normalized_position(self, normalized_position: float) -> None:
@@ -113,6 +111,10 @@ class PlaybackController(QObject):
     def compute_playhead_position_ms(self) -> float:
         elapsed_sec = time.perf_counter() - self.playhead_start_time
         position_ms = self.playhead_start_ms + (elapsed_sec * 1000.0 * self.playback_manager.speed)
+        duration_ms = self.playback_manager.duration_ms
+
+        if duration_ms > 0:
+            position_ms = min(duration_ms, position_ms)
 
         return max(0.0, position_ms)
 
@@ -136,22 +138,28 @@ class PlaybackController(QObject):
         horizontal_bar.setValue(target_scroll)
 
     def on_playback_state_changed(self, is_playing: bool) -> None:
-        if is_playing:
-            self.start_playback()
+        if not is_playing:
+            self.stop_playback()
+            return
 
-            horizontal_bar = self.conductor.horizontalScrollBar()
-            playhead_x     = self.get_playhead_position_px()
-            viewport_width = self.conductor.viewport().width()
+        duration_ms = self.playback_manager.duration_ms
 
-            if playhead_x < horizontal_bar.value() or playhead_x > (horizontal_bar.value() + viewport_width):
-                self.is_auto_scroll_active = True
-                self.sync_scroll_to_playhead()
+        if duration_ms > 0 and self.get_playhead_position_ms() >= (duration_ms - 50.0):
+            self.set_playhead_position_ms(0.0)
+            self.conductor.horizontalScrollBar().setValue(0)
 
-            else:
-                self.is_auto_scroll_active = False
+        self.start_playback()
+
+        horizontal_bar = self.conductor.horizontalScrollBar()
+        playhead_x     = self.get_playhead_position_px()
+        viewport_width = self.conductor.viewport().width()
+
+        if playhead_x < horizontal_bar.value() or playhead_x > (horizontal_bar.value() + viewport_width):
+            self.is_auto_scroll_active = True
+            self.sync_scroll_to_playhead()
 
         else:
-            self.stop_playback()
+            self.is_auto_scroll_active = False
 
     def start_playback(self) -> None:
         if self.delay_timer.isActive():
@@ -202,6 +210,20 @@ class PlaybackController(QObject):
 
         if self.conductor.composition:
             self.conductor.composition.syncer.stop()
+
+        duration_ms = self.playback_manager.duration_ms
+
+        if duration_ms > 0:
+            engine_position_ms = self.playback_manager.get_position()
+            current_ms         = self.get_playhead_position_ms()
+
+            if engine_position_ms >= (duration_ms - 5.0) or (duration_ms - current_ms) <= 60.0:
+                self.set_playhead_position_ms(duration_ms)
+
+                if self.is_auto_scroll_active:
+                    self.sync_scroll_to_playhead()
+
+        self.is_auto_scroll_active = False
 
     # Lifecycle
 

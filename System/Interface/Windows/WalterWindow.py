@@ -11,10 +11,10 @@ from System.Services import Player
 
 from System.Interface import (
     Timing,
-    Labels
+    Widgets
 )
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # Walter Window
 
@@ -30,8 +30,8 @@ class WalterWindow(FloatingWindowGPU):
         self.walter        = QPixmap(self.path_open)
         self.walter_closed = QPixmap(self.path_closed)
 
-        self.label = Labels.DescriptionLabel("Turn on the Waltuh, yes, click it.")
-        self.image = Labels.Image(self.walter_closed)
+        self.label = Widgets.DescriptionLabel("Turn on the Waltuh, yes, click it.")
+        self.image = Widgets.Image(self.walter_closed)
 
         self.content_layout.addWidget(self.image)
         self.content_layout.addWidget(self.label)

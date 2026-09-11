@@ -21,7 +21,6 @@ from PyQt6.QtCore import (
     Qt,
     QEvent,
     QLineF,
-    QPoint,
     QRectF,
     QTimer,
     QPointF,
@@ -104,30 +103,35 @@ class ScrollableContent(QGraphicsView):
         self.viewport().grabGesture(Qt.GestureType.PinchGesture)
 
     def init_state(self, parent: QWidget) -> None:
-        self.playback_manager        = parent.playback_manager
-        self.composition             = None
-        self.track_names             = []
-        self.total_content_width     = 0.0
+        self.playback_manager              = parent.playback_manager
+        self.composition                   = None
+        self.track_names                   = []
+        self.total_content_width           = 0.0
 
-        self.tutorial_window         = None
-        self.glyph_visualizer        = None
+        self.tutorial_window               = None
+        self.glyph_visualizer              = None
 
-        self.ruler_font              = Utils.NType(10)
-        self.track_label_font        = Utils.NType(12)
+        self.ruler_font                    = Utils.NType(10)
+        self.track_label_font              = Utils.NType(12)
 
-        self.cached_background_color = QColor(0, 0, 0)
-        self.cached_foreground_color = QColor(31, 31, 31)
-        self.cached_ruler_pen        = QPen(QColor(255, 255, 255), 0.5)
-        self.cached_beat_pen         = QPen(QColor(Styles.Colors.Waveline.BeatColor), 1, Qt.PenStyle.DotLine)
-        self.cached_track_name_color = QColor(Styles.Colors.Waveline.TrackNameColor)
-        self.cached_waveform_pen     = QPen(QColor(255, 255, 255, 90), 2.5)
-        self.cached_waveform_brush   = QBrush(QColor(255, 255, 255, 90))
-        self.cached_waveform_pen2    = QPen(QColor(255, 255, 255, 160), 0.7)
+        self.cached_background_color       = QColor(0, 0, 0)
+        self.cached_foreground_color       = QColor(31, 31, 31)
+        self.cached_ruler_pen              = QPen(QColor(255, 255, 255), 0.5)
+        self.cached_beat_pen               = QPen(QColor(Styles.Colors.Waveline.BeatColor), 1, Qt.PenStyle.DotLine)
+        self.cached_waveform_pen           = QPen(QColor(255, 255, 255, 90), 2.5)
+        self.cached_waveform_brush         = QBrush(QColor(255, 255, 255, 90))
+        self.cached_waveform_pen2          = QPen(QColor(255, 255, 255, 160), 0.7)
 
-        self.cached_beat_lines       = []
-        self.cached_track_grid_image = None
-        self.cached_foreground_mask  = None
-        self.cached_foreground_size  = None
+        self.cached_track_name_color       = QColor(Styles.Colors.Waveline.TrackNameColor)
+        self.cached_track_name_white_color = QColor(255, 255, 255)
+        self.cached_track_name_black_color = QColor(0, 0, 0)
+        self.cached_track_name_white_pen   = QPen(self.cached_track_name_white_color)
+        self.cached_track_name_black_pen   = QPen(self.cached_track_name_black_color)
+
+        self.cached_beat_lines             = []
+        self.cached_track_grid_image       = None
+        self.cached_foreground_mask        = None
+        self.cached_foreground_size        = None
 
     def setup_ui(self) -> None:
         self.scroll_tick_timer = Timing.Timer(Constants.FPS_120, self.on_scroll_tick, fps_managed = True)
@@ -227,8 +231,6 @@ class ScrollableContent(QGraphicsView):
 
         self.glyph_controller.elements_changed.connect(self.parent().on_elements_changed)
 
-        self.marquee_item.set_bpm(self.composition.bpm)
-
         self.update_scene_rect()
         self.glyph_controller.create_glyph_items(self.composition.glyphs.keys(), True, False, False)
 
@@ -280,6 +282,7 @@ class ScrollableContent(QGraphicsView):
         self.wheel_controller    = None
         self.mouse_controller    = None
         self.keyboard_controller = None
+        self.track_names         = []
 
         logger.warning("Controllers and caches cleared")
 
@@ -362,7 +365,6 @@ class ScrollableContent(QGraphicsView):
         self.draw_waveform(painter, rectangle)
         self.draw_beat_lines(painter, rectangle)
         self.draw_ruler(painter, rectangle)
-        self.draw_track_grid(painter, rectangle)
 
     def draw_waveform(
             self,
@@ -485,66 +487,80 @@ class ScrollableContent(QGraphicsView):
     def draw_track_grid(
             self,
             painter:   QPainter,
-            rectangle: QRectF
+            rectangle: QRectF = None
         ) -> None:
-        if rectangle.left() > Styles.Metrics.Tracks.BoxHeight:
+        if not self.track_names:
             return
 
-        self.prepare_track_grid_cache()
+        box_spacing = Styles.Metrics.Tracks.BoxSpacing
+        row_height  = Styles.Metrics.Tracks.RowHeight
+        box_height  = Styles.Metrics.Tracks.BoxHeight
+        label_width = Styles.Metrics.Tracks.LabelWidth
 
-        if self.cached_track_grid_image is None:
+        start_y    = Styles.Metrics.Tracks.RulerHeight + Styles.Metrics.Waveform.Height + box_spacing
+        row_stride = row_height + box_spacing
+        offset_y   = (row_height - box_height) / 2.0
+        label_w    = label_width - 2 * box_spacing
+
+        viewport_rect = self.viewport().rect()
+        viewport_h    = viewport_rect.height()
+
+        visible_scene_top    = self.mapToScene(0, 0).y()
+        visible_scene_bottom = self.mapToScene(0, viewport_h).y()
+
+        start_idx = max(0, int((visible_scene_top - start_y - offset_y - box_height) // row_stride))
+        end_idx   = min(len(self.track_names), int((visible_scene_bottom - start_y - offset_y) // row_stride) + 2)
+
+        if start_idx >= end_idx:
             return
 
-        image_height = self.cached_track_grid_image.height()
-        draw_top     = max(0.0, rectangle.top())
-        draw_bottom  = min(float(image_height), rectangle.bottom())
+        scene_x = self.mapToScene(int(box_spacing), 0).x()
 
-        if draw_bottom <= draw_top:
-            return
-
-        target_rectangle = QRectF(0.0, draw_top, float(self.cached_track_grid_image.width()), draw_bottom - draw_top)
-        source_rectangle = QRectF(0.0, draw_top, float(self.cached_track_grid_image.width()), draw_bottom - draw_top)
-
-        painter.drawPixmap(target_rectangle, self.cached_track_grid_image, source_rectangle)
-
-    def prepare_track_grid_cache(self) -> None:
-        label_width  = Styles.Metrics.Tracks.LabelWidth
-        scene_height = int(self.scene.sceneRect().height())
-
-        if scene_height <= 0 or not self.track_names:
-            self.cached_track_grid_image = None
-            return
-
-        existing = self.cached_track_grid_image
-
-        if existing is not None and existing.width() == label_width and existing.height() == scene_height:
-            return
-
-        image = QImage(label_width, scene_height, QImage.Format.Format_ARGB32_Premultiplied)
-        image.fill(Qt.GlobalColor.transparent)
-
-        painter = QPainter(image)
+        painter.save()
+        painter.resetTransform()
 
         if Constants.current_settings["antialiasing"]:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         painter.setFont(self.track_label_font)
-        painter.setPen(self.cached_track_name_color)
 
-        box_spacing = Styles.Metrics.Tracks.BoxSpacing
-        row_height  = Styles.Metrics.Tracks.RowHeight
-        box_height  = Styles.Metrics.Tracks.BoxHeight
+        ignored_items = {
+            item for item in (
+                getattr(self, 'playhead', None),
+                getattr(self, 'playhead_hover', None),
+                getattr(self, 'marquee_item', None)
+            ) if item is not None
+        }
 
-        y = Styles.Metrics.Tracks.RulerHeight + Styles.Metrics.Waveform.Height + box_spacing
+        for i in range(start_idx, end_idx):
+            top_y          = start_y + i * row_stride + offset_y
+            viewport_top_y = self.mapFromScene(0, int(top_y)).y()
 
-        for track_name in self.track_names:
-            top_y      = y + (row_height - box_height) / 2.0
-            label_rect = QRectF(box_spacing, top_y, label_width - 2 * box_spacing, box_height)
-            painter.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, track_name)
-            y += row_height + box_spacing
+            if viewport_top_y + box_height < 0 or viewport_top_y > viewport_h:
+                continue
 
-        painter.end()
-        self.cached_track_grid_image = QPixmap.fromImage(image)
+            label_viewport_rect = QRectF(box_spacing, float(viewport_top_y), label_w, box_height)
+            label_scene_rect    = QRectF(scene_x, top_y, label_w, box_height)
+
+            is_over_glyph = False
+
+            for item in self.scene.items(label_scene_rect):
+                if item not in ignored_items and item.isVisible() and item.opacity() > 0:
+                    is_over_glyph = True
+                    break
+
+            if is_over_glyph:
+                painter.setPen(self.cached_track_name_black_pen)
+
+            else:
+                painter.setPen(self.cached_track_name_white_pen)
+
+            painter.drawText(label_viewport_rect, Qt.AlignmentFlag.AlignCenter, self.track_names[i])
+
+        painter.restore()
+
+    def prepare_track_grid_cache(self) -> None:
+        pass
 
     def drawForeground(
             self,
@@ -552,6 +568,8 @@ class ScrollableContent(QGraphicsView):
             rectangle: QRectF
         ) -> None:
         painter.resetTransform()
+
+        self.draw_track_grid(painter, rectangle)
 
         self.prepare_foreground_mask()
 

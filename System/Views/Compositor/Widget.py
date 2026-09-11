@@ -32,17 +32,12 @@ from System.Services import (
 
 from System.Interface import (
     Windows,
-    Widgets,
-    Buttons,
-    Controls
+    Widgets
 )
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
     loading_finished            = pyqtSignal()
-
-    EJECT_FADE_DURATION_MS       = 3000
-    INTERRUPTED_FADE_DURATION_MS = 1000
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -70,27 +65,27 @@ class CompositorWidget(QWidget):
         self.top_control_bar_layout.setContentsMargins(0, 0, 0, 0)
         self.top_control_bar_layout.setSpacing(8)
 
-        self.eject_button        = Buttons.Button("Eject")
-        self.export_button       = Buttons.NothingButton("Export")
+        self.eject_button        = Widgets.Button("Eject")
+        self.export_button       = Widgets.NothingButton("Export")
         self.top_status_label    = QLabel(Constants.STATUS_BAR_DEFAULT)
         self.mini_preview_widget = Widgets.MiniWaveformPreview()
 
-        self.glyph_dur_control = Controls.DraggableValueControl(
+        self.glyph_dur_control = Widgets.DraggableValueControl(
             QIcon("System/Assets/Icons/Compositor/Duration.png"),
             "duration", 100, 5, 5000, 5, "ms"
         )
         
-        self.brightness_control = Controls.DraggableValueControl(
+        self.brightness_control = Widgets.DraggableValueControl(
             QIcon("System/Assets/Icons/Compositor/Brightness.png"),
             "brightness", 100, 5, 100, 5, "%"
         )
         
-        self.playspeed_button = Controls.CycleButton(
+        self.playspeed_button = Widgets.CycleButton(
             QIcon("System/Assets/Icons/Compositor/Speed.png"),
             "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)]
         )
         
-        self.default_effect = Controls.CycleButton(
+        self.default_effect = Widgets.CycleButton(
             QIcon("System/Assets/Icons/Compositor/Effect.png"),
             "effect", [
                 ("None", "none"),
@@ -163,13 +158,13 @@ class CompositorWidget(QWidget):
 
         self.playback_manager.set_speed(
             0.0,
-            self.INTERRUPTED_FADE_DURATION_MS,
+            Constants.INTERRUPTED_FADE_DURATION_MS,
             Player.Easing.ease_out_quart,
             use_engine_multiplier = False
         )
 
         QTimer.singleShot(
-            self.INTERRUPTED_FADE_DURATION_MS,
+            Constants.INTERRUPTED_FADE_DURATION_MS,
             lambda: self.finish_composition_loading(composition)
         )
     
@@ -177,7 +172,7 @@ class CompositorWidget(QWidget):
         self.is_ejecting = False
 
         path = composition.get_playback_audio_path()
-        print("PAHHHHH", path)
+        
         Player.bpm_informer.set_bpm(composition.bpm)
         self.playback_manager.load_audio(path)
         
@@ -210,13 +205,13 @@ class CompositorWidget(QWidget):
             self.content_widget.playhead_timer.stop()
             self.playback_manager.set_speed(
                 0.0,
-                self.EJECT_FADE_DURATION_MS,
+                Constants.EJECT_FADE_DURATION_MS,
                 Player.Easing.ease_out_quart,
                 use_engine_multiplier = True
             )
 
             animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
-            scaled_fade_duration  = int(self.EJECT_FADE_DURATION_MS * animation_multiplier)
+            scaled_fade_duration  = int(Constants.EJECT_FADE_DURATION_MS * animation_multiplier)
 
             QTimer.singleShot(scaled_fade_duration, self.clear_ejecting_flag)
 

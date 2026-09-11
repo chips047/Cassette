@@ -1,8 +1,8 @@
 import random
 
-from System.Common import Constants
-
 from loguru import logger
+
+from System.Common import Constants
 
 # Data Extraction & Parsing
 
@@ -19,7 +19,7 @@ def parse_effect_arguments(
             if not argument_name:
                 continue
 
-            value                    = config.get(meta["key"], 1)
+            value                    = config.get(meta["key"], meta.get("default", 1))
             arguments[argument_name] = value
         
         except Exception as error:

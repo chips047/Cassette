@@ -15,12 +15,10 @@ from System.Common import (
     Utils,
     Constants
 )
-from System.Interface import (
-    Labels,
-    Buttons
-)
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface import Widgets
+
+from System.Interface.Windows import FloatingWindowGPU
 
 # About Window
 
@@ -57,7 +55,7 @@ class AboutWindow(FloatingWindowGPU):
                 "Made with care, way too much profiling, and a genuine love for smooth interfaces."
             )
 
-        self.about_label = Labels.DescriptionLabel(text, 500)
+        self.about_label = Widgets.DescriptionLabel(text, 500)
 
         self.image_pixmap = QPixmap("System/Assets/Image/Version.png").scaled(
             500, 500,
@@ -68,8 +66,8 @@ class AboutWindow(FloatingWindowGPU):
         self.image_label = QLabel()
         self.image_label.setPixmap(self.image_pixmap)
 
-        ok_button     = Buttons.NothingButton("Five Stars?")
-        github_button = Buttons.ButtonWithOutline("Check for updates on GitHub")
+        ok_button     = Widgets.NothingButton("Five Stars?")
+        github_button = Widgets.ButtonWithOutline("Check for updates on GitHub")
 
         ok_button.clicked.connect(self.on_ok)
         github_button.clicked.connect(self.on_github)

@@ -10,13 +10,9 @@ from System.Services import (
     ProjectSaver
 )
 
-from System.Interface import (
-    Buttons,
-    Selectors,
-    Textboxes
-)
+from System.Interface import Widgets
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # Export Dialog Window
 
@@ -36,14 +32,14 @@ class ExportDialogWindow(FloatingWindowGPU):
         original_model         = Constants.DEVICES[composition.model].short_name
         choices                = Constants.DEVICES[composition.model].port_variants + [original_model]
 
-        self.combobox          = Selectors.Selector(choices, default_index = len(choices) - 1)
-        self.watermark_textbox = Textboxes.Textbox("text", max_length = 12, placeholder = "Dot Watermark")
+        self.combobox          = Widgets.Selector(choices, default_index = len(choices) - 1)
+        self.watermark_textbox = Widgets.Textbox("text", max_length = 12, placeholder = "Dot Watermark")
 
-        button_row = Buttons.ButtonRow(
+        button_row = Widgets.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
-                (Buttons.ButtonWithOutline, "Export to every model",           self.export_all),
-                (Buttons.NothingButton,     "Tape it",                         self.export)
+                (Widgets.ButtonWithOutline, random.choice(Constants.NO_TEXTS), self.on_cancel),
+                (Widgets.ButtonWithOutline, "Export to every model",           self.export_all),
+                (Widgets.NothingButton,     "Tape it",                         self.export)
             ]
         )
 

@@ -1,13 +1,9 @@
+from System.Interface.Windows.FloatingWindowGPU        import FloatingWindowGPU
+
 from System.Interface.Windows.Helpers import (
     build_column,
     make_time_textbox,
     make_fade_textbox
-)
-
-from System.Interface.Windows.AudioWorkers import (
-    BPMWorker,
-    PrepareWorker,
-    LoadAudioWorker
 )
 
 from System.Interface.Windows.AudioDialogBase import (
@@ -16,7 +12,6 @@ from System.Interface.Windows.AudioDialogBase import (
     AudioLoadingDialog
 )
 
-from System.Interface.Windows.FloatingWindowGPU        import FloatingWindowGPU
 from System.Interface.Windows.SettingsWindow           import SettingsWindow
 from System.Interface.Windows.DialogWindow             import DialogWindow
 from System.Interface.Windows.DialogInputWindow        import DialogInputWindow

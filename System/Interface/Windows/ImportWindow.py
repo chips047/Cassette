@@ -18,10 +18,10 @@ from System.Services import (
     Encoder
 )
 
-from System.Interface import Buttons
+from System.Interface import Widgets
 
-from System.Interface.Windows.ErrorWindow     import ErrorWindow
-from System.Interface.Windows.AudioDialogBase import BPMEditorBase
+from System.Interface.Windows import ErrorWindow
+from System.Interface.Windows import BPMEditorBase
 
 # ImportWindow
 
@@ -55,8 +55,8 @@ class ImportWindow(BPMEditorBase):
         self.setup_bpm_section()
         self.setup_action_buttons("Import!", "Later, gator")
 
-        self.audio_path_button = Buttons.ButtonWithOutlineSlim("Audiofile")
-        self.save_path_button  = Buttons.ButtonWithOutlineSlim("Savefile")
+        self.audio_path_button = Widgets.ButtonWithOutlineSlim("Audiofile")
+        self.save_path_button  = Widgets.ButtonWithOutlineSlim("Savefile")
 
         for button in [self.audio_path_button, self.save_path_button]:
             button.setMinimumWidth(240)
@@ -254,8 +254,8 @@ class ImportWindow(BPMEditorBase):
         try:
             model, glyphs = Encoder.convert_to_glyphs(
                 self.save_path,
-                int(self.trim_widget.start_time * 1000),
-                int(self.trim_widget.end_time * 1000)
+                int(self.trim_widget.start_time_sec * 1000),
+                int(self.trim_widget.end_time_sec * 1000)
             )
 
         except Encoder.ZeroGlyphsError:
@@ -277,8 +277,8 @@ class ImportWindow(BPMEditorBase):
             "audio": {
                 "bpm":      bpm_settings["bpm"],
                 "beats":    bpm_settings["beats"],
-                "start_ms": self.trim_widget.start_time * 1000,
-                "end_ms":   self.trim_widget.end_time * 1000,
+                "start_ms": self.trim_widget.start_time_sec * 1000,
+                "end_ms":   self.trim_widget.end_time_sec * 1000,
                 "fade_in":  self.fade_in_textbox.text(),
                 "fade_out": self.fade_out_textbox.text()
             },

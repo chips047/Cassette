@@ -48,7 +48,7 @@ from System.Services import Player
 
 from System.Interface import (
     Timing,
-    Labels
+    Widgets
 )
 
 from System.Interface.Animation import (
@@ -123,24 +123,6 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.setup_animation_properties()
         self.setup_timers()
 
-    def showEvent(self, event: QShowEvent) -> None:
-        super().showEvent(event)
-
-        if self.is_ready:
-            return
-
-        self.adjustSize()
-        self.center_window()
-
-        self.is_ready = True
-
-        if self.animations_active:
-            scale_restriction = self.maximum_scale()
-            self.scale_property.set_max_value(scale_restriction)
-
-        if self.enable_open_animation:
-            self.open_window()
-
     # Setup
 
     def prepare_format(self) -> None:
@@ -185,6 +167,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         self.content_widget = QWidget(self)
         self.content_widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.content_widget.setMinimumWidth(320)
 
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(16, 16, 16, 16)
@@ -193,13 +176,11 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         main_layout.addWidget(self.content_widget)
 
         if title:
-            self.title_label = Labels.TitleLabel(title)
+            self.title_label = Widgets.TitleLabel(title)
             self.content_layout.addWidget(self.title_label)
 
         else:
             self.title_label = None
-
-        self.adjustSize()
 
     def setup_animation_properties(self) -> None:
         self.animations_active    = False
@@ -521,22 +502,12 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             easing_function = LoomEngine.Easing.ease_out_cubic
         )
 
-    # StylePlayback
+    # Style Playback
 
     def current_style(self) -> WindowAnimationStyle:
         return WindowAnimationStyle(self.animation_style)
 
     def open_window(self) -> None:
-        self.ensurePolished()
-
-        if self.layout():
-            self.layout().activate()
-
-        super().adjustSize()
-        self.center_window()
-
-        self.is_ready = True
-
         self.play_stage_sound("open")
 
         if not self.animations_active or not self.animations_enabled:
@@ -809,6 +780,24 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
     # Events
 
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+
+        if self.is_ready:
+            return
+
+        self.adjustSize()
+        self.center_window()
+
+        if self.animations_active:
+            scale_restriction = self.maximum_scale()
+            self.scale_property.set_max_value(scale_restriction)
+
+        if self.enable_open_animation:
+            self.open_window()
+
+        self.is_ready = True
+
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.allow_exit:
             super().closeEvent(event)
@@ -929,16 +918,14 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         available_width  = screen_geometry.width()
         available_height = screen_geometry.height()
 
-        content_width    = content_size.width()
+        content_width    = max(content_size.width(), self.content_widget.minimumWidth())
         content_height   = content_size.height()
 
-        max_margin_x     = (available_width - 46 * 2 - content_width) // 2
-        max_margin_y     = (available_height - 46 * 2 - content_height) // 2
-        margin_x         = min(max_margin_x, 300)
-        margin_y         = min(max_margin_y, 300)
-
-        self.margin_x    = min(margin_x, self.margin_x)
-        self.margin_y    = min(margin_y, self.margin_y)
+        max_margin_x     = max(20, (available_width - 46 * 2 - content_width) // 2)
+        max_margin_y     = max(20, (available_height - 46 * 2 - content_height) // 2)
+        
+        self.margin_x    = min(max_margin_x, self.target_margin)
+        self.margin_y    = min(max_margin_y, self.target_margin)
 
         self.layout().setContentsMargins(
             self.margin_x,

@@ -32,27 +32,23 @@ from System.Services import Player
 
 from System.Interface import (
     Timing,
-    Buttons,
-    Widgets,
-    Textboxes
+    Widgets
 )
 
 from System.Interface.Animation import LoomEngine
 
-from System.Interface.Windows.Helpers import (
+from System.Interface.Windows import (
+    ErrorWindow,
     make_fade_textbox,
-    make_time_textbox
+    make_time_textbox,
+    FloatingWindowGPU
 )
 
-from System.Interface.Windows.ErrorWindow import ErrorWindow
-
-from System.Interface.Windows.AudioWorkers import (
+from System.Services.AudioWorkers import (
     BPMWorker,
     PrepareWorker,
     LoadAudioWorker
 )
-
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
 
 # Audio Loading Dialog
 
@@ -180,8 +176,8 @@ class AudioEditorBase(AudioLoadingDialog):
             cancel_text: str = "Cancel"
         ) -> None:
         
-        self.cancel_button = Buttons.ButtonWithOutline(cancel_text)
-        self.ok_button     = Buttons.NothingButton(ok_text)
+        self.cancel_button = Widgets.ButtonWithOutline(cancel_text)
+        self.ok_button     = Widgets.NothingButton(ok_text)
 
         self.ok_button.setEnabled(False)
         self.ok_button.clicked.connect(self.accept_callback)
@@ -205,10 +201,10 @@ class AudioEditorBase(AudioLoadingDialog):
             self.player.load_audio_from_data(data, sample_rate)
             self.trim_widget.set_data(data, sample_rate, waveform_data)
 
-            self.end_time_textbox.max_number = self.trim_widget.duration
-            self.end_time_textbox.setText(max(1, math.ceil(self.trim_widget.duration)))
+            self.end_time_textbox.max_number = self.trim_widget.duration_sec
+            self.end_time_textbox.setText(max(1, math.ceil(self.trim_widget.duration_sec)))
 
-            self.update_textboxes(self.trim_widget.start_time, self.trim_widget.end_time)
+            self.update_textboxes(self.trim_widget.start_time_sec, self.trim_widget.end_time_sec)
 
             self.play_button.setEnabled(True)
             self.on_audio_ready()
@@ -244,7 +240,7 @@ class AudioEditorBase(AudioLoadingDialog):
             return
 
         self.trim_widget.set_playback_position(start_seconds)
-        self.trim_widget.start_time = start_seconds
+        self.trim_widget.start_time_sec = start_seconds
         self.trim_widget.update()
 
         self.end_time_textbox.min_number = start_seconds
@@ -260,7 +256,7 @@ class AudioEditorBase(AudioLoadingDialog):
             return
 
         self.trim_widget.set_playback_position(start_seconds)
-        self.trim_widget.end_time = end_seconds
+        self.trim_widget.end_time_sec = end_seconds
         self.trim_widget.update()
 
         self.start_time_textbox.max_number = end_seconds - 1
@@ -268,7 +264,7 @@ class AudioEditorBase(AudioLoadingDialog):
     def toggle_playback(self) -> None:
         if self.player.is_playing:
             self.stop_playback()
-            self.trim_widget.set_playback_position(self.trim_widget.start_time)
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec)
 
         else:
             self.play_selection()
@@ -276,8 +272,8 @@ class AudioEditorBase(AudioLoadingDialog):
     def play_selection(self) -> None:
         current_position = self.trim_widget.playback_position
 
-        if not (self.trim_widget.start_time <= current_position < self.trim_widget.end_time):
-            current_position = self.trim_widget.start_time
+        if not (self.trim_widget.start_time_sec <= current_position < self.trim_widget.end_time_sec):
+            current_position = self.trim_widget.start_time_sec
             self.trim_widget.set_playback_position(current_position)
 
         self.player.play(current_position * 1000)
@@ -299,8 +295,8 @@ class AudioEditorBase(AudioLoadingDialog):
 
         current_position_ms = self.player.get_position()
 
-        if current_position_ms > self.trim_widget.end_time * 1000:
-            self.trim_widget.set_playback_position(self.trim_widget.start_time)
+        if current_position_ms > self.trim_widget.end_time_sec * 1000:
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec)
             self.toggle_playback()
             return
 
@@ -319,8 +315,8 @@ class AudioEditorBase(AudioLoadingDialog):
 
     def get_trim_settings(self) -> dict:
         return {
-            "start_ms": self.trim_widget.start_time * 1000,
-            "end_ms":   self.trim_widget.end_time   * 1000,
+            "start_ms": self.trim_widget.start_time_sec * 1000,
+            "end_ms":   self.trim_widget.end_time_sec   * 1000,
             "fade_in":  self.fade_in_textbox.text(),
             "fade_out": self.fade_out_textbox.text()
         }
@@ -361,7 +357,7 @@ class BPMEditorBase(AudioEditorBase):
         self.bpm_animation_current = 120
         self.snapped_times         = None
 
-        self.bpm_input = Textboxes.Textbox("number", 1, 400, placeholder = "Counting BPM... 120")
+        self.bpm_input = Widgets.Textbox("number", 1, 400, placeholder = "Counting BPM... 120")
         self.bpm_input.setMaximumWidth(176)
         self.bpm_input.setFixedHeight(Styles.Metrics.ElementHeight)
         self.bpm_input.setStyleSheet(Styles.Controls.FloatingTextBoxRound)

@@ -194,7 +194,6 @@ jobs:
             name=$(basename "$dir")
             case "$name" in
               *linux*|*macos*)
-                # исполняемый файл лежит внутри onedir-папки Cassette, без расширения
                 find "$dir" -type f ! -name "*.*" -exec chmod +x {} \;
                 ;;
             esac

@@ -82,7 +82,7 @@ class Roundings:
     Selection       = 8
 
 class Metrics:
-    ElementHeight   = 40
+    ElementHeight    = 40
     GlassBorderThick = 1.2
 
     SliderHeight    = 5

@@ -2,145 +2,133 @@ from __future__ import annotations
 
 import copy
 
-from typing import *
-
-if TYPE_CHECKING:
-    from . import Controllers
-
 from System.Services import (
     ProjectSaver,
     GlyphEffects
 )
 
-GlyphState = dict[int, dict]
-
-class FieldConfig(TypedDict):
-    key:      str
-    label:    Callable[[dict], str]
-    template: str
-
 class ActionModify:
-    FIELDS: list[FieldConfig] = [
+    FIELDS = [
         {
             "key":      "segments",
-            "label":    lambda g: ", ".join(map(lambda x: str(x + 1), g["segments"])) if g.get("segments") else "all",
-            "template": "setting segments from {b} to {a}",
+            "label":    lambda glyph: ", ".join(map(lambda segment_index: str(segment_index + 1), glyph["segments"])) if glyph.get("segments") else "all",
+            "template": "setting segments from {before} to {after}"
         },
         {
             "key":      "effect",
-            "label":    lambda g: f"{g['effect']['name']} effect" if g.get("effect") else "no effect",
-            "template": "setting effect from {b} to {a}",
+            "label":    lambda glyph: f"{glyph['effect']['name']} effect" if glyph.get("effect") else "no effect",
+            "template": "setting effect from {before} to {after}"
         },
         {
             "key":      "duration",
-            "label":    lambda g: f"{g['duration']}ms",
-            "template": "setting duration from {b} to {a}",
+            "label":    lambda glyph: f"{glyph['duration']}ms",
+            "template": "setting duration from {before} to {after}"
         },
         {
             "key":      "brightness",
-            "label":    lambda g: f"{g.get('brightness', 0)}%",
-            "template": "setting brightness from {b} to {a}",
+            "label":    lambda glyph: f"{glyph.get('brightness', 0)}%",
+            "template": "setting brightness from {before} to {after}"
         },
         {
             "key":      "start",
-            "label":    lambda g: f"{g['start']}ms",
-            "template": "move from {b} to {a}",
-        },
+            "label":    lambda glyph: f"{glyph['start']}ms",
+            "template": "move from {before} to {after}"
+        }
     ]
 
     def __init__(
-        self,
-        controller:   Controllers.GlyphController,
-        before_state: GlyphState,
-        after_state:  GlyphState,
-    ) -> None:
-        
+            self,
+            controller:   object,
+            before_state: dict[int, dict],
+            after_state:  dict[int, dict]
+        ) -> None:
+
         self.controller = controller
 
         self.composition:          ProjectSaver.Composition = controller.composition
-        self.glyphs_before_modify: GlyphState               = copy.deepcopy(before_state)
-        self.glyphs_after_modify:  GlyphState               = copy.deepcopy(after_state)
+        self.glyphs_before_modify: dict[int, dict]          = copy.deepcopy(before_state)
+        self.glyphs_after_modify:  dict[int, dict]          = copy.deepcopy(after_state)
 
     def get_description(self) -> str:
-        before  = self.glyphs_before_modify
-        after   = self.glyphs_after_modify
-        all_ids = set(before) | set(after)
+        before_glyphs = self.glyphs_before_modify
+        after_glyphs  = self.glyphs_after_modify
+        all_glyph_ids = set(before_glyphs) | set(after_glyphs)
 
-        if not all_ids:
+        if not all_glyph_ids:
             return "nothing"
 
-        target_id = next(
-            (gid for gid in all_ids if before.get(gid) != after.get(gid)),
-            next(iter(all_ids)),
+        target_glyph_id = next(
+            (glyph_id for glyph_id in all_glyph_ids if before_glyphs.get(glyph_id) != after_glyphs.get(glyph_id)),
+            next(iter(all_glyph_ids))
         )
 
-        b_glyph = before.get(target_id) or {}
-        a_glyph = after.get(target_id)  or {}
+        glyph_before = before_glyphs.get(target_glyph_id) or {}
+        glyph_after  = after_glyphs.get(target_glyph_id)  or {}
 
         for field in self.FIELDS:
-            key   = field["key"]
-            val_b = b_glyph.get(key)
-            val_a = a_glyph.get(key)
+            key          = field["key"]
+            value_before = glyph_before.get(key)
+            value_after  = glyph_after.get(key)
 
-            if val_b == val_a:
+            if value_before == value_after:
                 continue
 
-            b_label = field["label"](b_glyph)
-            a_label = field["label"](a_glyph)
+            label_before = field["label"](glyph_before)
+            label_after  = field["label"](glyph_after)
 
-            if key == "effect" and b_label == a_label:
+            if key == "effect" and label_before == label_after:
                 return "effect modify"
 
-            return field["template"].format(b=b_label, a=a_label)
+            return field["template"].format(before = label_before, after = label_after)
 
         return "nothing"
 
     def undo(self) -> None:
         self.composition.update_bunch_of_glyphs(copy.deepcopy(self.glyphs_before_modify))
-        self.controller.update_glyphs(self.glyphs_before_modify)
+        self.controller.update_glyphs(self.glyphs_before_modify, animate_movement = True)
 
     def redo(self) -> None:
         self.composition.update_bunch_of_glyphs(copy.deepcopy(self.glyphs_after_modify))
-        self.controller.update_glyphs(self.glyphs_after_modify)
+        self.controller.update_glyphs(self.glyphs_after_modify, animate_movement = True)
 
 class ActionAdd:
     def __init__(
-        self,
-        controller:   Controllers.GlyphController,
-        added_glyphs: GlyphState
-    ) -> None:
-        
+            self,
+            controller:   object,
+            added_glyphs: dict[int, dict]
+        ) -> None:
+
         self.controller = controller
 
         self.composition:  ProjectSaver.Composition = controller.composition
-        self.added_glyphs: GlyphState               = copy.deepcopy(added_glyphs)
+        self.added_glyphs: dict[int, dict]          = copy.deepcopy(added_glyphs)
 
     def get_description(self) -> str:
         count = len(self.added_glyphs)
         return f"addition of {count} glyph{'s' if count != 1 else ''}"
 
     def undo(self) -> None:
-        for gid in self.added_glyphs:
-            self.controller.glyph_items[gid].prepare_for_despawn()
+        for glyph_id in self.added_glyphs:
+            self.controller.glyph_items[glyph_id].prepare_for_despawn()
 
-        self.controller.delete_glyphs(self.added_glyphs.keys(), push_undo=False)
+        self.controller.delete_glyphs(list(self.added_glyphs.keys()), push_undo = False)
 
     def redo(self) -> None:
         self.composition.update_bunch_of_glyphs(copy.deepcopy(self.added_glyphs))
-        self.controller.create_glyph_items(self.added_glyphs.keys(), reset_selection=False)
+        self.controller.create_glyph_items(list(self.added_glyphs.keys()), reset_selection = False)
         self.controller.elements_changed.emit()
 
 class ActionDelete:
     def __init__(
-        self,
-        controller:     Controllers.GlyphController,
-        deleted_glyphs: GlyphState,
-    ) -> None:
-        
+            self,
+            controller:     object,
+            deleted_glyphs: dict[int, dict]
+        ) -> None:
+
         self.controller = controller
 
         self.composition:    ProjectSaver.Composition = controller.composition
-        self.deleted_glyphs: GlyphState               = deleted_glyphs
+        self.deleted_glyphs: dict[int, dict]          = deleted_glyphs
 
     def get_description(self) -> str:
         count = len(self.deleted_glyphs)
@@ -148,34 +136,35 @@ class ActionDelete:
 
     def undo(self) -> None:
         self.composition.update_bunch_of_glyphs(copy.deepcopy(self.deleted_glyphs))
-        self.controller.create_glyph_items(self.deleted_glyphs, reset_selection=False)
+        self.controller.create_glyph_items(list(self.deleted_glyphs.keys()), reset_selection = False)
         self.controller.elements_changed.emit()
 
     def redo(self) -> None:
-        self.controller.delete_glyphs(list(self.deleted_glyphs.keys()), push_undo=False)
+        self.controller.delete_glyphs(list(self.deleted_glyphs.keys()), push_undo = False)
 
 class EditFadeKeyframesCommand:
     def __init__(
-        self,
-        composition:   ProjectSaver.Composition,
-        glyph_id:      int,
-        old_keyframes: list[tuple[float, int]],
-        new_keyframes: list[tuple[float, int]],
-    ) -> None:
-        
-        self.composition   = composition
-        self.glyph_id      = glyph_id
-        self.old_keyframes = old_keyframes
-        self.new_keyframes = new_keyframes
+            self,
+            controller:    object,
+            glyph_id:      int,
+            old_keyframes: list[tuple[float, int]],
+            new_keyframes: list[tuple[float, int]]
+        ) -> None:
 
-    def get_description(self) -> str:
-        return "editing fade keyframes"
+        self.controller    = controller
+        self.composition   = controller.composition
+        self.glyph_id      = glyph_id
+        self.old_keyframes = copy.deepcopy(old_keyframes)
+        self.new_keyframes = copy.deepcopy(new_keyframes)
+
+    def undo(self) -> None:
+        self.apply(self.old_keyframes)
 
     def redo(self) -> None:
         self.apply(self.new_keyframes)
 
-    def undo(self) -> None:
-        self.apply(self.old_keyframes)
+    def get_description(self) -> str:
+        return "editing fade keyframes"
 
     def apply(self, keyframes: list[tuple[float, int]]) -> None:
         glyph = self.composition.get_glyph(self.glyph_id)
@@ -188,7 +177,9 @@ class EditFadeKeyframesCommand:
         if not effect or effect.get("name") != "Fade":
             return
 
-        new_settings  = {**effect["settings"], "keyframes": list(keyframes)}
-        updated_glyph = GlyphEffects.apply_visual_effect(glyph, "Fade", new_settings)
+        clean_keyframes = [(round(float(time_part), 2), int(round(float(brightness_part)))) for time_part, brightness_part in keyframes]
+        new_settings    = {**effect["settings"], "keyframes": clean_keyframes}
+        updated_glyph   = GlyphEffects.apply_visual_effect(glyph, "Fade", new_settings)
 
         self.composition.replace_glyph(self.glyph_id, updated_glyph)
+        self.controller.update_glyphs([self.glyph_id])

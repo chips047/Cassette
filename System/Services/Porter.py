@@ -1,6 +1,6 @@
 import random
 
-from System.Common import Constants
+from System.Common   import Constants
 from System.Services import GlyphEffects
 
 # Segment Utilities

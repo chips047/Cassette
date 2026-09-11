@@ -3,12 +3,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout
 )
 
-from System.Common import Styles
-
-from System.Interface import (
-    Labels,
-    Textboxes
-)
+from System.Common    import Styles
+from System.Interface import Widgets
 
 # Helpers
 
@@ -18,7 +14,7 @@ def build_column(
     ) -> QVBoxLayout:
     
     column = QVBoxLayout()
-    column.addWidget(Labels.DescriptionLabel(title))
+    column.addWidget(Widgets.DescriptionLabel(title))
 
     for widget in widgets:
         column.addWidget(widget)
@@ -27,16 +23,16 @@ def build_column(
 
     return column
 
-def make_time_textbox() -> Textboxes.Textbox:
-    textbox = Textboxes.Textbox(":time", max_length = 5)
+def make_time_textbox() -> Widgets.Textbox:
+    textbox = Widgets.Textbox(":time", max_length = 5)
     textbox.setStyleSheet(Styles.Controls.FloatingTextBox)
     textbox.setFixedHeight(32)
     textbox.setFixedWidth(56)
 
     return textbox
 
-def make_fade_textbox(placeholder: str) -> Textboxes.Textbox:
-    textbox = Textboxes.Textbox("number", 0, 5000, placeholder = placeholder)
+def make_fade_textbox(placeholder: str) -> Widgets.Textbox:
+    textbox = Widgets.Textbox("number", 0, 5000, placeholder = placeholder)
     textbox.setStyleSheet(Styles.Controls.FloatingTextBox)
     textbox.setFixedHeight(32)
 

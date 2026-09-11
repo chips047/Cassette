@@ -1,11 +1,8 @@
 from PyQt6.QtWidgets import QWidget
 
-from System.Interface import (
-    Buttons,
-    Widgets
-)
+from System.Interface import Widgets
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # Segment Editor
 
@@ -22,18 +19,18 @@ class SegmentEditor(FloatingWindowGPU):
 
         self.segmented_bar = Widgets.SegmentedBar(segment_number, defaults)
 
-        upper_button_row = Buttons.ButtonRow(
+        upper_button_row = Widgets.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, "Enable all",  self.segmented_bar.enable_all),
-                (Buttons.ButtonWithOutline, "Disable all", self.segmented_bar.disable_all),
-                (Buttons.ButtonWithOutline, "Zebra",       self.segmented_bar.zebra)
+                (Widgets.ButtonWithOutline, "Enable all",  self.segmented_bar.enable_all),
+                (Widgets.ButtonWithOutline, "Disable all", self.segmented_bar.disable_all),
+                (Widgets.ButtonWithOutline, "Zebra",       self.segmented_bar.zebra)
             ]
         )
 
-        lower_button_row = Buttons.ButtonRow(
+        lower_button_row = Widgets.ButtonRow(
             [
-                (Buttons.ButtonWithOutline, "Nah",   self.on_cancel),
-                (Buttons.NothingButton,     "Apply", self.on_ok)
+                (Widgets.ButtonWithOutline, "Nah",   self.on_cancel),
+                (Widgets.NothingButton,     "Apply", self.on_ok)
             ]
         )
 

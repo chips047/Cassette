@@ -20,7 +20,7 @@ from System.Interface import Timing
 
 from System.Interface.Animation import LoomEngine
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows import FloatingWindowGPU
 
 # GlyphVisualizer
 

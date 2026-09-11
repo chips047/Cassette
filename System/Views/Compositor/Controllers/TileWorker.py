@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtGui import QImage
+from PyQt6.QtGui  import QImage
 from PyQt6.QtCore import QRunnable
 
 from .TileWorkerSignals import TileWorkerSignals
