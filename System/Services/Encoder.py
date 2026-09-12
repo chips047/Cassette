@@ -1,3 +1,4 @@
+import os
 import json
 import math
 import zlib
@@ -44,14 +45,6 @@ def glyphs_to_ogg(
 
     run_ffmpeg(path_to_audio, destination, metadata)
 
-def is_bngc_file(data: dict) -> bool:
-    first_track_glyphs = next(iter(data.values()))
-
-    if not first_track_glyphs or not isinstance(first_track_glyphs, list):
-        return False
-
-    return "startTimeMilis" in first_track_glyphs[0]
-
 def is_labels_file(data: str) -> bool:
     return "PHONE_MODEL=" in data and "\t" in data
 
@@ -91,20 +84,45 @@ def get_audio_duration(path_to_audio: str) -> float:
 
 def get_ogg_metadata(path: str) -> dict:
     ffprobe_path = getattr(Constants, 'FFPROBE_PATH', 'ffprobe')
-    
+
     cmd = [
         ffprobe_path,
         "-v", "error",
-        "-show_entries", "format_tags",
+        "-show_entries", "format_tags:stream_tags",
         "-of", "json",
         path
     ]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    data = json.loads(result.stdout)
-    tags = data.get("format", {}).get("tags", {})
-    
-    return {k.upper(): v for k, v in tags.items()}
+
+    result = Utils.run_hidden(cmd)
+    if result.returncode != 0:
+        return {}
+
+    try:
+        data = json.loads(result.stdout)
+    except Exception:
+        return {}
+
+    tags = {}
+
+    for stream in data.get("streams", []):
+        for k, v in stream.get("tags", {}).items():
+            tags[k.upper()] = v
+
+    for k, v in data.get("format", {}).get("tags", {}).items():
+        tags[k.upper()] = v
+
+    return tags
+
+def is_bngc_file(data: dict) -> bool:
+    if not isinstance(data, dict) or not data:
+        return False
+
+    for glyph_list in data.values():
+        if isinstance(glyph_list, list) and glyph_list:
+            first_item = glyph_list[0]
+            return isinstance(first_item, dict) and "startTimeMilis" in first_item
+
+    return False
 
 def parse_glyphs(glyphs: dict, device: Constants.DeviceConfig) -> list[dict]:
     parsed = []
@@ -457,22 +475,64 @@ def bngc_to_glyphs(
 
     total_tracks = len(json_data)
 
-    target_config, model_name = next(
-        (
-            (config, name) for name, config in Constants.DEVICES.items()
-            if config.total_tracks_with_segments == total_tracks or total_tracks in config.legacy_tracks
-        ),
-        (None, "UNKNOWN")
-    )
+    target_config = None
+    model_name = "UNKNOWN"
+
+    for name, config in Constants.DEVICES.items():
+        if config.total_tracks_with_segments == total_tracks:
+            target_config = config
+            model_name = name
+            break
+
+    if not target_config:
+        for name, config in Constants.DEVICES.items():
+            if config.base_tracks == total_tracks:
+                target_config = config
+                model_name = name
+                break
+
+    if not target_config:
+        for name, config in Constants.DEVICES.items():
+            if total_tracks in config.legacy_tracks:
+                target_config = config
+                model_name = name
+                break
 
     if not target_config:
         raise LabelsNoModelError(f"No device matches track count: {total_tracks}")
 
+    flat_track_map: list[tuple[str, int | None]] = []
+
+    if total_tracks == target_config.total_tracks_with_segments:
+        for track_num in range(1, target_config.base_tracks + 1):
+            track_str = str(track_num)
+
+            if track_str in target_config.segments_map:
+                for seg_idx in range(target_config.segments_map[track_str]):
+                    flat_track_map.append((track_str, seg_idx))
+
+            else:
+                flat_track_map.append((track_str, None))
+
+    elif total_tracks == target_config.base_tracks:
+        for track_num in range(1, target_config.base_tracks + 1):
+            flat_track_map.append((str(track_num), None))
+
     grouped_glyphs = {}
 
     for track_index_str, glyph_list in json_data.items():
-        track_id_in   = str(int(track_index_str) + 1)
-        target_tracks = target_config.resolve_tracks(track_id_in, total_tracks)
+        try:
+            track_idx = int(track_index_str)
+
+        except ValueError:
+            continue
+
+        if flat_track_map and 0 <= track_idx < len(flat_track_map):
+            target_tracks = [flat_track_map[track_idx]]
+
+        else:
+            track_id_in = str(track_idx + 1)
+            target_tracks = target_config.resolve_tracks(track_id_in, total_tracks)
 
         for item in glyph_list:
             start_ms_item = int(round(item["startTimeMilis"]))
@@ -695,6 +755,9 @@ def trim_glyphs_ogg(
         fade_out_ms
     )
 
+    is_inplace = (os.path.abspath(path) == os.path.abspath(output))
+    target_output = output + ".tmp.ogg" if is_inplace else output
+
     cmd = [
         Constants.FFMPEG_PATH,
         "-y",
@@ -706,18 +769,36 @@ def trim_glyphs_ogg(
         "-map_metadata", "0"
     ]
 
-    cmd.extend(["-metadata", f"AUTHOR={author_b64_new}"])
+    cmd.extend([
+        "-metadata", f"AUTHOR={author_b64_new}",
+        "-metadata:s:a:0", f"AUTHOR={author_b64_new}"
+    ])
+
     if custom1_b64_new:
-        cmd.extend(["-metadata", f"CUSTOM1={custom1_b64_new}"])
+        cmd.extend([
+            "-metadata", f"CUSTOM1={custom1_b64_new}",
+            "-metadata:s:a:0", f"CUSTOM1={custom1_b64_new}"
+        ])
 
     if fade_filters:
         cmd += ["-af", fade_filters, "-c:a", audio_codec or "libopus"]
+
     else:
         cmd += ["-c:a", "copy"]
 
-    cmd.append(output)
+    cmd.append(target_output)
 
-    Utils.run_hidden(cmd)
+    result = Utils.run_hidden(cmd)
+
+    if result.returncode != 0:
+        if is_inplace and os.path.exists(target_output):
+            os.remove(target_output)
+
+        error_msg = (result.stderr or "").strip()
+        raise RuntimeError(error_msg or "ffmpeg trimming failed")
+
+    if is_inplace:
+        shutil.move(target_output, output)
 
 class LabelsNoModelError(Exception):
     pass

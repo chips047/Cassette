@@ -771,7 +771,7 @@ class MainMenu(QWidget):
         if window.exec():
             composition = ProjectSaver.Composition(
                 window.audio_path,
-                window.settings
+                window.saved_settings
             )
 
             self.composition_created.emit(composition)
