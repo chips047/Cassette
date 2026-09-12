@@ -369,6 +369,10 @@ class GlyphController(QObject):
                 self.composition.update_bunch_of_glyphs(after_state)
                 self.update_glyphs(after_state)
 
+                for glyph_id in after_state:
+                    if item := self.glyph_items.get(glyph_id):
+                        item.update()
+
                 self.elements_changed.emit()
                 self.glyph_property_changed.emit("brightness")
 
@@ -377,13 +381,14 @@ class GlyphController(QObject):
 
                 Player.ui_player.play_sound(target_sound, setting_key = "brightness_adjustment_sounds")
 
+                delta_prefix = "+" if delta > 0 else ""
+                
                 if len(after_state) == 1:
                     target_glyph_id = next(iter(after_state))
                     item_ref        = self.glyph_items[target_glyph_id]
                     target_data     = after_state[target_glyph_id]
 
                     if item_ref.keyframes:
-                        delta_prefix    = "+" if delta > 0 else ""
                         tooltip_message = f"Keyframes: {delta_prefix}{delta}%"
 
                     else:
@@ -394,6 +399,18 @@ class GlyphController(QObject):
                         item_ref,
                         True
                     )
+                
+                else:
+                    last_glyph_id = selected_glyph_identifiers[-1]
+                    item_ref      = self.glyph_items.get(last_glyph_id)
+                    
+                    if item_ref:
+                        tooltip_message = f"Brightness: {delta_prefix}{delta}% ({len(after_state)} glyphs)"
+                        self.conductor.tooltip.show_tooltip_at(
+                            tooltip_message,
+                            item_ref,
+                            True
+                        )
 
         finally:
             self.composition.stop_batching()

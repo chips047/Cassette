@@ -168,17 +168,26 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.content_widget = QWidget(self)
         self.content_widget.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.content_widget.setMinimumWidth(320)
+        
+        # Заставляем виджет контента НЕ расти выше, чем нужно его элементам:
+        from PyQt6.QtWidgets import QSizePolicy
+        self.content_widget.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum
+        )
 
         self.content_layout = QVBoxLayout(self.content_widget)
         self.content_layout.setContentsMargins(16, 16, 16, 16)
         self.content_layout.setSpacing(12)
+        # Ограничиваем layout минимально необходимым размером
+        self.content_layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
 
-        main_layout.addWidget(self.content_widget)
+        # ВАЖНО: AlignmentFlag.AlignCenter запрещает main_layout растягивать content_widget по высоте!
+        main_layout.addWidget(self.content_widget, 0, Qt.AlignmentFlag.AlignCenter)
 
         if title:
             self.title_label = Widgets.TitleLabel(title)
             self.content_layout.addWidget(self.title_label)
-
         else:
             self.title_label = None
 
@@ -780,22 +789,21 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
     # Events
 
     def showEvent(self, event: QShowEvent) -> None:
+        if not self.is_ready:
+            # Сначала рассчитываем идеальный размер и позицию, и только затем показываем окно
+            self.adjustSize()
+
+            if self.animations_active:
+                scale_restriction = self.maximum_scale()
+                self.scale_property.set_max_value(scale_restriction)
+
         super().showEvent(event)
 
-        if self.is_ready:
-            return
+        if not self.is_ready:
+            if self.enable_open_animation:
+                self.open_window()
 
-        self.adjustSize()
-        self.center_window()
-
-        if self.animations_active:
-            scale_restriction = self.maximum_scale()
-            self.scale_property.set_max_value(scale_restriction)
-
-        if self.enable_open_animation:
-            self.open_window()
-
-        self.is_ready = True
+            self.is_ready = True
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.allow_exit:
@@ -902,10 +910,16 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
     def adjustSize(self) -> None:
         self.ensurePolished()
+        self.content_widget.ensurePolished()
 
+        # Активируем оба layout, чтобы дочерние виджеты честно посчитали свои размеры
+        if self.content_layout:
+            self.content_layout.activate()
         if self.layout():
             self.layout().activate()
 
+        # Принудительно сжимаем content_widget до минимально необходимого его детям размера
+        self.content_widget.adjustSize()
         content_size = self.content_widget.sizeHint()
 
         if self.is_ready:
@@ -936,7 +950,8 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         final_width  = content_width + (self.margin_x * 2)
         final_height = content_height + (self.margin_y * 2)
 
-        self.resize(final_width, final_height)
+        # Центрируем и устанавливаем итоговую геометрию с актуальными размерами
+        self.center_window(final_width, final_height)
 
     def set_bpm_peak_size(self, coefficient: float) -> None:
         self.bpm_peak_scale = coefficient
@@ -946,31 +961,31 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         return function(*random.choice(periods))
 
-    def center_window(self) -> QRect:
+    def center_window(self, width: int | None = None, height: int | None = None) -> QRect:
+        w = width if width is not None else self.width()
+        h = height if height is not None else self.height()
+
         if self.start_position:
             final_rectangle = QRect(
                 self.start_position.x() - self.margin_x,
                 self.start_position.y() - self.margin_y,
-                self.width(),
-                self.height()
+                w,
+                h
             )
-
             self.setGeometry(final_rectangle)
-
             return final_rectangle
 
         window        = QApplication.activeWindow()
         window_center = window.geometry().center() if window else QApplication.primaryScreen().geometry().center()
 
         final_rectangle = QRect(
-            window_center.x() - self.width() // 2,
-            window_center.y() - self.height() // 2,
-            self.width(),
-            self.height()
+            window_center.x() - w // 2,
+            window_center.y() - h // 2,
+            w,
+            h
         )
 
         self.setGeometry(final_rectangle)
-
         return final_rectangle
 
     def player_pulse(

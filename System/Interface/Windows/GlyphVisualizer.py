@@ -4,11 +4,21 @@ from OpenGL    import GL
 from OpenGL.GL import shaders
 
 from PyQt6.QtCore import (
+    Qt,
+    QRect,
     QObject,
     QElapsedTimer
 )
 
-from PyQt6.QtGui import QWheelEvent
+from PyQt6.QtGui import (
+    QShowEvent,
+    QWheelEvent
+)
+
+from PyQt6.QtWidgets import (
+    QApplication,
+    QSizePolicy
+)
 
 from System.Common import (
     Dev,
@@ -51,6 +61,13 @@ class GlyphVisualizer(FloatingWindowGPU):
         self.target_scale               = 1.0
         self.scale_smoothing            = 0.15
 
+        # Контент свободно и плавно масштабируется вместе с окном
+        self.content_widget.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding
+        )
+        self.layout().setAlignment(self.content_widget, Qt.AlignmentFlag(0))
+
         self.glyphs_gpu                 = []
         self.total_segments             = 0
 
@@ -58,8 +75,123 @@ class GlyphVisualizer(FloatingWindowGPU):
         self.last_scrubbed_ms           = 0
 
         self.initialize_geometry()
-        self.scale_in()
-        self.sync_size_delayed()
+
+    # Sizing & Expansion Animation
+
+    def get_content_target_size(self) -> tuple[int, int]:
+        target_w = int(self.map_width * self.target_scale) + 80
+        target_h = int(self.map_height * self.target_scale) + 80
+        return target_w, target_h
+
+    def get_window_size(self) -> tuple[int, int]:
+        return self.get_content_target_size()
+
+    def adjustSize(self) -> None:
+        target_w, target_h = self.get_content_target_size()
+
+        if self.is_ready:
+            self.animate_resize(target_w, target_h)
+            return
+
+        screen_geometry  = QApplication.primaryScreen().availableGeometry()
+        available_width  = screen_geometry.width()
+        available_height = screen_geometry.height()
+
+        # Авто-подгон под экран, если карта слишком большая
+        max_possible_h = available_height - 120 - (self.target_margin * 2)
+        if target_h > max_possible_h and self.map_height > 0:
+            self.target_scale = max(0.2, (max_possible_h - 80) / self.map_height)
+            self.visual_scale = self.target_scale
+            target_w, target_h = self.get_content_target_size()
+
+        max_margin_x = max(20, (available_width - 46 * 2 - target_w) // 2)
+        max_margin_y = max(20, (available_height - 46 * 2 - target_h) // 2)
+
+        self.margin_x = min(max_margin_x, self.target_margin)
+        self.margin_y = min(max_margin_y, self.target_margin)
+
+        self.layout().setContentsMargins(
+            self.margin_x,
+            self.margin_y,
+            self.margin_x,
+            self.margin_y
+        )
+
+        final_width  = target_w + (self.margin_x * 2)
+        final_height = target_h + (self.margin_y * 2)
+
+        # Компактный начальный размер (откуда окно начнет плавно расти)
+        start_w = min(final_width, 380)
+        start_h = min(final_height, 130)
+
+        window = QApplication.activeWindow()
+        window_center = window.geometry().center() if window else QApplication.primaryScreen().geometry().center()
+
+        initial_rect = QRect(
+            window_center.x() - start_w // 2,
+            window_center.y() - start_h // 2,
+            start_w,
+            start_h
+        )
+
+        self.setGeometry(initial_rect)
+
+        if self.animations_active:
+            self.window_geometry_property.set_base(initial_rect)
+
+    def animate_resize(
+            self,
+            target_width:  int,
+            target_height: int,
+            duration_ms:   int = 400
+        ) -> None:
+
+        new_width  = target_width + (self.margin_x * 2)
+        new_height = target_height + (self.margin_y * 2)
+
+        current_center = self.geometry().center()
+        target_rect    = QRect(
+            current_center.x() - new_width // 2,
+            current_center.y() - new_height // 2,
+            new_width,
+            new_height
+        )
+
+        if not self.animations_active or not self.animations_enabled:
+            self.setGeometry(target_rect)
+            return
+
+        self.window_geometry_property.set_base(self.geometry())
+        self.window_geometry_property.set_target(
+            value           = target_rect,
+            duration_ms     = duration_ms,
+            easing_function = LoomEngine.Easing.ease_out_cubic
+        )
+
+    def sync_size_delayed(self) -> None:
+        target_w, target_h = self.get_content_target_size()
+        if self.is_ready:
+            self.animate_resize(target_w, target_h, duration_ms = 400)
+
+    # Events
+
+    def showEvent(self, event: QShowEvent) -> None:
+        is_first_show = not self.is_ready
+
+        super().showEvent(event)
+
+        # Тот самый запуск анимации расширения при первом появлении
+        if is_first_show:
+            target_w, target_h = self.get_content_target_size()
+            self.animate_resize(target_w, target_h, duration_ms = 650)
+            self.scale_in()
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        delta             = 0.07 if event.angleDelta().y() > 0 else -0.07
+        self.target_scale = numpy.clip(self.target_scale + delta, 0.3, 4.0)
+
+        # Мягкое масштабирование колесиком без скачков
+        self.resize_timer.start()
 
     # Setup
 
@@ -80,6 +212,9 @@ class GlyphVisualizer(FloatingWindowGPU):
         )
 
         self.elapsed = QElapsedTimer()
+
+        # Привязка плавной инерции масштаба к движку анимаций
+        LoomEngine.ui_engine.updated.connect(self.update_visual_scale)
 
     def initialize_geometry(self) -> None:
         current_global_offset = 0
@@ -245,7 +380,7 @@ class GlyphVisualizer(FloatingWindowGPU):
 
         self.scale_property.play_curve(
             keyframes                  = [(0.0, 0.0), (1.0, 1.0)],
-            duration_ms                = 1000,
+            duration_ms                = 700,
             easing_function            = LoomEngine.Easing.ease_out_quart,
             multiply_duration_by_speed = False
         )
@@ -256,7 +391,6 @@ class GlyphVisualizer(FloatingWindowGPU):
         if not self.animations_active:
             if cleanup:
                 self.really_close()
-
             return
 
         self.scale_property.play_curve(
@@ -366,7 +500,6 @@ class GlyphVisualizer(FloatingWindowGPU):
         if abs(self.target_scale - self.visual_scale) > 0.001:
             self.visual_scale += (self.target_scale - self.visual_scale) * self.scale_smoothing
             self.update()
-
         else:
             self.visual_scale = self.target_scale
 
@@ -449,25 +582,15 @@ class GlyphVisualizer(FloatingWindowGPU):
 
         return float(keyframes[-1][1])
 
-    # Events
-
-    def wheelEvent(self, event: QWheelEvent) -> None:
-        delta             = 0.07 if event.angleDelta().y() > 0 else -0.07
-        self.target_scale = numpy.clip(self.target_scale + delta, 0.3, 4.0)
-        self.visual_scale = self.target_scale
-
-        self.resize_timer.start()
-        self.update()
-
     # Utilities
 
-    def sync_size_delayed(self) -> None:
-        new_width  = int(self.map_width * self.target_scale) + 80
-        new_height = int(self.map_height * self.target_scale) + 80
-
-        self.animate_resize(new_width, new_height)
-
     def exit(self, cleanup: bool = True) -> None:
+        if self.animations_active:
+            try:
+                LoomEngine.ui_engine.updated.disconnect(self.update_visual_scale)
+            except (TypeError, RuntimeError):
+                pass
+
         self.allow_exit = True
         self.stop_all()
         self.resize_timer.stop()

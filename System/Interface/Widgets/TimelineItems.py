@@ -826,6 +826,9 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     # Animations
 
     def set_animating(self, active: bool) -> None:
+        if self.is_despawning:
+            return
+
         if self.is_animating == active:
             return
 
