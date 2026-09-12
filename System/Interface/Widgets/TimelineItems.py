@@ -54,7 +54,7 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
     def __init__(
             self,
-            conductor,
+            conductor:        object,
             custom_height_px: float | None = None
         ) -> None:
 
@@ -79,11 +79,13 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     # Geometry
 
     def boundingRect(self) -> QRectF:
+        height_px = self.height_px or float(self.conductor.height())
+
         return QRectF(
             -self.width_px / 2,
             0,
             self.width_px,
-            self.height_px or self.conductor.height()
+            height_px
         )
 
     # Painting
@@ -95,10 +97,12 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             widget:  QWidget | None = None
         ) -> None:
 
-        painter.setPen(self.cached_pen)
-        painter.drawLine(0, 0, 0, int(self.height_px or self.conductor.height()))
+        height_px = int(self.height_px or self.conductor.height())
 
-    # Api
+        painter.setPen(self.cached_pen)
+        painter.drawLine(0, 0, 0, height_px)
+
+    # PlayheadApi
 
     def set_target_x(
             self,
@@ -160,7 +164,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.setCacheMode(QGraphicsItem.CacheMode.NoCache)
         self.hide()
 
-    # Setup
+    # AnimationSetup
 
     def setup_animations(self) -> None:
         Player.bpm_informer.beat_4.connect(self.bpm_tick)
@@ -293,7 +297,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     def finish_and_hide(self) -> None:
         self.hide()
 
-    # Api
+    # MarqueeApi
 
     def start_marquee(self, start_point: QPointF) -> None:
         if self.isVisible():
@@ -318,7 +322,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     def update_end_point(
             self,
             point:   QPointF,
-            animate: bool = True
+            animate: bool = False
         ) -> None:
 
         if animate:
@@ -393,23 +397,23 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.glyph_id  = glyph_id
         self.conductor = conductor
 
-        self.was_clicked             = False
-        self.border_width_px         = 2
-        self.keyframe_line_padding   = 12
-        self.keyframe_line_width_px  = 4
-        self.resize_margin_px        = 10
-        self.is_despawning           = False
-        self.is_moving_horizontally  = False
-        self.is_resizing_width       = False
-        self.interaction_mode        = None
-        self.current_width_px        = 0.0
-        self.drag_start_position     = QPointF()
+        self.was_clicked            = False
+        self.border_width_px        = 2
+        self.keyframe_line_padding  = 12
+        self.keyframe_line_width_px = 4
+        self.resize_margin_px       = 10
+        self.is_despawning          = False
+        self.is_moving_horizontally = False
+        self.is_resizing_width      = False
+        self.interaction_mode       = None
+        self.current_width_px       = 0.0
+        self.drag_start_position    = QPointF()
 
-        self.cached_width_px         = -1.0
-        self.cached_radius_px        = 0.0
-        self.cached_border_pen       = QPen()
-        self.cached_stack_label      = ""
-        self.cached_stack_colors     = []
+        self.cached_width_px     = -1.0
+        self.cached_radius_px    = 0.0
+        self.cached_border_pen   = QPen()
+        self.cached_stack_label  = ""
+        self.cached_stack_colors = []
 
         self.cached_fade_pen         = QPen()
         self.cached_fade_brush       = QBrush()
@@ -517,8 +521,9 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.setAcceptHoverEvents(True)
 
     def setup_keyframes(self) -> None:
-        self.pending_fade_keyframes = copy.deepcopy(self.keyframes) or []
-        self.fade_initial_keyframes = copy.deepcopy(self.pending_fade_keyframes)
+        extracted_keyframes         = self.keyframes
+        self.pending_fade_keyframes = list(extracted_keyframes) if extracted_keyframes else []
+        self.fade_initial_keyframes = list(self.pending_fade_keyframes)
         self.fade_is_dragging       = False
         self.fade_dragged_index     = None
 
@@ -586,12 +591,12 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             on_change  = self.on_width_changed
         )
 
-    # Geometry And Metrics
+    # GeometryAndMetrics
 
     def calculate_y_pos(self) -> float:
         top_margin_px = (
             Styles.Metrics.Tracks.RulerHeight +
-            Styles.Metrics.Waveform.Height    +
+            Styles.Metrics.Waveform.Height +
             Styles.Metrics.Tracks.BoxSpacing
         )
 
@@ -634,7 +639,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         has_transforms = (
             self.scale_handle.value  != 1.0 or
-            self.tilt_x_handle.value != 0   or
+            self.tilt_x_handle.value != 0 or
             self.tilt_y_handle.value != 0
         )
 
@@ -657,7 +662,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             height_px: float
         ) -> None:
 
-        center_x_px = width_px  / 2
+        center_x_px = width_px / 2
         center_y_px = height_px / 2
         scale_value = self.scale_handle.value
 
@@ -684,9 +689,9 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         self.cached_width_px  = width_px
         self.cached_radius_px = (
-            2.4
-            + max(0.0, min((width_px - 10) * 0.2, 2.0))
-            + max(0.0, min((width_px - 20) * 0.48, 4.8))
+            2.4 +
+            max(0.0, min((width_px - 10) * 0.2, 2.0)) +
+            max(0.0, min((width_px - 20) * 0.48, 4.8))
         )
 
     def update_border_pen(self) -> None:
@@ -721,8 +726,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         radius_px = self.cached_radius_px
         base_rect = QRectF(0, 0, width_px, height_px)
 
-        pen = QPen(self.cached_border_pen)
-
         if not self.isSelected() and width_px < 15.0:
             standard_width_px = self.cached_border_pen.widthF()
             minimum_limit_px  = 3.0
@@ -730,10 +733,14 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             new_width_px      = standard_width_px * factor
 
             if new_width_px <= 0.05:
-                pen.setStyle(Qt.PenStyle.NoPen)
+                pen = QPen(Qt.PenStyle.NoPen)
 
             else:
+                pen = QPen(self.cached_border_pen)
                 pen.setWidthF(new_width_px)
+
+        else:
+            pen = self.cached_border_pen
 
         use_rounded_corners = width_px >= 15.0 and radius_px > 0.0 and Constants.current_settings.get("glyph_rounded_corners")
 
@@ -892,9 +899,9 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
                 (0.5, 1.075),
                 (1.0, 1.000)
             ],
-            duration_ms                 = 500,
-            easing_function             = LoomEngine.Easing.ease_out_cubic,
-            finished                    = lambda: self.set_animating(False)
+            duration_ms     = 500,
+            easing_function = LoomEngine.Easing.ease_out_cubic,
+            finished        = lambda: self.set_animating(False)
         )
 
     def press_animation(self, position: QPointF) -> None:
@@ -932,6 +939,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if abs(current_x_px - target_x_px) < 0.5:
             self.stop_horizontal_move()
             self.setPos(target_x_px, self.fixed_y_px + self.stack_y_offset_handle.value)
+
             return
 
         self.is_moving_horizontally = True
@@ -955,6 +963,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             self.current_width_px = target_width_px
             self.prepareGeometryChange()
             self.update()
+
             return
 
         self.is_resizing_width = True
@@ -1222,7 +1231,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
                 formatted_keyframes
             )
 
-            self.fade_initial_keyframes = copy.deepcopy(formatted_keyframes)
+            self.fade_initial_keyframes = list(formatted_keyframes)
             event.accept()
 
             return
@@ -1278,7 +1287,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             )
         )
 
-        self.pending_fade_keyframes = self.keyframes
+        self.pending_fade_keyframes = list(self.keyframes) if self.keyframes else []
         self.update_geometry()
         self.update()
 
@@ -1371,7 +1380,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
                 new_keyframes
             )
 
-            self.fade_initial_keyframes = copy.deepcopy(new_keyframes)
+            self.fade_initial_keyframes = list(new_keyframes)
 
             self.update()
             event.accept()
@@ -1416,7 +1425,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     def calculate_target_tilt(self, position: QPointF) -> tuple[float, float]:
         width_px    = self.visual_width_px
         height_px   = Styles.Metrics.Tracks.BoxHeight
-        center_x_px = width_px  / 2
+        center_x_px = width_px / 2
         center_y_px = height_px / 2
         offset_x_px = position.x() - center_x_px
         offset_y_px = position.y() - center_y_px
@@ -1429,21 +1438,43 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         return (-normalized_y * 25, -normalized_x * max_tilt_y)
 
-    # Api
+    # GlyphApi
+
+    def update_drag_geometry(self) -> None:
+        target_x_px     = self.ms_to_px(self.start_ms)
+        target_width_px = self.ms_to_px(self.duration_ms)
+        target_y_px     = self.fixed_y_px + self.stack_y_offset_handle.value
+
+        self.prepareGeometryChange()
+        self.setPos(target_x_px, target_y_px)
+        self.current_width_px = target_width_px
+        self.update()
 
     def update_geometry(self, animate_movement: bool = False) -> None:
-        self.prepareGeometryChange()
-
         if not self.data and self.despawn_duration_ms is None:
             return
 
-        self.pending_fade_keyframes = copy.deepcopy(self.keyframes) or []
-        self.fade_initial_keyframes = copy.deepcopy(self.pending_fade_keyframes)
+        extracted_keyframes         = self.keyframes
+        self.pending_fade_keyframes = list(extracted_keyframes) if extracted_keyframes else []
+        self.fade_initial_keyframes = list(self.pending_fade_keyframes)
         self.fixed_y_px             = self.calculate_y_pos()
 
         target_x_px     = self.ms_to_px(self.start_ms)
         target_width_px = self.ms_to_px(self.duration_ms)
         target_y_px     = self.fixed_y_px + self.stack_y_offset_handle.value
+
+        current_x_px     = self.pos().x()
+        current_y_px     = self.pos().y()
+        current_width_px = self.visual_width_px
+
+        geometry_changed = (
+            abs(current_x_px - target_x_px) > 0.01 or
+            abs(current_y_px - target_y_px) > 0.01 or
+            abs(current_width_px - target_width_px) > 0.01
+        )
+
+        if geometry_changed:
+            self.prepareGeometryChange()
 
         if animate_movement:
             self.animate_horizontal_move(target_x_px)
@@ -1452,8 +1483,10 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         else:
             self.stop_horizontal_move()
             self.stop_width_animation()
-            self.setPos(target_x_px, target_y_px)
-            self.current_width_px = target_width_px
+
+            if geometry_changed:
+                self.setPos(target_x_px, target_y_px)
+                self.current_width_px = target_width_px
 
         self.update()
 

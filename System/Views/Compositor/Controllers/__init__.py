@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from .GlyphController       import GlyphController
 from .AutoScroller          import AutoScroller
 from .TileWorker            import TileWorker
 from .WheelController       import WheelController
-from .GlyphController       import GlyphController
 from .ScaleController       import ScaleController
 from .MouseController       import MouseController
 from .TileWorkerSignals     import TileWorkerSignals

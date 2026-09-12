@@ -6,7 +6,8 @@ import copy
 import shutil
 import random
 
-from loguru import logger
+from loguru          import logger
+from PyQt6.QtCore   import QTimer
 
 from System.Common import (
     Utils,
@@ -23,19 +24,20 @@ from System.Services import (
     RealTimeVisualizer
 )
 
-# Utility Functions
+# UtilityFunctions
 
 def is_valid_opus_file(file_path: str) -> bool:
     try:
-        with open(file_path, "rb") as f:
-            header = f.read(1024)
+        with open(file_path, "rb") as file_handle:
+            header = file_handle.read(1024)
+
             return header.startswith(b"OggS") and b"OpusHead" in header
-    
+
     except Exception:
         return False
 
 def get_audio_duration_ms(file_path: str) -> int:
-    cmd = [
+    command = [
         Constants.FFPROBE_PATH,
         "-v", "error",
         "-show_entries", "format=duration",
@@ -43,18 +45,18 @@ def get_audio_duration_ms(file_path: str) -> int:
         file_path,
     ]
 
-    result = Utils.run_hidden(cmd)
+    result = Utils.run_hidden(command)
 
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "ffprobe failed")
 
-    data = json.loads(result.stdout)
+    data         = json.loads(result.stdout)
     duration_sec = float(data["format"]["duration"])
 
     return int(duration_sec * 1000)
 
 def get_metadata(file_path: str) -> tuple[str | None, str]:
-    cmd = [
+    command = [
         Constants.FFPROBE_PATH,
         "-v", "error",
         "-show_entries", "format_tags=title,artist,TITLE,ARTIST",
@@ -63,50 +65,50 @@ def get_metadata(file_path: str) -> tuple[str | None, str]:
     ]
 
     try:
-        result = Utils.run_hidden(cmd)
+        result = Utils.run_hidden(command)
+
         if result.returncode != 0:
             return None, "Unknown Artist"
 
         data = json.loads(result.stdout)
         tags = data.get("format", {}).get("tags", {})
 
-        title = tags.get("title") or tags.get("TITLE")
+        title  = tags.get("title") or tags.get("TITLE")
         artist = tags.get("artist") or tags.get("ARTIST") or "Unknown Artist"
 
         return title, artist
 
     except Exception:
         logger.error("Unable to get metadata from the audio.")
+
         return None, "Unknown Artist"
 
 class SyncedDict(dict):
     def __init__(
-        self,
-        *args:         object,
-        sync_callback: object,
-        composition:   Composition,
-        **kwargs:      object
-    ) -> None:
-        
+            self,
+            *args:         object,
+            sync_callback: object,
+            composition:   Composition,
+            **kwargs:      object
+        ) -> None:
+
         super().__init__(*args, **kwargs)
 
-        self.composition                        = composition
-        self.sync_callback                      = sync_callback
-        self.visualizator_changed_callback      = None
-        self.glyph_id_to_track:  dict[int, str] = {}
-        self.visualizator_data:  dict           = {}
-        self.is_batching:        bool           = False
-        self.pending_keys:       set[int]       = set()
-        self.needs_sync:         bool           = False
+        self.composition                   = composition
+        self.sync_callback                 = sync_callback
+        self.visualizator_changed_callback = None
+        self.glyph_id_to_track             = {}
+        self.visualizator_data             = {}
+        self.is_batching                   = False
+        self.pending_keys                  = set()
+        self.needs_sync                    = False
 
         self.process_initial_data()
 
     def start_batching(self) -> None:
         self.is_batching = True
-        
         self.pending_keys.clear()
-        
-        self.needs_sync = False
+        self.needs_sync  = False
 
     def mark_dirty(self, key: int) -> None:
         self.needs_sync = True
@@ -119,15 +121,21 @@ class SyncedDict(dict):
             return
 
         self.is_batching = False
+        had_changes     = False
 
         if self.pending_keys:
+            had_changes = True
+
             for key in list(self.pending_keys):
                 if key not in self:
                     continue
 
-                self.sync_item_logic(key, self[key])
+                self.sync_item_logic(key, self[key], notify = False)
 
         self.pending_keys.clear()
+
+        if had_changes and self.visualizator_changed_callback:
+            self.visualizator_changed_callback()
 
         if self.needs_sync:
             self.finalize_sync()
@@ -136,23 +144,26 @@ class SyncedDict(dict):
 
     def process_initial_data(self) -> None:
         for glyph_id, glyph_data in self.items():
-            track = glyph_data["track"]
-            
+            track                            = glyph_data["track"]
             self.glyph_id_to_track[glyph_id] = track
-            
+
             self.process_glyph_effect(glyph_id, glyph_data)
-            self.add_glyph_to_visualizator(glyph_id, glyph_data)
+            self.add_glyph_to_visualizator(glyph_id, glyph_data, notify = False)
+
+        if self.visualizator_changed_callback:
+            self.visualizator_changed_callback()
 
     def process_glyph_effect(
-        self,
-        glyph_id:   int,
-        glyph_data: dict
-    ) -> None:
-        
+            self,
+            glyph_id:   int,
+            glyph_data: dict
+        ) -> None:
+
         effect = glyph_data.get("effect")
 
         if not effect or effect["name"] == "None":
             self.composition.cached_effects.pop(glyph_id, None)
+
             return
 
         self.composition.cached_effects[glyph_id] = GlyphEffects.effect_to_glyph(
@@ -162,11 +173,12 @@ class SyncedDict(dict):
         )
 
     def add_glyph_to_visualizator(
-        self,
-        glyph_id:   int,
-        glyph_data: dict
-    ) -> None:
-        
+            self,
+            glyph_id:   int,
+            glyph_data: dict,
+            notify:     bool = True
+        ) -> None:
+
         track  = glyph_data["track"]
         effect = glyph_data.get("effect")
 
@@ -182,11 +194,16 @@ class SyncedDict(dict):
 
             for index, effect_glyph in enumerate(self.composition.cached_effects[glyph_id]):
                 self.visualizator_data[track][f"effect_{glyph_id}_{index}"] = effect_glyph
-        
-        if self.visualizator_changed_callback:
+
+        if notify and self.visualizator_changed_callback:
             self.visualizator_changed_callback()
 
-    def remove_glyph_from_visualizator(self, glyph_id: int) -> None:
+    def remove_glyph_from_visualizator(
+            self,
+            glyph_id: int,
+            notify:   bool = True
+        ) -> None:
+
         track = self.glyph_id_to_track.get(glyph_id)
 
         if track is None:
@@ -196,53 +213,51 @@ class SyncedDict(dict):
 
         if not track_data:
             self.glyph_id_to_track.pop(glyph_id, None)
+
             return
 
         track_data.pop(glyph_id, None)
 
-        prefix = f"effect_{glyph_id}_"
+        prefix   = f"effect_{glyph_id}_"
+        sub_keys = [key for key in track_data if str(key).startswith(prefix)]
 
-        for key in list(track_data.keys()):
-            if str(key).startswith(prefix):
-                track_data.pop(key, None)
+        for key in sub_keys:
+            track_data.pop(key, None)
 
         if not track_data:
             self.visualizator_data.pop(track, None)
 
         self.glyph_id_to_track.pop(glyph_id, None)
-        
-        if self.visualizator_changed_callback:
+
+        if notify and self.visualizator_changed_callback:
             self.visualizator_changed_callback()
 
     def sync_item_logic(
-        self,
-        key:   int,
-        value: dict
-    ) -> None:
-        
+            self,
+            key:    int,
+            value:  dict,
+            notify: bool = True
+        ) -> None:
+
         if key in self.glyph_id_to_track:
-            self.remove_glyph_from_visualizator(key)
+            self.remove_glyph_from_visualizator(key, notify = notify)
 
         self.process_glyph_effect(key, value)
-        self.add_glyph_to_visualizator(key, value)
+        self.add_glyph_to_visualizator(key, value, notify = notify)
 
-        track = value["track"]
-        
-        self.glyph_id_to_track[key] = track
+        self.glyph_id_to_track[key] = value["track"]
 
     def finalize_sync(self) -> None:
         self.sync_callback(self)
-        
-        self.composition.save()
+        self.composition.save(immediate = False)
 
     def __setitem__(
-        self,
-        key:   int,
-        value: dict
-    ) -> None:
-        
-        super().__setitem__(key, value)
+            self,
+            key:   int,
+            value: dict
+        ) -> None:
 
+        super().__setitem__(key, value)
         self.mark_dirty(key)
 
         if self.is_batching:
@@ -250,7 +265,6 @@ class SyncedDict(dict):
 
         self.sync_item_logic(key, value)
         self.finalize_sync()
-
         self.needs_sync = False
 
     def __delitem__(self, key: int) -> None:
@@ -258,44 +272,41 @@ class SyncedDict(dict):
             return
 
         self.composition.cached_effects.pop(key, None)
-        
         self.remove_glyph_from_visualizator(key)
 
         super().__delitem__(key)
-
         self.mark_dirty(key)
 
         if self.is_batching:
             return
 
         self.finalize_sync()
-        
         self.needs_sync = False
 
     def update(
-        self,
-        *args:   object,
-        **kwargs: object
-    ) -> None:
-        
+            self,
+            *args:    object,
+            **kwargs: object
+        ) -> None:
+
         data = dict(*args, **kwargs)
 
         if self.is_batching:
             for key, value in data.items():
                 super().__setitem__(key, value)
-                
                 self.mark_dirty(key)
 
             return
 
         for key, value in data.items():
             super().__setitem__(key, value)
-            
-            self.sync_item_logic(key, value)
+            self.sync_item_logic(key, value, notify = False)
+
+        if self.visualizator_changed_callback:
+            self.visualizator_changed_callback()
 
         self.mark_dirty(0)
         self.finalize_sync()
-
         self.needs_sync = False
 
     def delete_keys(self, keys: list[int]) -> None:
@@ -304,27 +315,26 @@ class SyncedDict(dict):
                 continue
 
             self.composition.cached_effects.pop(key, None)
-            
-            self.remove_glyph_from_visualizator(key)
-
+            self.remove_glyph_from_visualizator(key, notify = False)
             super().__delitem__(key)
-
             self.mark_dirty(key)
 
         if self.is_batching:
             return
 
+        if self.visualizator_changed_callback:
+            self.visualizator_changed_callback()
+
         self.finalize_sync()
-        
         self.needs_sync = False
 
 class BaseComposition:
     def __init__(
-        self,
-        id:       int,
-        settings: dict
-    ) -> None:
-        
+            self,
+            id:       int,
+            settings: dict
+        ) -> None:
+
         self.id    = id if id is not None else random.randint(10000000, 99999999)
         self.model = settings.get("model")
 
@@ -344,14 +354,14 @@ class BaseComposition:
     def ensure_full_song_is_opus(self) -> None:
         if not os.path.exists(self.full_song_path):
             return
-            
+
         if is_valid_opus_file(self.full_song_path):
             return
 
         logger.info(f"Converting non-Opus audio file to Opus: {self.full_song_path}")
-        tmp_path = self.full_song_path.replace(".ogg", "_tmp.opus")
-        
-        cmd = [
+        temporary_path = self.full_song_path.replace(".ogg", "_tmp.opus")
+
+        command = [
             Constants.FFMPEG_PATH,
             "-y",
             "-v", "error",
@@ -359,64 +369,65 @@ class BaseComposition:
             "-vn",
             "-c:a", "libopus",
             "-ar", "48000",
-            tmp_path
+            temporary_path
         ]
-        
-        result = Utils.run_hidden(cmd)
-        
+
+        result = Utils.run_hidden(command)
+
         if result.returncode != 0:
-            err = (result.stderr or "").strip()
-            logger.critical(err)
-            raise RuntimeError(err or "ffmpeg failed to convert full song to Opus")
-            
+            error_message = (result.stderr or "").strip()
+            logger.critical(error_message)
+
+            raise RuntimeError(error_message or "ffmpeg failed to convert full song to Opus")
+
         if os.path.exists(self.full_song_path):
             os.remove(self.full_song_path)
-            
-        os.rename(tmp_path, self.full_song_path)
+
+        os.rename(temporary_path, self.full_song_path)
 
     def needs_cropped_audio(self) -> bool:
         if not os.path.exists(self.full_song_path):
             return False
-        
-        full_duration_ms = get_audio_duration_ms(self.full_song_path)
 
-        starts_at_zero = self.start_ms <= Constants.CROP_TOLERANCE_MS
-        ends_at_full   = abs(self.end_ms - full_duration_ms) <= Constants.CROP_TOLERANCE_MS
-        
+        full_duration_ms = get_audio_duration_ms(self.full_song_path)
+        starts_at_zero   = self.start_ms <= Constants.CROP_TOLERANCE_MS
+        ends_at_full     = abs(self.end_ms - full_duration_ms) <= Constants.CROP_TOLERANCE_MS
+
         return not (starts_at_zero and ends_at_full)
 
     def get_playback_audio_path(self) -> str:
         has_full    = os.path.exists(self.full_song_path)
         has_cropped = os.path.exists(self.cropped_song_path)
-    
+
         if not has_full and has_cropped:
             return self.cropped_song_path
-    
+
         if has_full and has_cropped:
             if self.needs_cropped_audio():
                 return self.cropped_song_path
-            
+
             return self.full_song_path
-    
+
         if has_full and not has_cropped:
             if self.needs_cropped_audio():
                 self.prepare_cropped_audio(self.full_song_path)
+
                 return self.cropped_song_path
-            
+
             return self.full_song_path
-    
+
         return self.full_song_path
 
     def export_segment(
-        self,
-        input_path:  str,
-        output_path: str,
-        start_ms:    int,
-        end_ms:      int,
-        fade_in:     int = 0,
-        fade_out:    int = 0
-    ) -> None:
-        
+            self,
+            input_path:  str,
+            output_path: str,
+            start_ms:    int,
+            end_ms:      int,
+            fade_in:     int = 0,
+            fade_out:    int = 0
+        ) -> None:
+
         start_time   = start_ms / 1000.0
         end_time     = end_ms / 1000.0
         duration_sec = max(0.0, (end_ms - start_ms) / 1000.0)
@@ -428,45 +439,44 @@ class BaseComposition:
         ]
 
         if fade_in:
-            fade_in_s = fade_in / 1000.0
-            
-            filters.append(f"afade=t=in:st=0:d={fade_in_s}")
+            fade_in_sec = fade_in / 1000.0
+            filters.append(f"afade=t=in:st=0:d={fade_in_sec}")
 
         if fade_out:
-            fade_out_s = fade_out / 1000.0
-            fade_start = max(0.0, duration_sec - fade_out_s)
-            
-            filters.append(f"afade=t=out:st={fade_start}:d={fade_out_s}")
+            fade_out_sec = fade_out / 1000.0
+            fade_start   = max(0.0, duration_sec - fade_out_sec)
+            filters.append(f"afade=t=out:st={fade_start}:d={fade_out_sec}")
 
-        afilter = ",".join(filters)
+        audio_filter = ",".join(filters)
 
-        cmd = [
+        command = [
             Constants.FFMPEG_PATH,
             "-y",
             "-v", "error",
             "-i", input_path,
             "-vn",
-            "-af", afilter,
+            "-af", audio_filter,
             "-c:a", "libopus",
             "-ar", "48000",
             output_path
         ]
 
-        result = Utils.run_hidden(cmd)
+        result = Utils.run_hidden(command)
 
         if result.returncode != 0:
-            err = (result.stderr or "").strip()
-            logger.critical(err)
+            error_message = (result.stderr or "").strip()
+            logger.critical(error_message)
 
-            raise RuntimeError(err or "ffmpeg failed")
+            raise RuntimeError(error_message or "ffmpeg failed")
 
     def sorted_glyphs(self) -> tuple[list[dict], list[dict]]:
-        singles: list[dict] = []
-        effects: list[dict] = []
+        singles = []
+        effects = []
 
         for glyph in self.glyphs.values():
             if "effect" in glyph:
                 effects.append(copy.deepcopy(glyph))
+
                 continue
 
             singles.append(copy.deepcopy(glyph))
@@ -474,11 +484,11 @@ class BaseComposition:
         return singles, effects
 
     def prepare_cropped_audio(self, audio_path: str) -> None:
-        tmp_path = self.cropped_song_path.replace(".ogg", ".opus")
+        temporary_path = self.cropped_song_path.replace(".ogg", ".opus")
 
         self.export_segment(
             audio_path,
-            tmp_path,
+            temporary_path,
             self.start_ms,
             self.end_ms,
             self.fade_in_duration,
@@ -488,28 +498,31 @@ class BaseComposition:
         if os.path.exists(self.cropped_song_path):
             os.remove(self.cropped_song_path)
 
-        os.rename(tmp_path, self.cropped_song_path)
+        os.rename(temporary_path, self.cropped_song_path)
 
     def export(
-        self,
-        watermark:   str        = "Cassette",
-        model:       str | None = None,
-        open_folder: bool       = False
-    ) -> None:
-        
+            self,
+            watermark:   str        = "Cassette",
+            model:       str | None = None,
+            open_folder: bool       = False
+        ) -> None:
+
+        if hasattr(self, "save"):
+            self.save(immediate = True)
+
         playback_audio_path = self.get_playback_audio_path()
-        
+
         if model and model != self.model:
             ported_glyphs = Porter.port_glyphs(model, self)
 
             Encoder.glyphs_to_ogg(
                 playback_audio_path,
-                Utils.get_user_path(f"{self.id}/Composed_{model}.ogg","Cassette/Songs"),
+                Utils.get_user_path(f"{self.id}/Composed_{model}.ogg", "Cassette/Songs"),
                 ported_glyphs,
                 model,
                 watermark
             )
-        
+
         else:
             singles, effects = self.sorted_glyphs()
 
@@ -526,12 +539,10 @@ class BaseComposition:
 
         if open_folder:
             Utils.open_file(Utils.get_user_path(str(self.id), "Cassette/Songs"))
-            
             Player.ui_player.play_sound("App/Export")
 
     def export_all(self, watermark: str = "Cassette") -> None:
         Player.ui_player.play_sound("App/ExportLong")
-        
         self.export(watermark)
 
         for model in Constants.DEVICES[self.model].port_variants:
@@ -541,26 +552,33 @@ class BaseComposition:
 
 class Composition(BaseComposition):
     def __init__(
-        self,
-        audiofile_path: str  | None = None,
-        settings:       dict | None = None,
-        id:             int  | None = None
-    ) -> None:
-        
+            self,
+            audiofile_path: str | None  = None,
+            settings:       dict | None = None,
+            id:             int | None  = None
+        ) -> None:
+
         settings = settings or {}
 
         if id is not None:
             save_path = Utils.get_user_path(f"{id}/Save.json", "Cassette/Songs")
 
-            with open(save_path, "r", encoding = "utf-8") as file:
-                settings = json.load(file)
+            with open(save_path, "r", encoding = "utf-8") as file_handle:
+                settings = json.load(file_handle)
 
         super().__init__(id, settings)
 
+        self.cached_save_data = copy.deepcopy(settings)
+
+        self.save_timer = QTimer()
+        self.save_timer.setSingleShot(True)
+        self.save_timer.setInterval(500)
+        self.save_timer.timeout.connect(self.flush_save_to_disk)
+
         self.syncer = RealTimeVisualizer.rt_visualizer
-        
-        with open("version", "r", encoding = "utf-8") as file:
-            self.version = file.read()
+
+        with open("version", "r", encoding = "utf-8") as file_handle:
+            self.version = file_handle.read()
 
         self.song_path      = audiofile_path
         self.brightness     = Constants.DEFAULT_BRIGHTNESS
@@ -571,11 +589,10 @@ class Composition(BaseComposition):
         self.default_effect = "none"
 
         self.syncer.set_composition(self)
+        self.cached_effects = {}
 
-        self.cached_effects: dict[int, list] = {}
-
-        raw_glyphs: dict = settings.get("glyphs", {})
-        int_glyphs: dict[int, dict] = {int(key): value for key, value in raw_glyphs.items()}
+        raw_glyphs = settings.get("glyphs", {})
+        int_glyphs = {int(key): value for key, value in raw_glyphs.items()}
 
         self.glyphs = SyncedDict(
             int_glyphs,
@@ -598,24 +615,24 @@ class Composition(BaseComposition):
         if self.needs_cropped_audio():
             if not os.path.exists(self.cropped_song_path):
                 self.prepare_cropped_audio(self.full_song_path)
-        
-        self.save()
+
+        self.save(immediate = True)
 
     @property
     def batching_mode(self) -> bool:
         return self.glyphs.is_batching
 
     def new_glyph(
-        self,
-        track:      str,
-        start:      int,
-        duration:   int | None = None,
-        brightness: int | None = None
-    ) -> tuple[int, dict]:
-        
+            self,
+            track:      str,
+            start:      int,
+            duration:   int | None = None,
+            brightness: int | None = None
+        ) -> tuple[int, dict]:
+
         self.last_glyph_id += 1
 
-        glyph: dict = {
+        glyph = {
             "track":      track,
             "start":      start,
             "duration":   duration or self.duration_ms,
@@ -627,25 +644,25 @@ class Composition(BaseComposition):
                 glyph,
                 "Fade",
                 {
-                    "mode": self.default_effect,
+                    "mode":   self.default_effect,
                     "easing": "linear"
                 }
             )
 
         self.glyphs[self.last_glyph_id] = glyph
-        
+
         return self.last_glyph_id, glyph
 
     def get_glyph(self, glyph_id: int) -> dict | None:
         return self.glyphs.get(glyph_id)
 
     def copy_glyph(
-        self,
-        glyph:    dict,
-        offset:   int        = 0,
-        audio_ms: int | None = None
-    ) -> tuple[int, dict] | tuple[None, None]:
-        
+            self,
+            glyph:    dict,
+            offset:   int        = 0,
+            audio_ms: int | None = None
+        ) -> tuple[int, dict] | tuple[None, None]:
+
         new_glyph = copy.deepcopy(glyph)
         start     = glyph["start"] + offset
         duration  = glyph["duration"]
@@ -668,28 +685,35 @@ class Composition(BaseComposition):
         new_glyph["duration"] = duration
 
         self.last_glyph_id += 1
-        
         self.glyphs[self.last_glyph_id] = new_glyph
 
         return self.last_glyph_id, new_glyph
 
-    def save(self) -> None:
+    def save(self, immediate: bool = False) -> None:
+        if immediate:
+            if self.save_timer.isActive():
+                self.save_timer.stop()
+
+            self.flush_save_to_disk()
+
+        else:
+            self.save_timer.start()
+
+    def flush_save_to_disk(self) -> None:
         save_path = Utils.get_user_path(f"{self.id}/Save.json", "Cassette/Songs")
-        
         os.makedirs(Utils.get_user_path(str(self.id), "Cassette/Songs"), exist_ok = True)
 
-        if os.path.exists(save_path):
-            with open(save_path, "r", encoding = "utf-8") as file:
-                data = json.load(file)
+        title = self.cached_save_data.get("audio", {}).get("title")
 
-            title = data.get("audio", {}).get("title")
-            if not title:
-                title = os.path.basename(self.song_path or "") or "Unknown Track"
+        if not title:
+            title = os.path.basename(self.song_path or "") or "Unknown Track"
 
-            artist = data.get("audio", {}).get("artist") or "Unknown Artist"
+        artist = self.cached_save_data.get("audio", {}).get("artist") or "Unknown Artist"
 
-            data["audio"] = {
-                **data.get("audio", {}),
+        data = {
+            **self.cached_save_data,
+            "audio": {
+                **self.cached_save_data.get("audio", {}),
                 "title":    title,
                 "artist":   artist,
                 "start_ms": self.start_ms,
@@ -698,38 +722,21 @@ class Composition(BaseComposition):
                 "beats":    self.beats,
                 "fade_in":  self.fade_in_duration,
                 "fade_out": self.fade_out_duration,
-            }
-            data["glyphs"] = dict(self.glyphs)
-
-            with open(save_path, "w", encoding = "utf-8") as file:
-                json.dump(data, file, ensure_ascii = False, indent = 4)
-
-            return
-
-        title, author = get_metadata(self.full_song_path)
-        
-        title  = title or os.path.basename(self.song_path)
-        author = author or "Unknown Artist"
-
-        data = {
-            "audio": {
-                "title":    title,
-                "artist":   author,
-                "start_ms": self.start_ms,
-                "end_ms":   self.end_ms,
-                "bpm":      self.bpm,
-                "beats":    self.beats,
-                "fade_in":  self.fade_in_duration,
-                "fade_out": self.fade_out_duration,
             },
-            "progress": 0,
+            "progress": self.cached_save_data.get("progress", 0),
             "model":    self.model,
             "version":  self.version,
             "glyphs":   dict(self.glyphs)
         }
 
-        with open(save_path, "w", encoding = "utf-8") as file:
-            json.dump(data, file, ensure_ascii = False, indent = 4)
+        self.cached_save_data = data
+
+        try:
+            with open(save_path, "w", encoding = "utf-8") as file_handle:
+                json.dump(data, file_handle, ensure_ascii = False, indent = 4)
+
+        except Exception as error:
+            logger.error(f"Save file writing failed: {error}")
 
     def update_bunch_of_glyphs(self, data: dict[int, dict]) -> None:
         self.glyphs.update(data)
@@ -738,10 +745,10 @@ class Composition(BaseComposition):
         self.glyphs.delete_keys(keys)
 
     def glyph_absolute_range(
-        self,
-        glyph:        dict,
-        old_start_ms: int
-    ) -> tuple[int, int]:
+            self,
+            glyph:        dict,
+            old_start_ms: int
+        ) -> tuple[int, int]:
 
         absolute_start = glyph["start"] + old_start_ms
         absolute_end   = absolute_start + glyph["duration"]
@@ -749,10 +756,10 @@ class Composition(BaseComposition):
         return absolute_start, absolute_end
 
     def count_glyphs_outside_range(
-        self,
-        start_ms: int,
-        end_ms:   int
-    ) -> int:
+            self,
+            start_ms: int,
+            end_ms:   int
+        ) -> int:
 
         old_start_ms = self.start_ms or 0
         count        = 0
@@ -766,12 +773,13 @@ class Composition(BaseComposition):
         return count
 
     def trim_audio(
-        self,
-        start_ms: int,
-        end_ms:   int,
-        fade_in:  int = 0,
-        fade_out: int = 0
-    ) -> None:
+            self,
+            start_ms: int,
+            end_ms:   int,
+            fade_in:  int = 0,
+            fade_out: int = 0
+        ) -> None:
+
         old_start_ms = self.start_ms or 0
 
         self.start_ms          = start_ms
@@ -779,8 +787,8 @@ class Composition(BaseComposition):
         self.fade_in_duration  = fade_in
         self.fade_out_duration = fade_out
 
-        kept_glyphs: dict[int, dict] = {}
-        removed_keys: list[int] = []
+        kept_glyphs  = {}
+        removed_keys = []
 
         self.glyphs.start_batching()
 
@@ -789,10 +797,12 @@ class Composition(BaseComposition):
 
             if absolute_start < start_ms or absolute_end > end_ms:
                 removed_keys.append(glyph_id)
+
                 continue
 
-            new_glyph = copy.deepcopy(glyph)
+            new_glyph          = copy.deepcopy(glyph)
             new_glyph["start"] = absolute_start - start_ms
+
             kept_glyphs[glyph_id] = new_glyph
 
         self.glyphs.delete_keys(removed_keys)
@@ -800,14 +810,14 @@ class Composition(BaseComposition):
         self.glyphs.stop_batching()
 
         self.prepare_cropped_audio(self.full_song_path)
-        self.save()
+        self.save(immediate = True)
 
     def replace_glyph(
-        self,
-        id:   int,
-        data: dict
-    ) -> None:
-        
+            self,
+            id:   int,
+            data: dict
+        ) -> None:
+
         self.glyphs[id] = data
 
     def delete_glyph(self, id: int) -> None:
@@ -844,15 +854,16 @@ class MinimalComposition(BaseComposition):
     def __init__(self, id: int) -> None:
         save_path = Utils.get_user_path(f"{id}/Save.json", "Cassette/Songs")
 
-        with open(save_path, "r", encoding = "utf-8") as file:
-            settings = json.load(file)
+        with open(save_path, "r", encoding = "utf-8") as file_handle:
+            settings = json.load(file_handle)
 
         super().__init__(id, settings)
 
         if not os.path.exists(self.full_song_path):
             Windows.ErrorWindow("Corrupted!", "This save is corrupted.").exec()
+
             return
-            
+
         self.ensure_full_song_is_opus()
 
         if self.needs_cropped_audio():

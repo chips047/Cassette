@@ -26,10 +26,9 @@ class MouseController:
         self.conductor            = conductor
         self.is_marquee_selecting = False
         self.auto_scroller        = AutoScroller(conductor)
+        self.playback_manager     = conductor.playback_manager
 
-        self.playback_manager: Player.PlaybackManager = conductor.playback_manager
-
-    # Marquee Selection
+    # MarqueeSelection
 
     def start_marquee(self, event: QMouseEvent) -> None:
         self.conductor.marquee_item.start_marquee(self.conductor.mapToScene(event.pos()))
@@ -49,10 +48,7 @@ class MouseController:
 
         self.conductor.marquee_item.update_end_point(
             self.conductor.mapToScene(event.pos()),
-            animate = (
-                not self.playback_manager.is_playing and
-                not self.auto_scroller.is_dragging
-            )
+            animate = False
         )
 
         self.auto_scroller.process_position(self.conductor.viewport().mapToGlobal(event.pos()))
@@ -60,7 +56,7 @@ class MouseController:
     def stop_auto_scroll_drag(self) -> None:
         self.auto_scroller.stop_drag()
 
-    # Ruler Interactions
+    # RulerInteractions
 
     def handle_ruler_press(self, event: QMouseEvent) -> None:
         if self.playback_manager.is_playing:
@@ -85,7 +81,7 @@ class MouseController:
         elif playhead_hover.isVisible():
             playhead_hover.hide()
 
-    # Synthetic Events
+    # SyntheticEvents
 
     def force_mouse_update(self) -> None:
         glyph_controller   = self.conductor.glyph_controller
@@ -93,7 +89,7 @@ class MouseController:
 
         if (
             not self.is_marquee_selecting and
-            not is_dragging_glyphs        and
+            not is_dragging_glyphs and
             not self.conductor.playhead_hover.isVisible()
         ):
             return
@@ -112,7 +108,7 @@ class MouseController:
 
         self.process_mouse_move_event(synthetic_event)
 
-    # Event Dispatching
+    # EventDispatching
 
     def process_mouse_press_event(self, event: QMouseEvent) -> None:
         ruler_area = QRectF(
@@ -125,10 +121,12 @@ class MouseController:
         if ruler_area.contains(event.position()):
             self.handle_ruler_press(event)
             event.accept()
+
             return
 
         if self.conductor.itemAt(event.pos()):
             event.ignore()
+
             return
 
         if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):

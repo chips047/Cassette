@@ -25,7 +25,7 @@ from System.Interface import (
 )
 
 from System.Interface.Animation import LoomEngine
-from .OcclusionController import OcclusionController
+from .OcclusionController       import OcclusionController
 
 from .. import (
     Actions,
@@ -48,17 +48,17 @@ class GlyphController(QObject):
         self.conductor   = conductor
         self.composition = conductor.composition
 
-        self.copied_data:    list[dict]                    = []
-        self.glyph_items:    dict[int, Widgets.GlyphItem]  = {}
-        self.drag_session:   dict[Widgets.GlyphItem, dict] = {}
-        self.expanded_stack: frozenset[int] | None         = None
+        self.copied_data     = []
+        self.glyph_items     = {}
+        self.drag_session    = {}
+        self.expanded_stack  = None
 
-        self.expand_animations:      list[LoomEngine.PropertyHandle] = []
-        self.collapse_animations:    list[LoomEngine.PropertyHandle] = []
-        self.collapse_refresh_timer: QTimer | None                   = None
+        self.expand_animations      = []
+        self.collapse_animations    = []
+        self.collapse_refresh_timer = None
 
-        self.hovered_item: Widgets.GlyphItem | None = None
-        self.hover_timer:  Timing.Timer             = Timing.Timer(
+        self.hovered_item = None
+        self.hover_timer  = Timing.Timer(
             1000,
             self.on_hover_timeout,
             single_shot = True,
@@ -82,14 +82,14 @@ class GlyphController(QObject):
             Qt.Key.Key_Minus: "11"
         }
 
-        self.undo_stack:         list[Actions.ActionAdd | Actions.ActionModify | Actions.ActionDelete | Actions.EditFadeKeyframesCommand] = []
-        self.redo_stack:         list[Actions.ActionAdd | Actions.ActionModify | Actions.ActionDelete | Actions.EditFadeKeyframesCommand] = []
-        self.is_processing     = False
-        self.max_history       = 1000
-        self.temp_before_state = {}
-        self.current_drag_mode = None
+        self.undo_stack         = []
+        self.redo_stack         = []
+        self.is_processing      = False
+        self.max_history        = 1000
+        self.temp_before_state  = {}
+        self.current_drag_mode  = None
 
-    # Hover Management
+    # HoverManagement
 
     def set_hovered_item(self, item: object) -> None:
         self.hovered_item = item
@@ -105,7 +105,7 @@ class GlyphController(QObject):
 
         self.conductor.tooltip.show_hover_tooltip(self.hovered_item)
 
-    # Selection Management
+    # SelectionManagement
 
     def get_selected_glyph_items(self) -> list[Widgets.GlyphItem]:
         valid_items = set(self.glyph_items.values())
@@ -133,7 +133,7 @@ class GlyphController(QObject):
         for item in self.glyph_items.values():
             item.setSelected(True)
 
-    # Modification And History
+    # ModificationAndHistory
 
     def modify_selected_glyphs(
             self,
@@ -161,15 +161,21 @@ class GlyphController(QObject):
         if not after_state:
             return
 
-        self.push_action(Actions.ActionModify(self, before_state, after_state))
-        self.composition.update_bunch_of_glyphs(after_state)
-        self.update_glyphs(after_state)
+        self.composition.start_batching()
 
-        self.elements_changed.emit()
-        self.glyph_property_changed.emit(property_name)
+        try:
+            self.push_action(Actions.ActionModify(self, before_state, after_state))
+            self.composition.update_bunch_of_glyphs(after_state)
+            self.update_glyphs(after_state)
 
-        if property_name in ("start", "duration", "track"):
-            self.refresh_all_occlusion()
+            self.elements_changed.emit()
+            self.glyph_property_changed.emit(property_name)
+
+            if property_name in ("start", "duration", "track"):
+                self.refresh_all_occlusion()
+
+        finally:
+            self.composition.stop_batching()
 
     def adjust_keyframes_brightness(
             self,
@@ -290,10 +296,7 @@ class GlyphController(QObject):
 
     def push_action(
             self,
-            action: Actions.ActionAdd    |
-                    Actions.ActionModify |
-                    Actions.ActionDelete |
-                    Actions.EditFadeKeyframesCommand
+            action: Actions.ActionAdd | Actions.ActionModify | Actions.ActionDelete | Actions.EditFadeKeyframesCommand
         ) -> None:
 
         if isinstance(action, Actions.ActionModify) and action.glyphs_before_modify == action.glyphs_after_modify:
@@ -308,6 +311,7 @@ class GlyphController(QObject):
     def undo(self) -> None:
         if not self.undo_stack:
             self.conductor.tooltip.show_tooltip_at("Nothing to undo.", plan_hide = True)
+
             return
 
         if self.is_processing:
@@ -332,6 +336,7 @@ class GlyphController(QObject):
     def redo(self) -> None:
         if not self.redo_stack:
             self.conductor.tooltip.show_tooltip_at("Nothing to redo.", plan_hide = True)
+
             return
 
         if self.is_processing:
@@ -353,7 +358,7 @@ class GlyphController(QObject):
             self.is_processing = False
             self.conductor.update()
 
-    # Glyph Management
+    # GlyphManagement
 
     def update_glyphs(
             self,
@@ -505,16 +510,19 @@ class GlyphController(QObject):
             animate_spawn:   bool = True
         ) -> None:
 
+        if reset_selection:
+            self.conductor.scene.clearSelection()
+
         for glyph_id in glyph_ids:
             item = Widgets.GlyphItem(glyph_id, self.conductor, animate_spawn)
 
             self.glyph_items[glyph_id] = item
             self.conductor.scene.addItem(item)
 
-            if reset_selection:
-                self.conductor.scene.clearSelection()
+            if set_selected:
+                item.was_clicked = True
+                item.setSelected(True)
 
-            item.setSelected(set_selected)
             item.update()
 
         QTimer.singleShot(0, lambda: self.refresh_stack_indicators(force = True))
@@ -556,13 +564,15 @@ class GlyphController(QObject):
             direction, step = self.calculate_expansion_params(len(group), base_y, box_height)
             self.animate_stack_items(group, step, direction, len(group))
 
-    # Drag Operations
+    # DragOperations
 
     def start_drag(self) -> None:
         self.drag_session      = {}
         self.temp_before_state = {}
         self.current_drag_mode = None
         selected_glyph_items   = self.get_selected_glyph_items()
+
+        self.composition.start_batching()
 
         for item in selected_glyph_items:
             self.drag_session[item] = {
@@ -585,8 +595,6 @@ class GlyphController(QObject):
         affected_tracks = set()
 
         self.current_drag_mode = mode
-        self.composition.start_batching()
-
         self.glyph_drag_progress.emit(mode, delta_ms)
 
         for item, initial in self.drag_session.items():
@@ -621,11 +629,8 @@ class GlyphController(QObject):
             if item == active_item_ref:
                 popup_text = f"{value_to_show} ms"
 
-            item.update_geometry()
+            item.update_drag_geometry()
             self.composition.glyphs.mark_dirty(item.glyph_id)
-
-        for track in affected_tracks:
-            self.refresh_occlusion_for_track(track)
 
         if popup_text:
             self.conductor.tooltip.show_tooltip_at(popup_text, active_item_ref)
@@ -657,6 +662,7 @@ class GlyphController(QObject):
         self.current_drag_mode = None
 
         self.refresh_stack_indicators(force = True)
+        self.refresh_all_occlusion()
 
         if actually_moved and drag_mode:
             self.glyph_moved_or_resized.emit(drag_mode)
@@ -699,7 +705,7 @@ class GlyphController(QObject):
             )
         )
 
-    # Stacking And Groups
+    # StackingAndGroups
 
     def get_overlapping_group(self, glyph_id: int) -> list[int]:
         data = self.composition.get_glyph(glyph_id)
@@ -733,7 +739,7 @@ class GlyphController(QObject):
         if self.expanded_stack and not force:
             return
 
-        by_track: dict[int, list[tuple[int, int, int]]] = {}
+        by_track = {}
 
         for glyph_id in self.glyph_items:
             data = self.composition.get_glyph(glyph_id)
@@ -744,7 +750,7 @@ class GlyphController(QObject):
             start = data["start"]
             by_track.setdefault(data["track"], []).append((start, start + data["duration"], glyph_id))
 
-        stacks: dict[int, int] = {glyph_id: 0 for glyph_id in self.glyph_items}
+        stacks = {glyph_id: 0 for glyph_id in self.glyph_items}
 
         for entries in by_track.values():
             entries.sort()
@@ -784,6 +790,7 @@ class GlyphController(QObject):
     def sort_stack_group(self, group: list[int]) -> None:
         def sort_key(glyph_id: int) -> tuple:
             glyph = self.composition.get_glyph(glyph_id)
+
             return (glyph["start"] if glyph else 0, glyph_id)
 
         group.sort(key = sort_key)
@@ -928,7 +935,7 @@ class GlyphController(QObject):
         self.refresh_stack_indicators()
         self.refresh_all_occlusion()
 
-    # Occlusion Updates
+    # OcclusionUpdates
 
     def refresh_occlusion_for_track(self, track_index: str) -> None:
         items_on_track = [
@@ -943,7 +950,7 @@ class GlyphController(QObject):
         )
 
     def refresh_all_occlusion(self) -> None:
-        by_track: dict[str, list[object]] = {}
+        by_track = {}
 
         for glyph_id, item in self.glyph_items.items():
             if data := self.composition.get_glyph(glyph_id):

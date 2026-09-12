@@ -15,7 +15,7 @@ from PyQt6.QtCore import (
     QObject
 )
 
-from System.Common import Constants
+from System.Common   import Constants
 from System.Services import Player
 
 from .GlyphController import GlyphController
@@ -41,8 +41,8 @@ class KeyboardController(QObject):
 
         self.conductor.installEventFilter(self)
 
-        self.move_increment             = Constants.current_settings["arrow_increment"]
-        self.shortcuts: list[QShortcut] = []
+        self.move_increment = Constants.current_settings["arrow_increment"]
+        self.shortcuts      = []
 
         self.base_shortcuts = [
             (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Z,                                     self.glyph_controller.undo),
@@ -85,11 +85,11 @@ class KeyboardController(QObject):
         self.setup_track_hotkeys()
         self.setup_hotkeys(self.base_shortcuts)
 
-    # Hotkey Setup
+    # HotkeySetup
 
     def bind(
             self,
-            key:    QKeySequence,
+            key:    QKeySequence | Qt.Key | int,
             action: object
         ) -> None:
 
@@ -98,7 +98,7 @@ class KeyboardController(QObject):
 
         self.shortcuts.append(shortcut)
 
-    def setup_hotkeys(self, hotkeys: list[tuple[QKeySequence, object]]) -> None:
+    def setup_hotkeys(self, hotkeys: list[tuple[QKeySequence | Qt.Key | int, object]]) -> None:
         for key, function in hotkeys:
             self.bind(key, function)
 
@@ -106,7 +106,7 @@ class KeyboardController(QObject):
         for key, track_id in self.glyph_controller.track_map.items():
             self.bind(key, partial(self.glyph_controller.spawn_glyph_on_track, track_id))
 
-    # Event Handling
+    # EventHandling
 
     def eventFilter(
             self,
@@ -140,7 +140,7 @@ class KeyboardController(QObject):
 
         return super().eventFilter(watched, event)
 
-    # Playhead Management
+    # PlayheadManagement
 
     def handle_playback_toggle(self) -> None:
         position_ms        = self.conductor.get_playhead_position_ms()
@@ -153,12 +153,14 @@ class KeyboardController(QObject):
         )
 
         if is_at_end:
-            position_ms = 0.0
             self.conductor.set_playhead_position_ms(0.0)
             self.conductor.horizontalScrollBar().setValue(0)
             self.conductor.scroll_to_playhead()
+            self.playback_manager.toggle_playback(0.0)
 
-        elif not self.playback_manager.is_playing:
+            return
+
+        if not self.playback_manager.is_playing:
             delay_ms = self.conductor.get_audio_delay_ms()
 
             if abs(engine_position_ms - delay_ms - position_ms) < 1.0:
@@ -221,7 +223,7 @@ class KeyboardController(QObject):
     def go_to_end(self) -> None:
         self.jump_to_position(self.playback_manager.duration_ms, "Feedback/PlayheadBackward", "playhead_end")
 
-    # Glyph Actions
+    # GlyphActions
 
     def handle_deletion(self) -> None:
         self.glyph_controller.delete_selected_glyphs()
@@ -257,6 +259,7 @@ class KeyboardController(QObject):
             )
 
             self.conductor.tooltip.show_tooltip_at("No glyphs selected.", plan_hide = True)
+
             return False
 
         return True
@@ -264,6 +267,7 @@ class KeyboardController(QObject):
     def handle_escape(self) -> None:
         if self.glyph_controller.expanded_stack:
             self.glyph_controller.collapse_stack()
+
             return
 
         self.conductor.scene.clearSelection()
