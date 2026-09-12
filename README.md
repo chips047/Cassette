@@ -36,13 +36,17 @@ https://github.com/user-attachments/assets/4ea0798d-023e-48c5-a447-ee7fdab68367
 
 https://github.com/user-attachments/assets/cf447040-db70-4b8a-a2d0-eb63b59a6f66
 
-* **Sub - Millisecond Waveform Slicing** - Fast ~0.5 s automatic BPM detection on import, sub - millisecond audio trimming, and customizable fade - in / fade - out envelopes.
+* **Sub - Millisecond Waveform Slicing** - Fast ~0.5 s automatic BPM detection on import, sub - millisecond audio trimming, and customizable fade - in / fade - out envelopes. You can also load a videofile, Cassette will automatically extract the audio.
 
 <img src=".github/audiosetup.png" style="border-radius: 20px;" alt="Wow!!! A! A.. A Window!!!!!">
 
 * **Channel "A" (Global Track)** - A dedicated universal channel that triggers all phone zones simultaneously, allowing you to animate the entire device as one unified light source.
 
 <img src=".github/mastertrack.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+
+* **Effects. Tons of effects.**
+
+<img src=".github/effects.png" style="border-radius: 20px;" alt="Wow! So uch eff e cths!">
 
 ### Interface & Tactile Physics
 * **Animations. They're everywhere. You will see it.**
@@ -61,15 +65,16 @@ https://github.com/user-attachments/assets/b83f87e4-1bbe-4ab4-89c8-c59ca864f451
 
 * **The Dot - Matrix Signature** - When Nothing's system Composer renders preview dots, Cassette's compiler allows you to encode custom text (Latin, Cyrillic, numbers, and symbols) directly into that dot matrix as an author signature.
 
-<img src=".github/export.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+<img src=".github/export.png" style="border-radius: 20px;" alt="Export Menu!!!">
+<img src=".github/nothingcomposer.png" style="border-radius: 20px;" alt="Hi, Sebi.">
 
 * **Standalone Glyphtone Trimmer** - Trim and re - export already - compiled `.ogg` glyphtone files directly without needing to rebuild project files.
 
-<img src=".github/trimmer.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+<img src=".github/trimmer.png" style="border-radius: 20px;" alt="Trim yo ringtones!">
 
 * **Universal Importer** - Native project import from BNGC and Audacity formats.
 
-<img src=".github/import.png" style="border-radius: 20px;" alt="Master track. Aaaah~">
+<img src=".github/import.png" style="border-radius: 20px;" alt="Yes.">
 
 ---
 
@@ -113,8 +118,10 @@ To preview light sequences directly on your device:
 2. **Connect via USB:**
    * Plug your phone into your computer using a data - capable USB cable.
    * When prompted on your phone screen, authorize the computer connection (select *"Always allow from this computer"*).
-3. **Automatic Link:**
-   * Launch Cassette. The app detects the connected device and will prompt to install the lightweight companion receiver automatically.
+3. **Install the Cassette Receiver:**
+   * Download Cassette Receiver from GitHub releases, install it on your phone.
+4. **Automatic Link:**
+   * Launch Cassette. The app detects the connected device automatically.
    * Play the timeline to view synced lighting on the physical phone back.
 
 ## Audio Latency Calibration
