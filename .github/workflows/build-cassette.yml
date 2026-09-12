@@ -11,7 +11,7 @@ on:
         description: 'Python version'
         required: true
         type: choice
-        default: '3.13'
+        default: '3.12'
         options:
           - '3.10'
           - '3.11'
@@ -55,6 +55,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Upload CassetteReceiver APK
+        if: matrix.artifact_name == 'windows-x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CassetteReceiver.apk
+          path: System/ADB/CassetteReceiver.apk
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -120,22 +127,30 @@ jobs:
       - name: Cleanup unnecessary files
         shell: bash
         run: |
-          all_targets="linux-x64 linux-arm64 windows-x64 windows-arm64 macos-intel macos-silicon"
+          OS="${{ runner.os }}"
 
-          for target in $all_targets; do
+          # Удаляем APK перед сборкой PyInstaller, чтобы он не попал в сборку
+          rm -f System/ADB/CassetteReceiver.apk
+
+          if [ "$OS" == "Windows" ]; then
+            rm -f System/ADB/adb-linux System/ADB/adb-macos
+
+          elif [ "$OS" == "Linux" ]; then
+            rm -f System/ADB/adb.exe System/ADB/adb-macos
+            rm -f System/ADB/AdbWinApi.dll System/ADB/AdbWinUsbApi.dll
+
+          elif [ "$OS" == "macOS" ]; then
+            rm -f System/ADB/adb.exe System/ADB/adb-linux
+            rm -f System/ADB/AdbWinApi.dll System/ADB/AdbWinUsbApi.dll
+          fi
+
+          ALL_TARGETS="linux-x64 linux-arm64 windows-x64 windows-arm64 macos-intel macos-silicon"
+          for target in $ALL_TARGETS; do
             if [ "$target" != "${{ matrix.artifact_name }}" ]; then
-              rm -f "System/ADB/adb-$target" "System/ADB/adb-$target.exe"
               rm -f "System/FFmpeg/ffmpeg-$target" "System/FFmpeg/ffmpeg-$target.exe"
               rm -f "System/FFmpeg/ffprobe-$target" "System/FFmpeg/ffprobe-$target.exe"
             fi
           done
-
-          if [ "${{ runner.os }}" != "Windows" ]; then
-            rm -f System/ADB/AdbWinApi.dll
-            rm -f System/ADB/AdbWinUsbApi.dll
-          fi
-
-          rm -f System/ADB/CassetteReceiver.apk
 
       - name: Run PyInstaller
         shell: bash
@@ -179,6 +194,12 @@ jobs:
         with:
           pattern: cassette-*
           path: release-assets
+
+      - name: Download CassetteReceiver APK
+        uses: actions/download-artifact@v4
+        with:
+          name: CassetteReceiver.apk
+          path: release-zips
 
       - name: List downloaded assets
         shell: bash
