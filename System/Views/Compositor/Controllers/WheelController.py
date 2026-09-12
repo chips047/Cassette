@@ -17,12 +17,27 @@ class WheelController:
         self.vertical_velocity          = 0.0
         self.vertical_target_velocity   = 0.0
 
-        self.zoom_step            = Constants.current_settings["zoom_step"]
-        self.scroll_acceleration  = Constants.current_settings["scroll_acceleration"]
-        self.trackpad_scroll_mode = Constants.current_settings["trackpad_scroll_mode"]
-        self.scroll_smoothing     = Constants.current_settings["scroll_smoothing"]
-        self.scroll_inertia       = Constants.current_settings["scroll_inertia"]
-        self.scroll_blocked       = False
+        self.zoom_step               = Constants.current_settings["zoom_step"]
+        self.scroll_acceleration     = Constants.current_settings["scroll_acceleration"]
+        self.trackpad_scroll_mode    = Constants.current_settings["trackpad_scroll_mode"]
+        self.scroll_smoothing        = Constants.current_settings["scroll_smoothing"]
+        self.scroll_inertia          = Constants.current_settings["scroll_inertia"]
+        self.scroll_blocked          = False
+        self.scale_animation_active  = False
+
+    # State Management
+
+    def set_scale_animation_active(self, is_active: bool) -> None:
+        self.scale_animation_active = is_active
+
+    def stop_smooth_scroll(self) -> None:
+        self.horizontal_velocity        = 0.0
+        self.horizontal_target_velocity = 0.0
+        self.vertical_velocity          = 0.0
+        self.vertical_target_velocity   = 0.0
+
+    def block_scroll(self) -> None:
+        self.scroll_blocked = True
 
     # Event Processing
 
@@ -86,7 +101,7 @@ class WheelController:
     # Scroll Ticking
 
     def tick(self) -> bool:
-        if self.conductor.scale_anim_active:
+        if self.scale_animation_active:
             self.stop_smooth_scroll()
             return True
 
@@ -124,14 +139,3 @@ class WheelController:
             return True
 
         return False
-
-    # State Management
-
-    def stop_smooth_scroll(self) -> None:
-        self.horizontal_velocity        = 0.0
-        self.horizontal_target_velocity = 0.0
-        self.vertical_velocity          = 0.0
-        self.vertical_target_velocity   = 0.0
-
-    def block_scroll(self) -> None:
-        self.scroll_blocked = True

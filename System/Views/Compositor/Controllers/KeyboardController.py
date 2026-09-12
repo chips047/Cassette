@@ -12,31 +12,53 @@ from PyQt6.QtGui import (
 from PyQt6.QtCore import (
     Qt,
     QEvent,
-    QObject
+    QObject,
+    pyqtSignal
 )
 
-from System.Common   import Constants
+from System.Common import Constants
 from System.Services import Player
 
-from .GlyphController import GlyphController
-
-from .. import (
-    Widget,
-    Timeline
-)
+from .. import Timeline
 
 class KeyboardController(QObject):
-    def __init__(
-            self,
-            compositor: Widget.CompositorWidget,
-            conductor:  Timeline.ScrollableContent
-        ) -> None:
+    undo_requested              = pyqtSignal()
+    redo_requested              = pyqtSignal()
+    copy_requested              = pyqtSignal()
+    paste_requested             = pyqtSignal()
+    cut_requested               = pyqtSignal()
+    duplicate_requested         = pyqtSignal()
+    select_all_requested        = pyqtSignal()
+    select_track_requested      = pyqtSignal()
+    delete_requested            = pyqtSignal()
+    escape_requested            = pyqtSignal()
+    speed_cycle_requested       = pyqtSignal()
+    playground_requested        = pyqtSignal()
+    brightness_dialog_requested = pyqtSignal()
+    duration_dialog_requested   = pyqtSignal()
+    scale_requested             = pyqtSignal(float)
+    brightness_adjust_requested = pyqtSignal(int)
+    spawn_track_glyph_requested = pyqtSignal(str)
 
-        super().__init__()
+    TRACK_KEY_MAPPINGS: dict[Qt.Key, str] = {
+        Qt.Key.Key_A:     Constants.MASTER_TRACK_IDENTIFIER,
+        Qt.Key.Key_1:     "1",
+        Qt.Key.Key_2:     "2",
+        Qt.Key.Key_3:     "3",
+        Qt.Key.Key_4:     "4",
+        Qt.Key.Key_5:     "5",
+        Qt.Key.Key_6:     "6",
+        Qt.Key.Key_7:     "7",
+        Qt.Key.Key_8:     "8",
+        Qt.Key.Key_9:     "9",
+        Qt.Key.Key_0:     "10",
+        Qt.Key.Key_Minus: "11"
+    }
+
+    def __init__(self, conductor: Timeline.ScrollableContent) -> None:
+        super().__init__(conductor)
 
         self.conductor        = conductor
-        self.compositor       = compositor
-        self.glyph_controller = conductor.glyph_controller
         self.playback_manager = conductor.playback_manager
 
         self.conductor.installEventFilter(self)
@@ -44,46 +66,8 @@ class KeyboardController(QObject):
         self.move_increment = Constants.current_settings["arrow_increment"]
         self.shortcuts      = []
 
-        self.base_shortcuts = [
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Z,                                     self.glyph_controller.undo),
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Y,                                     self.glyph_controller.redo),
-            (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Z, self.glyph_controller.redo),
-
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_C,   self.glyph_controller.copy_glyphs),
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_V,   self.glyph_controller.paste_glyphs),
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_X,   self.glyph_controller.cut_glyphs),
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_D,   self.duplicate_selected_glyphs),
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_F11, self.compositor.open_playground_window),
-
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_A,                                     self.glyph_controller.select_all_glyphs),
-            (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_A, self.glyph_controller.select_all_on_same_track),
-
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Equal, lambda: self.conductor.scale_view(100)),
-            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Minus, lambda: self.conductor.scale_view(-100)),
-
-            (Qt.Key.Key_Space,                                     self.handle_playback_toggle),
-            (Qt.Key.Key_Left,                                      lambda: self.handle_manual_playhead_move(-self.move_increment)),
-            (Qt.Key.Key_Right,                                     lambda: self.handle_manual_playhead_move(self.move_increment)),
-            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Left,  lambda: self.handle_manual_playhead_move(-self.move_increment * 10)),
-            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Right, lambda: self.handle_manual_playhead_move(self.move_increment * 10)),
-
-            (Qt.Key.Key_Delete,    self.handle_deletion),
-            (Qt.Key.Key_Backspace, self.handle_deletion),
-
-            (Qt.Key.Key_S,            self.compositor.playspeed_button.next_state),
-            (Qt.Key.Key_B,            self.open_brightness_editor),
-            (Qt.Key.Key_D,            self.open_duration_editor),
-            (Qt.Key.Key_BracketLeft,  lambda: self.glyph_controller.adjust_selected_brightness(-5)),
-            (Qt.Key.Key_BracketRight, lambda: self.glyph_controller.adjust_selected_brightness(5)),
-
-            (Qt.Key.Key_Escape, self.handle_escape),
-
-            (Qt.Key.Key_Home, self.go_to_start),
-            (Qt.Key.Key_End,  self.go_to_end),
-        ]
-
         self.setup_track_hotkeys()
-        self.setup_hotkeys(self.base_shortcuts)
+        self.setup_hotkeys()
 
     # HotkeySetup
 
@@ -98,13 +82,51 @@ class KeyboardController(QObject):
 
         self.shortcuts.append(shortcut)
 
-    def setup_hotkeys(self, hotkeys: list[tuple[QKeySequence | Qt.Key | int, object]]) -> None:
-        for key, function in hotkeys:
-            self.bind(key, function)
+    def setup_hotkeys(self) -> None:
+        base_shortcuts = [
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Z,                                     self.undo_requested.emit),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Y,                                     self.redo_requested.emit),
+            (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Z, self.redo_requested.emit),
+
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_C,   self.copy_requested.emit),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_V,   self.paste_requested.emit),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_X,   self.cut_requested.emit),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_D,   self.handle_duplicate),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_F11, self.playground_requested.emit),
+
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_A,                                     self.select_all_requested.emit),
+            (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_A, self.select_track_requested.emit),
+
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Equal, lambda: self.scale_requested.emit(100.0)),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Minus, lambda: self.scale_requested.emit(-100.0)),
+
+            (Qt.Key.Key_Space,                                     self.handle_playback_toggle),
+            (Qt.Key.Key_Left,                                      lambda: self.handle_manual_playhead_move(-self.move_increment)),
+            (Qt.Key.Key_Right,                                     lambda: self.handle_manual_playhead_move(self.move_increment)),
+            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Left,  lambda: self.handle_manual_playhead_move(-self.move_increment * 10)),
+            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Right, lambda: self.handle_manual_playhead_move(self.move_increment * 10)),
+
+            (Qt.Key.Key_Delete,    self.handle_deletion),
+            (Qt.Key.Key_Backspace, self.handle_deletion),
+
+            (Qt.Key.Key_S,            self.speed_cycle_requested.emit),
+            (Qt.Key.Key_B,            self.open_brightness_editor),
+            (Qt.Key.Key_D,            self.open_duration_editor),
+            (Qt.Key.Key_BracketLeft,  lambda: self.brightness_adjust_requested.emit(-5)),
+            (Qt.Key.Key_BracketRight, lambda: self.brightness_adjust_requested.emit(5)),
+
+            (Qt.Key.Key_Escape, self.escape_requested.emit),
+
+            (Qt.Key.Key_Home, self.go_to_start),
+            (Qt.Key.Key_End,  self.go_to_end)
+        ]
+
+        for key_combination, callback in base_shortcuts:
+            self.bind(key_combination, callback)
 
     def setup_track_hotkeys(self) -> None:
-        for key, track_id in self.glyph_controller.track_map.items():
-            self.bind(key, partial(self.glyph_controller.spawn_glyph_on_track, track_id))
+        for key, track_identifier in self.TRACK_KEY_MAPPINGS.items():
+            self.bind(key, partial(self.spawn_track_glyph_requested.emit, track_identifier))
 
     # EventHandling
 
@@ -157,7 +179,6 @@ class KeyboardController(QObject):
             self.conductor.horizontalScrollBar().setValue(0)
             self.conductor.scroll_to_playhead()
             self.playback_manager.toggle_playback(0.0)
-
             return
 
         if not self.playback_manager.is_playing:
@@ -172,7 +193,7 @@ class KeyboardController(QObject):
         if self.playback_manager.is_playing:
             return
 
-        tone = 1.0 + delta_px / 200
+        tone = 1.0 + delta_px / 200.0
         pan  = self.calculate_playhead_pan()
 
         Player.ui_player.play_sound(
@@ -198,7 +219,7 @@ class KeyboardController(QObject):
         view_position_x  = scene_position_x - self.conductor.horizontalScrollBar().value()
         ratio            = view_position_x / viewport_width
 
-        return max(-1.0, min(1.0, (ratio - 0.5) * 2))
+        return max(-1.0, min(1.0, (ratio - 0.5) * 2.0))
 
     def jump_to_position(
             self,
@@ -226,28 +247,26 @@ class KeyboardController(QObject):
     # GlyphActions
 
     def handle_deletion(self) -> None:
-        self.glyph_controller.delete_selected_glyphs()
+        self.delete_requested.emit()
         Player.ui_player.play_sound("Glyphs/Delete", setting_key = "glyph_deletion_sound", lock_tag = "glyph_deletion")
 
     def open_brightness_editor(self) -> None:
         if not self.ensure_selection("warning_brightness"):
             return
 
-        self.conductor.brightness_control_popup()
+        self.brightness_dialog_requested.emit()
 
-    def duplicate_selected_glyphs(self) -> None:
+    def handle_duplicate(self) -> None:
         if not self.ensure_selection("warning_duplicate"):
             return
 
-        self.glyph_controller.copy_glyphs()
-        Player.ui_player.play_sound("Glyphs/Duplicate", setting_key = "glyph_duplication_sound")
-        self.glyph_controller.paste_glyphs()
+        self.duplicate_requested.emit()
 
     def open_duration_editor(self) -> None:
         if not self.ensure_selection("warning_duration"):
             return
 
-        self.conductor.duration_control_popup()
+        self.duration_dialog_requested.emit()
 
     def ensure_selection(self, lock_tag: str = "warning") -> bool:
         if not self.conductor.scene.selectedItems():
@@ -259,18 +278,9 @@ class KeyboardController(QObject):
             )
 
             self.conductor.tooltip.show_tooltip_at("No glyphs selected.", plan_hide = True)
-
             return False
 
         return True
-
-    def handle_escape(self) -> None:
-        if self.glyph_controller.expanded_stack:
-            self.glyph_controller.collapse_stack()
-
-            return
-
-        self.conductor.scene.clearSelection()
 
     # Cleanup
 

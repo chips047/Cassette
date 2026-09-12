@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from loguru import logger
@@ -17,8 +18,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout
 )
 
-from . import Timeline
-
 from System.Common import (
     Utils,
     Styles,
@@ -31,9 +30,11 @@ from System.Services import (
 )
 
 from System.Interface import (
-    Windows,
-    Widgets
+    Widgets,
+    Windows
 )
+
+from . import Timeline
 
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
@@ -45,7 +46,7 @@ class CompositorWidget(QWidget):
 
         self.playback_manager = Player.player
 
-        self.is_ejecting = False
+        self.is_ejecting                   = False
         self.pending_mini_preview_position = None
 
         self.overall_layout = QVBoxLayout(self)
@@ -72,22 +73,34 @@ class CompositorWidget(QWidget):
 
         self.glyph_dur_control = Widgets.DraggableValueControl(
             QIcon("System/Assets/Icons/Compositor/Duration.png"),
-            "duration", 100, 5, 5000, 5, "ms"
+            "duration",
+            100,
+            5,
+            5000,
+            5,
+            "ms"
         )
-        
+
         self.brightness_control = Widgets.DraggableValueControl(
             QIcon("System/Assets/Icons/Compositor/Brightness.png"),
-            "brightness", 100, 5, 100, 5, "%"
+            "brightness",
+            100,
+            5,
+            100,
+            5,
+            "%"
         )
-        
+
         self.playspeed_button = Widgets.CycleButton(
             QIcon("System/Assets/Icons/Compositor/Speed.png"),
-            "speed", [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)]
+            "speed",
+            [("1x", 1.0), ("0.5x", 0.5), ("0.2x", 0.2)]
         )
-        
+
         self.default_effect = Widgets.CycleButton(
             QIcon("System/Assets/Icons/Compositor/Effect.png"),
-            "effect", [
+            "effect",
+            [
                 ("None", "none"),
                 ("Fade out", "fade_out"),
                 ("Fade in", "fade_in"),
@@ -101,15 +114,15 @@ class CompositorWidget(QWidget):
         self.top_status_label.setStyleSheet(Styles.Other.StatusBar)
 
     def setup_layout(self) -> None:
-        bar = self.top_control_bar_layout
-        
-        bar.addWidget(self.eject_button)
-        bar.addWidget(self.mini_preview_widget, 1)
-        bar.addWidget(self.glyph_dur_control)
-        bar.addWidget(self.brightness_control)
-        bar.addWidget(self.playspeed_button)
-        bar.addWidget(self.default_effect)
-        bar.addWidget(self.export_button)
+        control_bar = self.top_control_bar_layout
+
+        control_bar.addWidget(self.eject_button)
+        control_bar.addWidget(self.mini_preview_widget, 1)
+        control_bar.addWidget(self.glyph_dur_control)
+        control_bar.addWidget(self.brightness_control)
+        control_bar.addWidget(self.playspeed_button)
+        control_bar.addWidget(self.default_effect)
+        control_bar.addWidget(self.export_button)
 
         self.overall_layout.addWidget(self.top_control_bar_widget)
         self.overall_layout.addWidget(self.top_status_label)
@@ -121,24 +134,59 @@ class CompositorWidget(QWidget):
         self.export_button.clicked.connect(self.export_ringtone)
         self.eject_button.clicked.connect(self.unload_composition)
 
-        self.playspeed_button.state_changed.connect          (lambda _, speed:  self.playback_manager.set_speed(speed, 700))
-        self.playspeed_button.state_changed.connect          (lambda *_:        self.content_widget.speed_control_used.emit())
-        self.default_effect.state_changed.connect            (lambda _, effect: self.content_widget.composition.set_default_effect(effect))
+        self.playspeed_button.state_changed.connect(self.on_playspeed_state_changed)
+        self.default_effect.state_changed.connect(self.on_default_effect_changed)
+
         self.content_widget.playhead_moved_normalized.connect(self.on_playhead_position_changed)
-        self.mini_preview_widget.preview_clicked.connect     (                  self.content_widget.scroll_to_normalized_position)
-        self.glyph_dur_control.valueChanged.connect          (lambda ms:        self.content_widget.composition.set_duration(ms))
-        self.brightness_control.valueChanged.connect         (lambda percent:   self.content_widget.composition.set_brightness(percent))
+        self.content_widget.speed_cycle_requested.connect(self.playspeed_button.next_state)
+        self.content_widget.playground_requested.connect(self.open_playground_window)
+
+        self.mini_preview_widget.preview_clicked.connect(self.content_widget.scroll_to_normalized_position)
+        self.glyph_dur_control.valueChanged.connect(self.on_duration_control_changed)
+        self.brightness_control.valueChanged.connect(self.on_brightness_control_changed)
 
         Player.bpm_informer.beat_4.connect(self.apply_mini_preview_position)
 
     def configure_focus(self) -> None:
-        for child in self.findChildren(QWidget):
-            if child is self.content_widget:
+        for child_widget in self.findChildren(QWidget):
+            if child_widget is self.content_widget:
                 continue
-            
-            child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+            child_widget.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         self.content_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    # Slots
+
+    def on_playspeed_state_changed(
+            self,
+            state_index: int,
+            speed_value: float
+        ) -> None:
+        self.playback_manager.set_speed(speed_value, 700)
+        self.content_widget.speed_control_used.emit()
+
+    def on_default_effect_changed(
+            self,
+            state_index:  int,
+            effect_value: str
+        ) -> None:
+        if not self.content_widget.composition:
+            return
+
+        self.content_widget.composition.set_default_effect(effect_value)
+
+    def on_duration_control_changed(self, duration_ms: int) -> None:
+        if not self.content_widget.composition:
+            return
+
+        self.content_widget.composition.set_duration(duration_ms)
+
+    def on_brightness_control_changed(self, brightness_percent: int) -> None:
+        if not self.content_widget.composition:
+            return
+
+        self.content_widget.composition.set_brightness(brightness_percent)
 
     # Lifecycle
 
@@ -167,15 +215,15 @@ class CompositorWidget(QWidget):
             Constants.INTERRUPTED_FADE_DURATION_MS,
             lambda: self.finish_composition_loading(composition)
         )
-    
-    def finish_composition_loading(self, composition: ProjectSaver.Composition):
+
+    def finish_composition_loading(self, composition: ProjectSaver.Composition) -> None:
         self.is_ejecting = False
 
-        path = composition.get_playback_audio_path()
-        
+        audio_path = composition.get_playback_audio_path()
+
         Player.bpm_informer.set_bpm(composition.bpm)
-        self.playback_manager.load_audio(path)
-        
+        self.playback_manager.load_audio(audio_path)
+
         self.content_widget.load_composition(composition)
 
         self.mini_preview_widget.set_audio_data(self.playback_manager.data)
@@ -211,7 +259,7 @@ class CompositorWidget(QWidget):
             )
 
             animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
-            scaled_fade_duration  = int(Constants.EJECT_FADE_DURATION_MS * animation_multiplier)
+            scaled_fade_duration = int(Constants.EJECT_FADE_DURATION_MS * animation_multiplier)
 
             QTimer.singleShot(scaled_fade_duration, self.clear_ejecting_flag)
 
@@ -232,7 +280,7 @@ class CompositorWidget(QWidget):
         self.is_ejecting = False
 
     def close_active_tutorial(self) -> None:
-        tutorial = getattr(self.content_widget, "tutorial_window", None)
+        tutorial = self.content_widget.tutorial_window
 
         if tutorial is None:
             return
@@ -241,15 +289,15 @@ class CompositorWidget(QWidget):
         self.content_widget.tutorial_window = None
 
     def on_playhead_position_changed(self, normalized_position: float) -> None:
-        current = self.pending_mini_preview_position
+        current_position = self.pending_mini_preview_position
 
-        if current is None:
-            current = self.mini_preview_widget.playhead_position
+        if current_position is None:
+            current_position = self.mini_preview_widget.playhead_position
 
-        width = max(1, self.mini_preview_widget.width())
-        threshold = 1.0 / float(width)
+        preview_width = max(1, self.mini_preview_widget.width())
+        threshold     = 1.0 / float(preview_width)
 
-        if abs(normalized_position - current) < threshold:
+        if abs(normalized_position - current_position) < threshold:
             return
 
         self.pending_mini_preview_position = normalized_position
@@ -258,9 +306,9 @@ class CompositorWidget(QWidget):
         if self.pending_mini_preview_position is None:
             return
 
-        position = self.pending_mini_preview_position
+        target_position                    = self.pending_mini_preview_position
         self.pending_mini_preview_position = None
-        self.mini_preview_widget.set_playhead_position(position)
+        self.mini_preview_widget.set_playhead_position(target_position)
 
     # Misc
 
@@ -268,7 +316,7 @@ class CompositorWidget(QWidget):
         Windows.ExportDialogWindow(self.content_widget.composition).exec()
 
     def on_elements_changed(self) -> None:
-        has_glyphs = bool(self.content_widget.glyph_controller.glyph_items)
+        has_glyphs = bool(self.content_widget.glyph_controller and self.content_widget.glyph_controller.glyph_items)
         self.export_button.setEnabled(has_glyphs)
 
     @staticmethod

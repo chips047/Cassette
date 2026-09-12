@@ -90,7 +90,7 @@ class OcclusionController(QObject):
             start_ms:  float,
             end_ms:    float
         ) -> None:
-        
+
         index           = 0
         intervals_count = len(intervals)
 

@@ -60,6 +60,8 @@ class ScrollableContent(QGraphicsView):
     context_menu_opened       = pyqtSignal()
     dialog_cancelled          = pyqtSignal(str)
     speed_control_used        = pyqtSignal()
+    speed_cycle_requested     = pyqtSignal()
+    playground_requested      = pyqtSignal()
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -70,7 +72,7 @@ class ScrollableContent(QGraphicsView):
         self.configure_view()
         self.init_state(parent)
         self.setup_ui()
-        self.init_controllers(parent)
+        self.init_controllers()
 
     # Setup
 
@@ -122,7 +124,6 @@ class ScrollableContent(QGraphicsView):
         self.cached_waveform_brush         = QBrush(QColor(255, 255, 255, 90))
         self.cached_waveform_pen2          = QPen(QColor(255, 255, 255, 160), 0.7)
 
-        self.cached_track_name_color       = QColor(Styles.Colors.Waveline.TrackNameColor)
         self.cached_track_name_white_color = QColor(255, 255, 255)
         self.cached_track_name_black_color = QColor(0, 0, 0)
         self.cached_track_name_white_pen   = QPen(self.cached_track_name_white_color)
@@ -148,7 +149,7 @@ class ScrollableContent(QGraphicsView):
 
         self.setStyleSheet("border: none;")
 
-    def init_controllers(self, parent: QWidget) -> None:
+    def init_controllers(self) -> None:
         self.playback_controller     = Controllers.PlaybackController(self)
         self.scale_controller        = Controllers.ScaleController(self)
         self.waveform_controller     = Controllers.WaveformController(self)
@@ -160,6 +161,11 @@ class ScrollableContent(QGraphicsView):
 
         self.context_menu_controller.context_menu_opened.connect(self.context_menu_opened.emit)
         self.context_menu_controller.dialog_cancelled.connect(self.dialog_cancelled.emit)
+
+        self.waveform_controller.tile_ready.connect(self.scale_controller.on_tile_ready)
+        self.scale_controller.scale_started.connect(self.on_scale_started)
+        self.scale_controller.scale_finished.connect(self.waveform_controller.advance_generation_and_clear)
+        self.scale_controller.view_synchronized.connect(self.playback_controller.handle_view_synchronized)
 
         self.wheel_controller    = None
         self.glyph_controller    = None
@@ -223,13 +229,11 @@ class ScrollableContent(QGraphicsView):
         self.wheel_controller    = Controllers.WheelController(self)
         self.glyph_controller    = Controllers.GlyphController(self)
         self.mouse_controller    = Controllers.MouseController(self)
-        self.keyboard_controller = Controllers.KeyboardController(self.parent(), self)
+        self.keyboard_controller = Controllers.KeyboardController(self)
 
-        self.horizontalScrollBar().valueChanged.connect(self.mouse_controller.force_mouse_update)
+        self.connect_composition_signals()
 
         self.glyph_visualizer = Windows.GlyphVisualizer(self, self.composition.model)
-
-        self.glyph_controller.elements_changed.connect(self.parent().on_elements_changed)
 
         self.update_scene_rect()
         self.glyph_controller.create_glyph_items(self.composition.glyphs.keys(), True, False, False)
@@ -241,6 +245,46 @@ class ScrollableContent(QGraphicsView):
 
         self.playhead_moved_ms.connect(self.glyph_visualizer.on_playhead_scrubbed)
         self.composition.glyphs.visualizator_changed_callback = self.glyph_visualizer.on_visualizator_data_changed
+
+    def connect_composition_signals(self) -> None:
+        self.horizontalScrollBar().valueChanged.connect(self.mouse_controller.force_mouse_update)
+
+        self.scale_controller.scale_finished.connect(self.glyph_controller.update_all_glyphs)
+        self.scale_controller.scale_updated.connect(self.glyph_controller.update_all_glyphs)
+        self.scale_controller.animation_state_changed.connect(self.wheel_controller.set_scale_animation_active)
+
+        self.glyph_controller.drag_state_changed.connect(self.mouse_controller.set_glyphs_dragging)
+        self.glyph_controller.elements_changed.connect(self.parent().on_elements_changed)
+
+        self.context_menu_controller.delete_requested.connect(self.glyph_controller.delete_selected_glyphs)
+        self.context_menu_controller.copy_requested.connect(self.glyph_controller.copy_glyphs)
+        self.context_menu_controller.paste_requested.connect(self.glyph_controller.paste_glyphs)
+        self.context_menu_controller.cut_requested.connect(self.glyph_controller.cut_glyphs)
+        self.context_menu_controller.modify_property_requested.connect(self.glyph_controller.modify_selected_glyphs)
+        self.context_menu_controller.apply_effect_requested.connect(self.glyph_controller.apply_effect_to_glyphs)
+        self.context_menu_controller.apply_segments_requested.connect(self.glyph_controller.apply_segments_to_glyphs)
+
+        self.keyboard_controller.undo_requested.connect(self.glyph_controller.undo)
+        self.keyboard_controller.redo_requested.connect(self.glyph_controller.redo)
+        self.keyboard_controller.copy_requested.connect(self.glyph_controller.copy_glyphs)
+        self.keyboard_controller.paste_requested.connect(self.glyph_controller.paste_glyphs)
+        self.keyboard_controller.cut_requested.connect(self.glyph_controller.cut_glyphs)
+        self.keyboard_controller.duplicate_requested.connect(self.glyph_controller.duplicate_selected_glyphs)
+        self.keyboard_controller.select_all_requested.connect(self.glyph_controller.select_all_glyphs)
+        self.keyboard_controller.select_track_requested.connect(self.glyph_controller.select_all_on_same_track)
+        self.keyboard_controller.delete_requested.connect(self.glyph_controller.delete_selected_glyphs)
+        self.keyboard_controller.brightness_adjust_requested.connect(self.glyph_controller.adjust_selected_brightness)
+        self.keyboard_controller.spawn_track_glyph_requested.connect(self.glyph_controller.spawn_glyph_on_track)
+        self.keyboard_controller.escape_requested.connect(self.glyph_controller.handle_escape)
+        self.keyboard_controller.scale_requested.connect(self.scale_view)
+        self.keyboard_controller.brightness_dialog_requested.connect(self.brightness_control_popup)
+        self.keyboard_controller.duration_dialog_requested.connect(self.duration_control_popup)
+        self.keyboard_controller.speed_cycle_requested.connect(self.speed_cycle_requested.emit)
+        self.keyboard_controller.playground_requested.connect(self.playground_requested.emit)
+
+    def on_scale_started(self) -> None:
+        tiles_snapshot = self.waveform_controller.get_tiles_snapshot()
+        self.scale_controller.set_frozen_tiles(tiles_snapshot)
 
     def unload_composition(self) -> None:
         logger.warning("Unloading composition and clearing state")
@@ -524,13 +568,7 @@ class ScrollableContent(QGraphicsView):
 
         painter.setFont(self.track_label_font)
 
-        ignored_items = {
-            item for item in (
-                getattr(self, 'playhead', None),
-                getattr(self, 'playhead_hover', None),
-                getattr(self, 'marquee_item', None)
-            ) if item is not None
-        }
+        ignored_items = {self.playhead, self.playhead_hover, self.marquee_item}
 
         for i in range(start_idx, end_idx):
             top_y          = start_y + i * row_stride + offset_y

@@ -37,12 +37,9 @@ from System.Interface import (
 
 from System.Interface.Animation import LoomEngine
 
-from System.Interface.Windows import (
-    ErrorWindow,
-    make_fade_textbox,
-    make_time_textbox,
-    FloatingWindowGPU
-)
+from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
+from System.Interface.Windows.Helpers           import make_fade_textbox, make_time_textbox
+from System.Interface.Windows.ErrorWindow       import ErrorWindow
 
 from System.Services.AudioWorkers import (
     BPMWorker,

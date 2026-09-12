@@ -8,7 +8,7 @@ from PyQt6.QtCore import (
     pyqtSignal
 )
 
-from System.Common import Constants
+from System.Common    import Constants
 from System.Interface import Timing
 
 from .. import Timeline
@@ -105,6 +105,12 @@ class PlaybackController(QObject):
         target_scroll        = int(self.get_playhead_position_px()) - target_visual_offset
 
         self.conductor.horizontalScrollBar().setValue(target_scroll)
+
+    def handle_view_synchronized(self) -> None:
+        if not self.playback_manager.is_playing or not self.is_auto_scroll_active:
+            return
+
+        self.on_playback_position_updated()
 
     # Playback Tracking
 

@@ -15,6 +15,7 @@ from PyQt6.QtCore import (
     Qt,
     QPointF,
     QObject,
+    pyqtSignal,
     QThreadPool
 )
 
@@ -30,6 +31,8 @@ from .TileWorker import TileWorker
 from .. import Timeline
 
 class WaveformController(QObject):
+    tile_ready = pyqtSignal(int, QPixmap)
+
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
 
@@ -90,18 +93,15 @@ class WaveformController(QObject):
         pixmap                          = QPixmap.fromImage(image)
         self.waveform_tiles[tile_index] = pixmap
 
-        scale_controller = self.conductor.scale_controller
-
-        if scale_controller.scale_anim_active:
-            scale_controller.frozen_tiles.setdefault(tile_index, pixmap)
-
-        if scale_controller.frozen_fallback_tiles:
-            scale_controller.tile_fade_alphas[tile_index] = 0.0
-
-            if not scale_controller.waveform_anim_timer.isActive():
-                scale_controller.waveform_anim_timer.start()
-
+        self.tile_ready.emit(tile_index, pixmap)
         self.conductor.viewport().update()
+
+    def advance_generation_and_clear(self) -> None:
+        self.tile_generation_id += 1
+        self.clear()
+
+    def get_tiles_snapshot(self) -> dict[int, QPixmap]:
+        return dict(self.waveform_tiles)
 
     def compute_tile_image(
             self,

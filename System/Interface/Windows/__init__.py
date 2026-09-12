@@ -12,13 +12,13 @@ from System.Interface.Windows.AudioDialogBase import (
     AudioLoadingDialog
 )
 
+from System.Interface.Windows.ErrorWindow              import ErrorWindow
 from System.Interface.Windows.SettingsWindow           import SettingsWindow
 from System.Interface.Windows.DialogWindow             import DialogWindow
 from System.Interface.Windows.DialogInputWindow        import DialogInputWindow
 from System.Interface.Windows.TrimWarningDialog        import TrimWarningDialog
 from System.Interface.Windows.ExportDialogWindow       import ExportDialogWindow
 from System.Interface.Windows.SegmentEditor            import SegmentEditor
-from System.Interface.Windows.ErrorWindow              import ErrorWindow
 from System.Interface.Windows.UpdateWindow             import UpdateWindow
 from System.Interface.Windows.AboutWindow              import AboutWindow
 from System.Interface.Windows.WalterWindow             import WalterWindow

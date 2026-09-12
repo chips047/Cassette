@@ -8,7 +8,7 @@ from .TileWorkerSignals import TileWorkerSignals
 class TileWorker(QRunnable):
     def __init__(
             self,
-            controller,
+            controller:         object,
             tile_index:         int,
             generation:         int,
             device_pixel_ratio: float

@@ -483,6 +483,7 @@ class Menus:
             {Other.Transparent}
             padding: 4px 12px;
             margin: 2px;
+            width:  150px;
             border-radius: {Roundings.RmbMenuItem}px;
         }}
 

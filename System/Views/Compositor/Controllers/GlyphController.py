@@ -21,7 +21,8 @@ from System.Services import (
 
 from System.Interface import (
     Timing,
-    Widgets
+    Widgets,
+    Windows
 )
 
 from System.Interface.Animation import LoomEngine
@@ -41,6 +42,7 @@ class GlyphController(QObject):
     glyph_deleted          = pyqtSignal()
     glyph_property_changed = pyqtSignal(str)
     glyph_keyframe_edited  = pyqtSignal()
+    drag_state_changed     = pyqtSignal(bool)
 
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__()
@@ -82,12 +84,12 @@ class GlyphController(QObject):
             Qt.Key.Key_Minus: "11"
         }
 
-        self.undo_stack         = []
-        self.redo_stack         = []
-        self.is_processing      = False
-        self.max_history        = 1000
-        self.temp_before_state  = {}
-        self.current_drag_mode  = None
+        self.undo_stack        = []
+        self.redo_stack        = []
+        self.is_processing     = False
+        self.max_history       = 1000
+        self.temp_before_state = {}
+        self.current_drag_mode = None
 
     # HoverManagement
 
@@ -176,6 +178,108 @@ class GlyphController(QObject):
 
         finally:
             self.composition.stop_batching()
+
+    def apply_effect_to_glyphs(
+            self,
+            effect_name:  str,
+            settings:     dict,
+            selected_ids: list[int]
+        ) -> None:
+
+        before_state: dict[int, dict] = {}
+        after_state:  dict[int, dict] = {}
+
+        for glyph_id in selected_ids:
+            element = self.composition.get_glyph(glyph_id)
+
+            if not element:
+                continue
+
+            before_state[glyph_id] = copy.deepcopy(element)
+            after_state[glyph_id]  = GlyphEffects.apply_visual_effect(element, effect_name, settings)
+
+        if not after_state:
+            return
+
+        self.composition.update_bunch_of_glyphs(after_state)
+
+        self.push_action(
+            Actions.ActionModify(
+                self,
+                before_state,
+                after_state
+            )
+        )
+
+        self.update_glyphs(selected_ids)
+
+    def apply_segments_to_glyphs(
+            self,
+            selected_ids: list[int],
+            segments:     list[bool]
+        ) -> None:
+
+        original_glyphs = {
+            glyph_id: self.composition.get_glyph(glyph_id)
+            for glyph_id in selected_ids
+        }
+
+        turned_on     = [index for index, segment in enumerate(segments) if segment]
+        all_turned_on = all(segments)
+
+        before_state = {
+            glyph_id: copy.deepcopy(original_glyphs[glyph_id])
+            for glyph_id in selected_ids
+        }
+        after_state: dict[int, dict] = {}
+
+        for glyph_id in selected_ids:
+            new_glyph = copy.deepcopy(original_glyphs[glyph_id])
+
+            if all_turned_on:
+                new_glyph.pop("segments", None)
+
+            else:
+                new_glyph["segments"] = turned_on
+
+            after_state[glyph_id] = new_glyph
+
+        first_id      = selected_ids[0]
+        first_glyph   = original_glyphs[first_id]
+        effect_data   = first_glyph.get("effect")
+        effect_name   = effect_data.get("name") if effect_data else None
+        effect_config = GlyphEffects.EffectsConfig.get(effect_name, {}) if effect_name else {}
+
+        if effect_name and not effect_config.get("supports_segmentation", True):
+            Windows.ErrorWindow(
+                "Effect has been reset",
+                "Heads up: custom segmentation doesn't work with applied effect, so we reset the effect."
+            ).exec()
+
+            for glyph_id in selected_ids:
+                after_state[glyph_id].pop("effect", None)
+
+        modified_before = {
+            glyph_id: before_state[glyph_id]
+            for glyph_id in selected_ids
+            if before_state[glyph_id] != after_state[glyph_id]
+        }
+
+        modified_after = {
+            glyph_id: after_state[glyph_id]
+            for glyph_id in selected_ids
+            if before_state[glyph_id] != after_state[glyph_id]
+        }
+
+        if not modified_after:
+            return
+
+        self.composition.update_bunch_of_glyphs(modified_after)
+
+        self.push_action(
+            Actions.ActionModify(self, modified_before, modified_after)
+        )
+        self.update_glyphs(selected_ids)
 
     def adjust_keyframes_brightness(
             self,
@@ -311,7 +415,6 @@ class GlyphController(QObject):
     def undo(self) -> None:
         if not self.undo_stack:
             self.conductor.tooltip.show_tooltip_at("Nothing to undo.", plan_hide = True)
-
             return
 
         if self.is_processing:
@@ -336,7 +439,6 @@ class GlyphController(QObject):
     def redo(self) -> None:
         if not self.redo_stack:
             self.conductor.tooltip.show_tooltip_at("Nothing to redo.", plan_hide = True)
-
             return
 
         if self.is_processing:
@@ -375,6 +477,9 @@ class GlyphController(QObject):
 
         for glyph in self.glyph_items.values():
             glyph.update_geometry(animate_movement = animate_movement)
+
+    def update_all_glyphs(self) -> None:
+        self.update_glyphs()
 
     def clear_glyphs(self) -> None:
         for item in self.glyph_items.values():
@@ -463,6 +568,11 @@ class GlyphController(QObject):
     def cut_glyphs(self) -> None:
         self.copy_glyphs()
         self.delete_selected_glyphs()
+
+    def duplicate_selected_glyphs(self) -> None:
+        self.copy_glyphs()
+        Player.ui_player.play_sound("Glyphs/Duplicate", setting_key = "glyph_duplication_sound")
+        self.paste_glyphs()
 
     def paste_glyphs(self) -> None:
         if not self.copied_data or self.is_processing:
@@ -564,6 +674,13 @@ class GlyphController(QObject):
             direction, step = self.calculate_expansion_params(len(group), base_y, box_height)
             self.animate_stack_items(group, step, direction, len(group))
 
+    def handle_escape(self) -> None:
+        if self.expanded_stack:
+            self.collapse_stack()
+            return
+
+        self.conductor.scene.clearSelection()
+
     # DragOperations
 
     def start_drag(self) -> None:
@@ -572,6 +689,10 @@ class GlyphController(QObject):
         self.current_drag_mode = None
         selected_glyph_items   = self.get_selected_glyph_items()
 
+        if not selected_glyph_items:
+            return
+
+        self.drag_state_changed.emit(True)
         self.composition.start_batching()
 
         for item in selected_glyph_items:
@@ -582,6 +703,44 @@ class GlyphController(QObject):
 
             if data := self.composition.get_glyph(item.glyph_id):
                 self.temp_before_state[item.glyph_id] = copy.deepcopy(data)
+
+    def end_drag(self) -> None:
+        try:
+            if not self.drag_session:
+                return
+
+            after_state = {
+                item.glyph_id: copy.deepcopy(data)
+                for item in self.drag_session
+                if (data := self.composition.get_glyph(item.glyph_id)) is not None
+            }
+
+            actually_moved = any(
+                after_state.get(glyph_id) != self.temp_before_state.get(glyph_id)
+                for glyph_id in after_state
+            )
+
+            if actually_moved:
+                self.push_action(Actions.ActionModify(self, self.temp_before_state, after_state))
+
+            drag_mode = self.current_drag_mode
+
+            self.refresh_stack_indicators(force = True)
+            self.refresh_all_occlusion()
+
+            if actually_moved and drag_mode:
+                self.glyph_moved_or_resized.emit(drag_mode)
+
+        finally:
+            self.drag_session.clear()
+            self.temp_before_state.clear()
+
+            self.current_drag_mode = None
+
+            if self.composition.batching_mode:
+                self.composition.stop_batching()
+            
+            self.drag_state_changed.emit(False)
 
     def update_drag_state(
             self,
@@ -663,6 +822,8 @@ class GlyphController(QObject):
 
         self.refresh_stack_indicators(force = True)
         self.refresh_all_occlusion()
+
+        self.drag_state_changed.emit(False)
 
         if actually_moved and drag_mode:
             self.glyph_moved_or_resized.emit(drag_mode)
@@ -790,7 +951,6 @@ class GlyphController(QObject):
     def sort_stack_group(self, group: list[int]) -> None:
         def sort_key(glyph_id: int) -> tuple:
             glyph = self.composition.get_glyph(glyph_id)
-
             return (glyph["start"] if glyph else 0, glyph_id)
 
         group.sort(key = sort_key)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from PyQt6.QtGui import QPixmap
+
 from PyQt6.QtCore import (
     QObject,
     pyqtSignal
@@ -11,7 +13,12 @@ from System.Interface import Timing
 from .. import Timeline
 
 class ScaleController(QObject):
-    zoom_changed = pyqtSignal(float)
+    zoom_changed            = pyqtSignal(float)
+    scale_started           = pyqtSignal()
+    scale_finished          = pyqtSignal()
+    scale_updated           = pyqtSignal()
+    view_synchronized       = pyqtSignal()
+    animation_state_changed = pyqtSignal(bool)
 
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
@@ -31,11 +38,11 @@ class ScaleController(QObject):
 
         self.tile_fade_subframe  = 0
 
-        self.frozen_tiles:               dict  = {}
-        self.frozen_px_per_sec:          float = self.px_per_sec
-        self.frozen_fallback_tiles:      dict  = {}
-        self.frozen_fallback_px_per_sec: float = self.px_per_sec
-        self.tile_fade_alphas:           dict  = {}
+        self.frozen_tiles:               dict[int, QPixmap] = {}
+        self.frozen_px_per_sec:          float              = self.px_per_sec
+        self.frozen_fallback_tiles:      dict[int, QPixmap] = {}
+        self.frozen_fallback_px_per_sec: float              = self.px_per_sec
+        self.tile_fade_alphas:           dict[int, float]   = {}
 
     # Scaling
 
@@ -65,20 +72,39 @@ class ScaleController(QObject):
         self.zoom_changed.emit(magnitude)
 
         if not self.scale_anim_active:
-            center_px = current_scroll + viewport_width / 2.0
-
+            center_px                 = current_scroll + viewport_width / 2.0
             self.scale_anim_center_ms = (center_px / self.px_per_sec) * 1000.0
-            self.frozen_tiles         = dict(self.conductor.waveform_tiles)
             self.frozen_px_per_sec    = self.px_per_sec
 
             self.tile_fade_subframe = 0
             self.tile_fade_alphas.clear()
             self.frozen_fallback_tiles.clear()
 
+            self.scale_started.emit()
+
         self.scale_anim_active = True
+        self.animation_state_changed.emit(True)
 
         if not self.waveform_anim_timer.isActive():
             self.waveform_anim_timer.start()
+
+    def set_frozen_tiles(self, tiles: dict[int, QPixmap]) -> None:
+        self.frozen_tiles = tiles
+
+    def on_tile_ready(
+            self,
+            tile_index: int,
+            pixmap:     QPixmap
+        ) -> None:
+
+        if self.scale_anim_active:
+            self.frozen_tiles.setdefault(tile_index, pixmap)
+
+        if self.frozen_fallback_tiles:
+            self.tile_fade_alphas[tile_index] = 0.0
+
+            if not self.waveform_anim_timer.isActive():
+                self.waveform_anim_timer.start()
 
     # Animation Updates
 
@@ -105,6 +131,7 @@ class ScaleController(QObject):
         if abs(difference) < 0.3:
             self.px_per_sec        = self.target_px_per_sec
             self.scale_anim_active = False
+            self.animation_state_changed.emit(False)
             self.conductor.cached_beat_lines.clear()
             self.finish_scale_change(current_playhead_ms)
             return
@@ -116,44 +143,31 @@ class ScaleController(QObject):
     def apply_intermediate_scale(self, current_playhead_ms: float) -> None:
         self.conductor.update_scene_rect()
         self.synchronize_view_after_scale(current_playhead_ms)
-
-        if self.conductor.composition and self.conductor.glyph_controller:
-            self.conductor.glyph_controller.update_glyphs()
-
+        self.scale_updated.emit()
         self.conductor.viewport().update()
 
     def finish_scale_change(self, current_playhead_ms: float) -> None:
-        self.conductor.waveform_controller.tile_generation_id += 1
-
         self.tile_fade_subframe         = 0
         self.tile_fade_alphas.clear()
         self.frozen_fallback_tiles      = dict(self.frozen_tiles)
         self.frozen_fallback_px_per_sec = self.frozen_px_per_sec
         self.frozen_tiles.clear()
 
-        self.conductor.waveform_controller.clear()
         self.conductor.cached_beat_lines.clear()
-
         self.conductor.update_scene_rect()
         self.synchronize_view_after_scale(current_playhead_ms)
 
-        if self.conductor.composition and self.conductor.glyph_controller:
-            self.conductor.glyph_controller.update_glyphs()
-
+        self.scale_finished.emit()
         self.conductor.viewport().update()
 
     def synchronize_view_after_scale(self, current_playhead_ms: float) -> None:
         self.update_scroll_to_center()
         self.conductor.set_playhead_position_ms(current_playhead_ms)
+        self.view_synchronized.emit()
 
-        if self.conductor.playback_manager.is_playing and self.conductor.playback_controller.is_auto_scroll_active:
-            self.conductor.playback_controller.on_playback_position_updated()
-
-        else:
+        if not self.conductor.playback_manager.is_playing:
             self.update_scroll_to_center()
-
-            if not self.conductor.playback_manager.is_playing:
-                self.conductor.set_playhead_position_ms(current_playhead_ms)
+            self.conductor.set_playhead_position_ms(current_playhead_ms)
 
     def step_tile_fade(self) -> bool:
         if not self.tile_fade_alphas:
@@ -187,6 +201,7 @@ class ScaleController(QObject):
     def cleanup(self) -> None:
         self.waveform_anim_timer.stop()
         self.scale_anim_active = False
+        self.animation_state_changed.emit(False)
         self.frozen_tiles.clear()
         self.frozen_fallback_tiles.clear()
         self.tile_fade_alphas.clear()

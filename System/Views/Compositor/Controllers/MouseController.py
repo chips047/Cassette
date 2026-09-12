@@ -14,8 +14,7 @@ from PyQt6.QtCore import (
 
 from PyQt6.QtWidgets import QApplication
 
-from System.Common   import Styles
-from System.Services import Player
+from System.Common import Styles
 
 from .AutoScroller import AutoScroller
 
@@ -25,8 +24,14 @@ class MouseController:
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         self.conductor            = conductor
         self.is_marquee_selecting = False
+        self.is_dragging_glyphs   = False
         self.auto_scroller        = AutoScroller(conductor)
         self.playback_manager     = conductor.playback_manager
+
+    # State
+
+    def set_glyphs_dragging(self, is_dragging: bool) -> None:
+        self.is_dragging_glyphs = is_dragging
 
     # MarqueeSelection
 
@@ -84,12 +89,9 @@ class MouseController:
     # SyntheticEvents
 
     def force_mouse_update(self) -> None:
-        glyph_controller   = self.conductor.glyph_controller
-        is_dragging_glyphs = bool(glyph_controller and glyph_controller.drag_session)
-
         if (
             not self.is_marquee_selecting and
-            not is_dragging_glyphs and
+            not self.is_dragging_glyphs and
             not self.conductor.playhead_hover.isVisible()
         ):
             return
@@ -115,18 +117,16 @@ class MouseController:
             0,
             0,
             self.conductor.width(),
-            Styles.Metrics.Tracks.RulerHeight + Styles.Metrics.Waveform.Height,
+            Styles.Metrics.Tracks.RulerHeight + Styles.Metrics.Waveform.Height
         )
 
         if ruler_area.contains(event.position()):
             self.handle_ruler_press(event)
             event.accept()
-
             return
 
         if self.conductor.itemAt(event.pos()):
             event.ignore()
-
             return
 
         if not (event.modifiers() & Qt.KeyboardModifier.ControlModifier):

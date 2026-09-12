@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import copy
-
 from loguru import logger
 
 from PyQt6.QtGui import QContextMenuEvent
@@ -27,14 +25,18 @@ from System.Interface import (
     Windows
 )
 
-from .. import (
-    Actions,
-    Timeline
-)
+from .. import Timeline
 
 class ContextMenuController(QObject):
-    context_menu_opened = pyqtSignal()
-    dialog_cancelled    = pyqtSignal(str)
+    context_menu_opened       = pyqtSignal()
+    dialog_cancelled          = pyqtSignal(str)
+    delete_requested          = pyqtSignal()
+    copy_requested            = pyqtSignal()
+    paste_requested           = pyqtSignal()
+    cut_requested             = pyqtSignal()
+    modify_property_requested = pyqtSignal(str, object)
+    apply_effect_requested    = pyqtSignal(str, dict, list)
+    apply_segments_requested  = pyqtSignal(list, list)
 
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
@@ -47,26 +49,25 @@ class ContextMenuController(QObject):
         if event.modifiers() & Qt.KeyboardModifier.AltModifier:
             return
 
-        if not self.conductor.glyph_controller:
-            return
-
         try:
             scene_position   = self.conductor.mapToScene(event.pos())
             item_under_mouse = self.conductor.scene.itemAt(scene_position, self.conductor.transform())
 
-            if not item_under_mouse:
-                return
-
-            if item_under_mouse not in self.conductor.glyph_controller.glyph_items.values():
+            if not isinstance(item_under_mouse, Widgets.GlyphItem):
                 return
 
             if not item_under_mouse.isSelected():
                 self.conductor.scene.clearSelection()
                 item_under_mouse.setSelected(True)
 
-            selected_ids   = self.conductor.glyph_controller.get_selected_glyph_ids()
-            selected_items = self.conductor.glyph_controller.get_selected_glyph_items()
-            clicked_glyph  = self.conductor.composition.get_glyph(item_under_mouse.glyph_id)
+            selected_items = [
+                item
+                for item in self.conductor.scene.selectedItems()
+                if isinstance(item, Widgets.GlyphItem)
+            ]
+            selected_ids = [item.glyph_id for item in selected_items]
+
+            clicked_glyph = self.conductor.composition.get_glyph(item_under_mouse.glyph_id)
 
             if not clicked_glyph:
                 return
@@ -98,10 +99,10 @@ class ContextMenuController(QObject):
             ]
 
             entries: list = [
-                ("Delete",               self.conductor.glyph_controller.delete_selected_glyphs),
-                ("Copy",                 self.conductor.glyph_controller.copy_glyphs),
-                ("Paste",                self.conductor.glyph_controller.paste_glyphs),
-                ("Cut",                  self.conductor.glyph_controller.cut_glyphs),
+                ("Delete",               self.delete_requested.emit),
+                ("Copy",                 self.copy_requested.emit),
+                ("Paste",                self.paste_requested.emit),
+                ("Cut",                  self.cut_requested.emit),
                 ("-",                    None),
                 ("Change Brightness...", lambda: QTimer.singleShot(0, self.brightness_control_popup)),
                 ("Change Duration...",   lambda: QTimer.singleShot(0, self.duration_control_popup)),
@@ -187,10 +188,8 @@ class ContextMenuController(QObject):
             for glyph in glyphs
         )
 
-        same_track = all(
-            item.track == selected_items[0].track
-            for item in selected_items
-        )
+        first_track = selected_items[0].track
+        same_track  = all(item.track == first_track for item in selected_items)
 
         can_show_segments = has_segmented and same_track
 
@@ -220,7 +219,7 @@ class ContextMenuController(QObject):
         )
 
         preview.apply_requested.connect(
-            lambda name, settings: self.apply_effect_to_selection(
+            lambda name, settings: self.apply_effect_requested.emit(
                 name,
                 settings,
                 selected_ids
@@ -233,40 +232,6 @@ class ContextMenuController(QObject):
                 ("Preview", preview)
             ]
         )
-
-    def apply_effect_to_selection(
-            self,
-            effect_name:  str,
-            settings:     dict,
-            selected_ids: list[int]
-        ) -> None:
-
-        before_state: dict[int, dict] = {}
-        after_state:  dict[int, dict] = {}
-
-        for glyph_id in selected_ids:
-            element = self.conductor.composition.get_glyph(glyph_id)
-
-            if not element:
-                continue
-
-            before_state[glyph_id] = copy.deepcopy(element)
-            after_state[glyph_id]  = GlyphEffects.apply_visual_effect(element, effect_name, settings)
-
-        if not after_state:
-            return
-
-        self.conductor.composition.update_bunch_of_glyphs(after_state)
-
-        self.conductor.glyph_controller.push_action(
-            Actions.ActionModify(
-                self.conductor.glyph_controller,
-                before_state,
-                after_state
-            )
-        )
-
-        self.conductor.glyph_controller.update_glyphs(selected_ids)
 
     # Popups
 
@@ -290,7 +255,7 @@ class ContextMenuController(QObject):
             self.dialog_cancelled.emit(key)
             return
 
-        self.conductor.glyph_controller.modify_selected_glyphs(key, dialog.get_text())
+        self.modify_property_requested.emit(key, dialog.get_text())
 
     def brightness_control_popup(self) -> None:
         self.control_popup("Brightness", "Percent", "brightness", max_value = 100)
@@ -299,14 +264,21 @@ class ContextMenuController(QObject):
         self.control_popup("Duration", "Duration (ms)", "duration", min_value = 1, max_value = 10000)
 
     def segment_control_popup(self) -> None:
-        selected_ids    = self.conductor.glyph_controller.get_selected_glyph_ids()
-        original_glyphs = {
-            glyph_id: self.conductor.composition.get_glyph(glyph_id)
-            for glyph_id in selected_ids
-        }
+        selected_items = [
+            item
+            for item in self.conductor.scene.selectedItems()
+            if isinstance(item, Widgets.GlyphItem)
+        ]
+        selected_ids = [item.glyph_id for item in selected_items]
+
+        if not selected_ids:
+            return
 
         first_id    = selected_ids[0]
-        first_glyph = original_glyphs[first_id]
+        first_glyph = self.conductor.composition.get_glyph(first_id)
+
+        if not first_glyph:
+            return
 
         device      = Constants.DEVICES[self.conductor.composition.model]
         track_count = device.get_track_segment_count(first_glyph["track"])
@@ -320,56 +292,4 @@ class ContextMenuController(QObject):
         if not popup.exec():
             return
 
-        segments      = popup.segments()
-        turned_on     = [index for index, segment in enumerate(segments) if segment]
-        all_turned_on = all(segments)
-
-        before_state = {
-            glyph_id: copy.deepcopy(original_glyphs[glyph_id])
-            for glyph_id in selected_ids
-        }
-        after_state: dict[int, dict] = {}
-
-        for glyph_id in selected_ids:
-            new_glyph = copy.deepcopy(original_glyphs[glyph_id])
-
-            if all_turned_on:
-                new_glyph.pop("segments", None)
-
-            else:
-                new_glyph["segments"] = turned_on
-
-            after_state[glyph_id] = new_glyph
-
-        effect_name   = first_glyph.get("effect", {}).get("name")
-        effect_config = GlyphEffects.EffectsConfig.get(effect_name, {}) if effect_name else {}
-
-        if effect_name and not effect_config.get("supports_segmentation", True):
-            Windows.ErrorWindow(
-                "Effect has been reset",
-                "Heads up: custom segmentation doesn't work with applied effect, so we reset the effect."
-            ).exec()
-
-            for glyph_id in selected_ids:
-                after_state[glyph_id].pop("effect", None)
-
-        modified_before = {
-            glyph_id: before_state[glyph_id]
-            for glyph_id in selected_ids
-            if before_state[glyph_id] != after_state[glyph_id]
-        }
-        
-        modified_after = {
-            glyph_id: after_state[glyph_id]
-            for glyph_id in selected_ids
-            if before_state[glyph_id] != after_state[glyph_id]
-        }
-
-        if not modified_after:
-            return
-
-        self.conductor.composition.update_bunch_of_glyphs(modified_after)
-
-        self.conductor.glyph_controller.push_action(
-            Actions.ActionModify(self.conductor.glyph_controller, modified_before, modified_after)
-        )
+        self.apply_segments_requested.emit(selected_ids, popup.segments())

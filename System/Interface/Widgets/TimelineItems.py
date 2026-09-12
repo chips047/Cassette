@@ -1150,6 +1150,10 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if self.is_despawning:
             return
 
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+
         self.capture_current_visual_state()
 
         controller = self.conductor.glyph_controller
