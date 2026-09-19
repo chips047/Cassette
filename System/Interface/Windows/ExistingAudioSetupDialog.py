@@ -18,19 +18,23 @@ from System.Interface.Windows import (
     TrimWarningDialog
 )
 
-# Existing Audio Setup Layout
+# Existing Audio Setup Window
 
 class ExistingAudioSetupDialog(BPMEditorBase):
+
+    # Setup And Initialization
+
     def __init__(
             self,
             composition: ProjectSaver.Composition,
             parent:      QWidget | None = None
         ) -> None:
 
-        self.composition    = composition
-        self.audio_path     = composition.full_song_path
-        self.filename       = os.path.basename(self.audio_path)
-        self.saved_settings = {}
+        self.composition        = composition
+        self.audio_path         = composition.full_song_path
+        self.filename           = os.path.basename(self.audio_path)
+        self.saved_settings     = {}
+        self.auto_bpm_requested = False
 
         super().__init__(
             "Audio",
@@ -41,8 +45,14 @@ class ExistingAudioSetupDialog(BPMEditorBase):
 
         self.title_label.setText(self.filename)
         self.setup_audio_layout()
+
+        if self.composition.bpm:
+            self.apply_saved_bpm_state()
+
         self.run_loading_pipeline(self.audio_path)
         self.adjustSize()
+
+    # Layout Setup
 
     def setup_audio_layout(self) -> None:
         self.setup_trim_section()
@@ -72,18 +82,95 @@ class ExistingAudioSetupDialog(BPMEditorBase):
         self.content_layout.addLayout(self.build_playback_row())
         self.content_layout.addLayout(settings_layout)
 
+    # Width Calculation
+
+    def calculate_collapsed_width(self, bpm_text: str) -> int:
+        clean_text   = str(bpm_text or "").strip() or "120"
+        font_metrics = self.bpm_input.fontMetrics()
+
+        return max(font_metrics.horizontalAdvance(clean_text) + 26, 56)
+
+    # BPM State Management
+
+    def apply_bpm(self, bpm_value: int) -> None:
+        bpm_text     = str(bpm_value)
+        target_width = self.calculate_collapsed_width(bpm_text)
+
+        self.bpm_input.setText(bpm_text)
+        self.bpm_input.setFixedWidth(target_width)
+
+        Player.bpm_informer.set_bpm(int(bpm_value))
+
+    def apply_saved_bpm_state(self) -> None:
+        self.apply_bpm(int(self.composition.bpm))
+
+    def apply_auto_bpm(self, bpm_value: int) -> None:
+        self.auto_bpm_requested = False
+
+        self.apply_bpm(bpm_value)
+
+    # BPM Pipeline Handlers
+
+    def process_bpm_detection(
+            self,
+            *arguments,
+            **keyword_arguments
+        ) -> None:
+        for argument in list(arguments) + list(keyword_arguments.values()):
+            if isinstance(argument, (int, float)) and 20 <= argument <= 400:
+                self.detected_bpm = int(argument)
+                return
+
+    def bpm_end_animation(
+            self,
+            *arguments,
+            **keyword_arguments
+        ) -> None:
+        self.process_bpm_detection(*arguments, **keyword_arguments)
+
+        if self.auto_bpm_requested or not self.composition.bpm:
+            self.auto_bpm_requested = False
+
+            super().bpm_end_animation(*arguments, **keyword_arguments)
+
+            return
+
+        return
+
+    def on_bpm_detected(self, bpm_value: int) -> None:
+        self.detected_bpm = int(bpm_value)
+
+        if self.auto_bpm_requested or not self.composition.bpm:
+            self.apply_auto_bpm(bpm_value)
+
+            return
+
+        return
+
+    def on_bpm_calculated(self, bpm_value: int) -> None:
+        self.on_bpm_detected(bpm_value)
+
+    def on_bpm_ready(self, bpm_value: int) -> None:
+        self.on_bpm_detected(bpm_value)
+
     def on_auto_detect_bpm(self) -> None:
         if self.detected_bpm is not None:
-            self.bpm_input.setText(str(self.detected_bpm))
-            Player.bpm_informer.set_bpm(self.detected_bpm)
+            self.apply_auto_bpm(self.detected_bpm)
             return
+
+        self.auto_bpm_requested = True
+
+        self.bpm_input.setMinimumWidth(110)
+        self.bpm_input.setMaximumWidth(130)
+        self.bpm_input.setText("")
+        self.bpm_input.setPlaceholderText("Counting BPM...")
 
         if self.is_bpm_thread_running():
             return
 
-        self.bpm_input.setText("")
-        self.bpm_input.setPlaceholderText("Counting BPM...")
         self.start_bpm_pipeline()
+
+    # Audio Pipeline Handlers
 
     def on_audio_ready(self) -> None:
         super().on_audio_ready()
@@ -97,9 +184,10 @@ class ExistingAudioSetupDialog(BPMEditorBase):
         self.fade_in_textbox.setText(str(self.composition.fade_in_duration or 0))
         self.fade_out_textbox.setText(str(self.composition.fade_out_duration or 0))
 
-        if self.composition.bpm:
-            self.bpm_input.setText(str(self.composition.bpm))
-            Player.bpm_informer.set_bpm(int(self.composition.bpm))
+        if self.composition.bpm and not self.auto_bpm_requested:
+            self.apply_saved_bpm_state()
+
+    # Value Retrieval
 
     def get_bpm_value(self) -> int:
         bpm_text = str(self.bpm_input.text() or "").strip()
@@ -115,24 +203,24 @@ class ExistingAudioSetupDialog(BPMEditorBase):
 
         return int(self.composition.bpm or 120)
 
+    # Action Handlers
+
     def accept_callback(self) -> None:
         if not self.validate_trim():
             self.ok_button.start_glitch()
             return
 
-        trim = self.get_trim_settings()
-
+        trim_settings       = self.get_trim_settings()
         removed_glyph_count = self.composition.count_glyphs_outside_range(
-            int(trim["start_ms"]),
-            int(trim["end_ms"])
+            int(trim_settings["start_ms"]),
+            int(trim_settings["end_ms"])
         )
 
-        if removed_glyph_count > 0:
-            if not TrimWarningDialog(removed_glyph_count).exec():
-                return
+        if removed_glyph_count > 0 and not TrimWarningDialog(removed_glyph_count).exec():
+            return
 
         self.saved_settings = {
-            **trim,
+            **trim_settings,
             **self.get_bpm_settings()
         }
 
