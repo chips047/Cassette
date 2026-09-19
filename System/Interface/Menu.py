@@ -65,11 +65,8 @@ class ContextMenu(QMenu):
         menu:    QMenu,
         entries: list
     ) -> None:
-
-        logger.debug("Populating Context Menu:")
-
+        
         for label, handler in entries:
-            logger.debug(f"Adding entry: {label}")
             self.add_entry(menu, label, handler)
 
     def add_entry(
@@ -139,8 +136,6 @@ class EffectPreviewWidget(QWidget):
         self.populate_controls()
         self.on_control_changed()
 
-        logger.debug(f"Created Effect Previewer for {effect_name}")
-
     def setup_ui(self) -> None:
         self.setFixedWidth(550)
         self.setStyleSheet(Styles.Controls.EffectSetupper)
@@ -162,11 +157,7 @@ class EffectPreviewWidget(QWidget):
             "selector": (Widgets.SelectorWithLabel, "selectionChanged")
         }
 
-        logger.debug(f"Populating controls for Effect {self.effect_name}")
-
         for item in self.effect_info["settings"]:
-            logger.debug(f"Adding control: {item['title']}")
-
             item_type = item.get("type")
             widget_class, signal_name = types_map[item_type]
 
@@ -203,8 +194,6 @@ class EffectPreviewWidget(QWidget):
         return settings
 
     def generate_effect_track(self) -> None:
-        logger.debug("Setting new effect track...")
-
         settings = self.get_settings()
 
         glyph = GlyphEffects.generate_glyph_dict(
