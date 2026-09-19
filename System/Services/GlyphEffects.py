@@ -4,61 +4,96 @@ from loguru import logger
 
 from System.Common import Constants
 
-# Data Extraction & Parsing
+# Data Extraction And Parsing
 
 def parse_effect_arguments(
-        config:        dict,
-        settings_meta: dict
+        configuration:     dict,
+        settings_metadata: list[dict]
     ) -> dict:
-    
+
     arguments = {}
 
-    for meta in settings_meta:
-        try:
-            argument_name = meta.get("key")
-            if not argument_name:
-                continue
+    for metadata in settings_metadata:
+        argument_name = metadata.get("key")
+        if not argument_name:
+            continue
 
-            value                    = config.get(meta["key"], meta.get("default", 1))
-            arguments[argument_name] = value
-        
+        try:
+            default_value            = metadata.get("default", 1)
+            arguments[argument_name] = configuration.get(argument_name, default_value)
+
         except Exception as error:
-            logger.error(f"Couldn't parse effect arguments: {error}. Effect: {config}, {settings_meta}")
+            logger.error(f"Couldn't parse effect arguments: {error}. Effect: {configuration}, {settings_metadata}")
 
     return arguments
 
 def extract_glyph_data(
         glyph: dict,
-        model: str
+        model: str | None
     ) -> dict:
-    
-    start              = glyph["start"]
-    duration           = glyph["duration"]
-    end                = start + duration
-    
-    track              = glyph["track"]
-    brightness         = glyph["brightness"]
-    
-    total_segments     = None
-    active_segments    = glyph.get("segments")
 
-    device = Constants.DEVICES.get(model)
+    start           = glyph["start"]
+    duration        = glyph["duration"]
+    end             = start + duration
+    track           = glyph["track"]
+    brightness      = glyph.get("brightness", 100)
+    active_segments = glyph.get("segments")
+
+    device = Constants.DEVICES.get(model) if model else None
 
     if not device:
         total_segments = 30
-    
+
     else:
         total_segments = device.get_track_segment_count(track)
 
     return {
-        "start":              start,
-        "end":                end,
-        "duration":           duration,
-        "track":              track,
-        "brightness":         brightness,
-        "total_segments":     total_segments,
-        "active_segments":    active_segments
+        "start":           start,
+        "end":             end,
+        "duration":        duration,
+        "track":           track,
+        "brightness":      brightness,
+        "total_segments":  total_segments,
+        "active_segments": active_segments
     }
+
+def resolve_target_segments(glyph_data: dict) -> list[int]:
+    if glyph_data["active_segments"]:
+        return sorted(list(glyph_data["active_segments"]))
+
+    return list(range(glyph_data["total_segments"]))
+
+# Event Creation
+
+def create_glyph_event(
+        track:      str,
+        start:      float,
+        duration:   float,
+        segments:   list[int] | None = None,
+        brightness: int | None = None,
+        keyframes:  list[tuple[float, int | float]] | None = None,
+        easing:     str | None = None
+    ) -> dict:
+
+    event = {
+        "start":    start,
+        "duration": duration,
+        "track":    track
+    }
+
+    if segments is not None:
+        event["segments"] = segments
+
+    if keyframes is not None:
+        event["keyframes"] = keyframes
+
+        if easing is not None:
+            event["easing"] = easing
+
+    elif brightness is not None:
+        event["brightness"] = brightness
+
+    return event
 
 # Effect Application
 
@@ -76,444 +111,591 @@ def apply_visual_effect(
         "name":     name,
         "settings": settings
     }
-    
-    if name == "Fade":
-        brightness = glyph["brightness"]
-        mode       = settings.get("mode", "fade_out")
 
-        if "keyframes" in settings:
-            glyph["effect"]["settings"]["keyframes"] = settings["keyframes"]
-        
-        else:
-            keyframes_map = {
-                "custom":      [(0.0, brightness), (1.0, brightness)],
-                "fade_out":    [(0.0, brightness), (1.0, 0)],
-                "fade_in":     [(0.0, 0), (1.0, brightness)],
-                "fade_in_out": [(0.0, 0), (0.5, brightness), (1.0, 0)]
-            }
-            
-            glyph["effect"]["settings"]["keyframes"] = keyframes_map.get(mode, keyframes_map["fade_out"])
+    if name != "Fade":
+        return glyph
+
+    brightness = glyph.get("brightness", 100)
+    mode       = settings.get("mode", "fade_out")
+
+    if "keyframes" in settings:
+        glyph["effect"]["settings"]["keyframes"] = settings["keyframes"]
+        return glyph
+
+    keyframes_map = {
+        "custom":      [(0.0, brightness), (1.0, brightness)],
+        "fade_out":    [(0.0, brightness), (1.0, 0)],
+        "fade_in":     [(0.0, 0), (1.0, brightness)],
+        "fade_in_out": [(0.0, 0), (0.5, brightness), (1.0, 0)]
+    }
+
+    glyph["effect"]["settings"]["keyframes"] = keyframes_map.get(mode, keyframes_map["fade_out"])
 
     return glyph
 
 def effect_to_glyph(
         glyph: dict,
-        bpm:   int,
+        bpm:   int | float,
         model: str | None = None
-    ) -> list:
+    ) -> list[dict]:
 
     if "effect" not in glyph:
         return []
-    
-    name   = glyph["effect"]["name"]
-    config = glyph["effect"]["settings"]
 
-    effect_info = EffectsConfig.get(name)
+    name          = glyph["effect"]["name"]
+    configuration = glyph["effect"]["settings"]
 
-    if not effect_info:
+    effect_information = EffectsConfig.get(name)
+    if not effect_information:
         return []
-    
-    effect_function = effect_info["function"]
-    settings_meta   = effect_info["settings"]
-    kwargs          = parse_effect_arguments(config, settings_meta)
-    
-    result = effect_function(
+
+    effect_function   = effect_information["function"]
+    settings_metadata = effect_information["settings"]
+    keyword_arguments = parse_effect_arguments(configuration, settings_metadata)
+
+    return effect_function(
         glyph,
         model,
         bpm,
-        **kwargs
+        **keyword_arguments
     )
-
-    return result
 
 # Simple Effects
 
 def fade_effect(
         glyph:  dict,
-        model:  str,
-        bpm:    int,
+        model:  str | None,
+        bpm:    int | float,
         mode:   str,
         easing: str
-    ) -> list:
-    
-    data = extract_glyph_data(glyph, model)
+    ) -> list[dict]:
 
-    out = {
-        "start":     data["start"],
-        "duration":  data["duration"],
-        "track":     data["track"],
-        "easing":    easing,
-        "mode":      mode,
-        "keyframes": glyph["effect"]["settings"]["keyframes"]
-    }
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
 
-    if data["active_segments"]:
-        out["segments"] = data["active_segments"]
+    if not target_segments:
+        return []
 
-    return [out]
+    event = create_glyph_event(
+        track     = glyph_data["track"],
+        start     = glyph_data["start"],
+        duration  = glyph_data["duration"],
+        segments  = glyph_data["active_segments"],
+        keyframes = glyph["effect"]["settings"]["keyframes"],
+        easing    = easing
+    )
+    event["mode"] = mode
+
+    return [event]
 
 def strobe_effect(
         glyph:             dict,
-        model:             str,
-        bpm:               int,
-        frequency:         int  = 1,
-        first_brightness:  int  = 100,
-        second_brightness: int  = 70,
-        bpm_snap:          bool = False
-    ) -> list:
-    
+        model:             str | None,
+        bpm:               int | float,
+        frequency:         int | float = 1,
+        duty_cycle:        int | float = 50,
+        first_brightness:  int = 100,
+        second_brightness: int = 0,
+        bpm_snap:          int | float | bool = False
+    ) -> list[dict]:
+
     if bpm_snap:
-        frequency = (bpm / 60) * bpm_snap
+        frequency = (bpm / 60) * float(bpm_snap)
 
-    data     = extract_glyph_data(glyph, model)
-    interval = 1000 / frequency
-    time     = data["start"]
-    output   = []
+    glyph_data = extract_glyph_data(glyph, model)
 
-    while time < data["end"]:
-        time_off = min(time + interval / 2, data["end"])
-        duration = time_off - time
+    if frequency <= 0 or glyph_data["duration"] <= 0:
+        return []
 
-        items = [
-            {
-                "start":      time,
-                "duration":   duration,
-                "track":      data["track"],
-                "brightness": first_brightness
-            },
-            {
-                "start":      time_off,
-                "duration":   duration,
-                "track":      data["track"],
-                "brightness": second_brightness
-            }
-        ]
+    duty_ratio   = max(0.05, min(0.95, float(duty_cycle) / 100.0))
+    interval     = 1000.0 / frequency
+    current_time = glyph_data["start"]
+    output       = []
 
-        if data["active_segments"]:
-            for item in items:
-                item["segments"] = data["active_segments"]
+    while current_time < glyph_data["end"]:
+        first_duration  = min(interval * duty_ratio, glyph_data["end"] - current_time)
+        time_off        = current_time + first_duration
+        second_duration = min(interval * (1.0 - duty_ratio), glyph_data["end"] - time_off)
 
-        output.extend(items)
-        
-        time += interval
+        if first_duration > 0:
+            output.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time,
+                    duration   = first_duration,
+                    segments   = glyph_data["active_segments"],
+                    brightness = first_brightness
+                )
+            )
+
+        if second_duration > 0:
+            output.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = time_off,
+                    duration   = second_duration,
+                    segments   = glyph_data["active_segments"],
+                    brightness = second_brightness
+                )
+            )
+
+        current_time += interval
 
     return output
 
-# BPM - based Effects
+# Tempo Effects
 
 def bpm_effect(
-        glyph:          dict,
-        model:          str,
-        bpm:            float,
-        multiplier:     int,
-        enable_fading:  bool
-    ) -> list:
-    
-    data = extract_glyph_data(glyph, model)
+        glyph:         dict,
+        model:         str | None,
+        bpm:           int | float,
+        multiplier:    int | float,
+        mode:          str = "Standard",
+        decay_length:  int | float = 50,
+        enable_fading: bool = True
+    ) -> list[dict]:
 
-    actual_bpm      = bpm * multiplier
-    beat_interval   = 60000.0 / actual_bpm
-    time            = data["start"]
-    output          = []
-    brightness      = data["brightness"]
-    dim_brightness  = max(5, data["brightness"] * 0.2)
-    tick            = 0
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+    if not target_segments or bpm <= 0 or multiplier <= 0 or glyph_data["duration"] <= 0:
+        return []
 
-    while time < data["end"]:
-        if enable_fading:
-            if multiplier <= 1:
-                brightness = data["brightness"]
-            
-            else:
-                tick += 1
-                
-                if tick % multiplier == 1:
-                    brightness = data["brightness"]
-                
-                else:
-                    brightness = dim_brightness
+    actual_bpm     = bpm * multiplier
+    beat_interval  = 60000.0 / actual_bpm
+    current_time   = glyph_data["start"]
+    brightness     = glyph_data["brightness"]
+    dim_brightness = max(5, int(brightness * 0.2))
+    decay_ratio    = max(0.1, min(1.0, float(decay_length) / 100.0))
+    tick_counter   = 0
+    output         = []
 
-        time_off = min(time + beat_interval / 2, data["end"])
-        item     = {
-            "start":     time,
-            "duration":  time_off - time,
-            "track":     data["track"],
-            "keyframes": [(0.0, brightness), (1.0, 0)],
-            "easing":    "linear"
-        }
+    segment_count   = len(target_segments)
+    center_position = (segment_count - 1) / 2.0
+    max_distance    = max(1.0, center_position)
 
-        if data["active_segments"]:
-            item["segments"] = data["active_segments"]
+    while current_time < glyph_data["end"]:
+        beat_end     = min(current_time + beat_interval, glyph_data["end"])
+        sub_duration = beat_end - current_time
 
-        output.append(item)
-        time += beat_interval
+        if sub_duration <= 0:
+            break
+
+        current_brightness = brightness
+
+        if enable_fading and multiplier > 1:
+            tick_counter += 1
+
+            if tick_counter % int(multiplier) != 1:
+                current_brightness = dim_brightness
+
+        if mode == "Standard":
+            pulse_duration = min(sub_duration * decay_ratio, beat_interval * decay_ratio)
+            output.append(
+                create_glyph_event(
+                    track     = glyph_data["track"],
+                    start     = current_time,
+                    duration  = pulse_duration,
+                    segments  = glyph_data["active_segments"],
+                    keyframes = [(0.0, current_brightness), (1.0, 0)],
+                    easing    = "linear"
+                )
+            )
+
+        elif mode == "Punch":
+            punch_ratio    = min(0.45, decay_ratio * 0.6)
+            punch_duration = min(sub_duration * punch_ratio, beat_interval * punch_ratio)
+            hold_point     = min(0.18, 25.0 / max(1.0, punch_duration))
+
+            output.append(
+                create_glyph_event(
+                    track     = glyph_data["track"],
+                    start     = current_time,
+                    duration  = punch_duration,
+                    segments  = glyph_data["active_segments"],
+                    keyframes = [
+                        (0.0, current_brightness),
+                        (hold_point, current_brightness),
+                        (0.45, int(current_brightness * 0.15)),
+                        (1.0, 0)
+                    ],
+                    easing    = "linear"
+                )
+            )
+
+        elif mode == "Dispersion":
+            for index, segment_index in enumerate(target_segments):
+                distance_ratio   = abs(index - center_position) / max_distance
+                segment_duration = max(15.0, sub_duration * decay_ratio * (0.25 + 0.75 * distance_ratio))
+                hold_ratio       = max(0.08, 0.35 * distance_ratio)
+
+                output.append(
+                    create_glyph_event(
+                        track     = glyph_data["track"],
+                        start     = current_time,
+                        duration  = segment_duration,
+                        segments  = [segment_index],
+                        keyframes = [
+                            (0.0, current_brightness),
+                            (hold_ratio, current_brightness),
+                            (1.0, 0)
+                        ],
+                        easing    = "linear"
+                    )
+                )
+
+        elif mode == "Pumping":
+            active_duration = min(sub_duration * decay_ratio, beat_interval * decay_ratio)
+            active_start    = current_time + (sub_duration - active_duration)
+
+            output.append(
+                create_glyph_event(
+                    track     = glyph_data["track"],
+                    start     = active_start,
+                    duration  = active_duration,
+                    segments  = glyph_data["active_segments"],
+                    keyframes = [
+                        (0.0, 0),
+                        (0.6, int(current_brightness * 0.25)),
+                        (1.0, current_brightness)
+                    ],
+                    easing    = "linear"
+                )
+            )
+
+        elif mode == "Heartbeat":
+            first_pulse_duration  = min(sub_duration * 0.35 * decay_ratio, beat_interval * 0.35 * decay_ratio)
+            second_pulse_duration = min(sub_duration * 0.45 * decay_ratio, beat_interval * 0.45 * decay_ratio)
+            second_pulse_start    = current_time + sub_duration * 0.4
+
+            output.append(
+                create_glyph_event(
+                    track     = glyph_data["track"],
+                    start     = current_time,
+                    duration  = first_pulse_duration,
+                    segments  = glyph_data["active_segments"],
+                    keyframes = [(0.0, int(current_brightness * 0.6)), (1.0, 0)],
+                    easing    = "linear"
+                )
+            )
+
+            if second_pulse_start < glyph_data["end"]:
+                output.append(
+                    create_glyph_event(
+                        track     = glyph_data["track"],
+                        start     = second_pulse_start,
+                        duration  = min(second_pulse_duration, glyph_data["end"] - second_pulse_start),
+                        segments  = glyph_data["active_segments"],
+                        keyframes = [(0.0, current_brightness), (1.0, 0)],
+                        easing    = "linear"
+                    )
+                )
+
+        current_time += beat_interval
 
     return output
 
 def sparkle_effect(
         glyph:      dict,
-        model:      str,
-        bpm:        int,
-        multiplier: int,
+        model:      str | None,
+        bpm:        int | float,
+        multiplier: int | float,
+        density:    int = 1,
         fade_out:   bool = True
-    ) -> list:
-    
-    frequency = bpm * multiplier / 60
-    data      = extract_glyph_data(glyph, model)
-    interval  = 1000.0 / frequency
-    time      = data["start"]
-    output    = []
+    ) -> list[dict]:
 
-    while time < data["end"] - 1e-9:
-        time_next = min(time + interval, data["end"])
-        
-        if data["active_segments"]:
-            selected_segment = random.choice(data["active_segments"])
-        else:
-            selected_segment = random.randint(0, data["total_segments"] - 1)
-        
-        element = {
-            "start":    time,
-            "duration": time_next - time,
-            "track":    data["track"],
-            "segments": [selected_segment]
-        }
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
 
-        if fade_out:
-            element["keyframes"] = [(0.0, data["brightness"]), (1.0, 0)]
-            element["easing"]    = "linear"
-        
-        else:
-            element["brightness"] = data["brightness"]
-        
-        output.append(element)
-        time = time_next
+    if not target_segments or bpm <= 0 or multiplier <= 0 or glyph_data["duration"] <= 0:
+        return []
+
+    frequency        = (bpm * multiplier) / 60.0
+    interval         = 1000.0 / frequency
+    current_time     = glyph_data["start"]
+    sample_count     = max(1, min(density, len(target_segments)))
+    keyframes_value  = [(0.0, glyph_data["brightness"]), (1.0, 0)] if fade_out else None
+    brightness_value = None if fade_out else glyph_data["brightness"]
+    easing_value     = "linear" if fade_out else None
+    output           = []
+
+    while current_time < glyph_data["end"] - 1e-9:
+        next_time     = min(current_time + interval, glyph_data["end"])
+        step_duration = next_time - current_time
+        chosen_points = random.sample(target_segments, sample_count)
+
+        output.append(
+            create_glyph_event(
+                track      = glyph_data["track"],
+                start      = current_time,
+                duration   = step_duration,
+                segments   = sorted(chosen_points),
+                brightness = brightness_value,
+                keyframes  = keyframes_value,
+                easing     = easing_value
+            )
+        )
+
+        current_time = next_time
 
     return output
 
-# Segment - based Effects
+# Segment Effects
 
 def sidebeat_effect(
         glyph: dict,
-        model: str,
-        bpm:   int,
+        model: str | None,
+        bpm:   int | float,
         part:  str
-    ) -> list:
-    
-    data                  = extract_glyph_data(glyph, model)
-    segment_list          = list(range(1, data["total_segments"] + 1))
-    segments_in_one_part  = data["total_segments"] // 3
-    time_per_segment      = data["duration"] / segments_in_one_part / 2
+    ) -> list[dict]:
 
-    left_part  = segment_list[0:segments_in_one_part]
-    right_part = segment_list[-segments_in_one_part:]
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+    total_count     = len(target_segments)
+
+    if total_count == 0 or glyph_data["duration"] <= 0:
+        return []
+
+    if total_count < 3:
+        return [
+            create_glyph_event(
+                track      = glyph_data["track"],
+                start      = glyph_data["start"],
+                duration   = glyph_data["duration"],
+                segments   = target_segments,
+                brightness = 100
+            )
+        ]
+
+    segments_in_one_part = max(1, total_count // 3)
+    time_per_segment     = glyph_data["duration"] / segments_in_one_part / 2.0
+
+    left_part  = target_segments[:segments_in_one_part]
+    right_part = list(reversed(target_segments[-segments_in_one_part:]))
 
     part_modes = {
-        "left":  ([left_part], 1),
-        "right": ([right_part], data["total_segments"]),
-        "both":  ([left_part, right_part], [1, data["total_segments"]])
+        "left":  [left_part],
+        "right": [right_part],
+        "both":  [left_part, right_part]
     }
 
-    segments_to_animate, current_segments = part_modes[part]
-    
-    if not isinstance(current_segments, list):
-        current_segments = [current_segments] * len(segments_to_animate)
+    segments_groups = part_modes.get(part, [left_part, right_part])
+    output          = []
 
-    output = []
+    for part_segments in segments_groups:
+        for segment_step_index, segment_index in enumerate(part_segments):
+            shrink_offset    = time_per_segment * segment_step_index
+            segment_start    = glyph_data["start"] + shrink_offset
+            segment_duration = glyph_data["duration"] - 2 * shrink_offset
 
-    for part_segments, base_segment in zip(segments_to_animate, current_segments):
-        direction = 1 if base_segment == 1 else -1
-    
-        for i, _ in enumerate(part_segments):
-            shrink = time_per_segment * i
-    
+            if segment_duration <= 0:
+                continue
+
             output.append(
-                {
-                    "start":      data["start"] + shrink,
-                    "duration":   (data["end"] - data["start"]) - 2 * shrink,
-                    "track":      data["track"],
-                    "segments":   [(base_segment + i * direction) - 1],
-                    "brightness": 100
-                }
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = segment_start,
+                    duration   = segment_duration,
+                    segments   = [segment_index],
+                    brightness = 100
+                )
             )
-    
+
     return output
 
 def fill_effect(
-        glyph: dict,
-        model: str,
-        bpm:   int,
-        side:  int = 1
-    ) -> list:
-    
-    data          = extract_glyph_data(glyph, model)
-    segment_step  = data["duration"] / data["total_segments"]
-    indices       = list(range(data["total_segments"]))[:: (1 if side == 1 else -1)]
-    events        = []
+        glyph:  dict,
+        model:  str | None,
+        bpm:    int | float,
+        side:   int = 1,
+        invert: bool = False
+    ) -> list[dict]:
 
-    for output_index, i in enumerate(indices):
-        start    = data["start"] + output_index * segment_step
-        duration = data["end"] - start
-        
-        events.append(
-            {
-                "start":     start,
-                "duration":  duration,
-                "track":     data["track"],
-                "segments":  [i],
-                "keyframes": [(0.0, 0), (1.0, data["brightness"])],
-                "easing":    "linear"
-            }
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+
+    if not target_segments or glyph_data["duration"] <= 0:
+        return []
+
+    if side == 1:
+        ordered_segments = target_segments
+
+    else:
+        ordered_segments = list(reversed(target_segments))
+
+    segment_step = glyph_data["duration"] / len(ordered_segments)
+    output       = []
+
+    if invert:
+        keyframes_value = [(0.0, glyph_data["brightness"]), (1.0, 0)]
+
+    else:
+        keyframes_value = [(0.0, 0), (1.0, glyph_data["brightness"])]
+
+    for step_index, segment_index in enumerate(ordered_segments):
+        step_start    = glyph_data["start"] + step_index * segment_step
+        step_duration = glyph_data["end"] - step_start
+
+        output.append(
+            create_glyph_event(
+                track     = glyph_data["track"],
+                start     = step_start,
+                duration  = step_duration,
+                segments  = [segment_index],
+                keyframes = keyframes_value,
+                easing    = "linear"
+            )
         )
-    
-    return events
+
+    return output
 
 def random_fill_effect(
         glyph:    dict,
-        model:    str,
-        bpm:      int,
-        bpm_snap: bool = False,
-        mode:     str  = "Fill"
-    ) -> list:
-    
-    data = extract_glyph_data(glyph, model)
-    
-    if not data["total_segments"]:
+        model:    str | None,
+        bpm:      int | float,
+        bpm_snap: int | float | bool = False,
+        mode:     str = "Fill"
+    ) -> list[dict]:
+
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+
+    if not target_segments or glyph_data["duration"] <= 0:
         return []
 
-    if data["active_segments"]:
-        indices = data["active_segments"]
-    
-    else:
-        indices = list(range(data["total_segments"]))
-    
-    random.shuffle(indices)
+    shuffled_segments = list(target_segments)
+    random.shuffle(shuffled_segments)
 
     if bpm_snap:
-        step_duration = 60000.0 / (bpm * bpm_snap)
-    
+        step_duration = 60000.0 / (bpm * float(bpm_snap))
+
     else:
-        step_duration = data["duration"] / data["total_segments"]
+        step_duration = glyph_data["duration"] / len(shuffled_segments)
 
     output = []
 
-    for i, segment_index in enumerate(indices):
-        segment_start = data["start"] + i * step_duration
-        
-        if segment_start >= data["end"]:
+    for step_index, segment_index in enumerate(shuffled_segments):
+        step_start = glyph_data["start"] + step_index * step_duration
+
+        if step_start >= glyph_data["end"]:
             break
-        
-        segment_duration = data["end"] - segment_start
 
         if mode == "Fill":
-            output.append(
-                {
-                    "start":      segment_start,
-                    "duration":   segment_duration,
-                    "track":      data["track"],
-                    "segments":   [segment_index],
-                    "brightness": data["brightness"]
-                }
-            )
-        
+            start_time          = step_start
+            calculated_duration = glyph_data["end"] - step_start
+
         else:
-            output.append(
-                {
-                    "start":      data["start"],
-                    "duration":   segment_start - data["start"],
-                    "track":      data["track"],
-                    "segments":   [segment_index],
-                    "brightness": data["brightness"]
-                }
+            start_time          = glyph_data["start"]
+            calculated_duration = step_start - glyph_data["start"]
+
+        if calculated_duration <= 0:
+            continue
+
+        output.append(
+            create_glyph_event(
+                track      = glyph_data["track"],
+                start      = start_time,
+                duration   = calculated_duration,
+                segments   = [segment_index],
+                brightness = glyph_data["brightness"]
             )
+        )
 
     return output
 
 # Pattern Effects
 
 def glitch_effect(
-        glyph:          dict,
-        model:          str,
-        bpm:            int,
-        fps:            float = 20.0,
-        duty_cycle:     float = 0.7,
-        min_brightness_ratio:   float = 0.3,
-        bpm_snap:       bool  = False,
-        enable_fade_out: bool = False
-    ) -> list:
-    
+        glyph:                dict,
+        model:                str | None,
+        bpm:                  int | float,
+        fps:                  float = 20.0,
+        duty_cycle:           float = 0.7,
+        min_brightness_ratio: float = 0.3,
+        cluster_mode:         str = "Scattered",
+        bpm_snap:             int | float | bool = False,
+        enable_fade_out:      bool = False
+    ) -> list[dict]:
+
     if bpm_snap:
-        fps = (bpm / 60) * bpm_snap
-    
-    min_brightness_ratio      /= 100
+        fps = (bpm / 60) * float(bpm_snap)
 
-    data               = extract_glyph_data(glyph, model)
-    frame              = 1000.0 / fps
-    time               = data["start"]
-    
-    min_brightness     = max(5, int(data["brightness"] * min_brightness_ratio))
-    available_segments = glyph.get("segments", list(range(data["total_segments"])))
-    count              = int(len(available_segments) * duty_cycle)
-    output             = []
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+    segment_count   = len(target_segments)
 
-    while time < data["end"] - 1e-9:
-        time_start = time
-        time_end   = min(time + frame, data["end"])
-        chosen     = random.sample(available_segments, count)
-        
-        if min_brightness >= data["brightness"]:
-            brightness = data["brightness"]
-        
+    if segment_count == 0 or fps <= 0 or glyph_data["duration"] <= 0:
+        return []
+
+    ratio_multiplier = min_brightness_ratio / 100.0
+    frame_duration   = 1000.0 / fps
+    current_time     = glyph_data["start"]
+    min_brightness   = max(5, int(glyph_data["brightness"] * ratio_multiplier))
+    count_to_sample  = max(1, min(segment_count, int(segment_count * duty_cycle)))
+    output           = []
+
+    while current_time < glyph_data["end"] - 1e-9:
+        next_time     = min(current_time + frame_duration, glyph_data["end"])
+        step_duration = next_time - current_time
+
+        if cluster_mode == "Clustered":
+            cluster_start = random.randint(0, max(0, segment_count - count_to_sample))
+            chosen        = target_segments[cluster_start:cluster_start + count_to_sample]
+
         else:
-            brightness = random.randint(min_brightness, data["brightness"])
+            chosen = random.sample(target_segments, count_to_sample)
 
-        item = {
-            "start":    time_start,
-            "duration": time_end - time_start,
-            "track":    data["track"],
-            "segments": list(set(chosen))
-        }
+        if min_brightness >= glyph_data["brightness"]:
+            current_brightness = glyph_data["brightness"]
 
-        if enable_fade_out:
-            item["keyframes"] = [(0.0, brightness), (1.0, 0)]
-            item["easing"]    = "linear"
-        
         else:
-            item["brightness"] = brightness
+            current_brightness = random.randint(min_brightness, glyph_data["brightness"])
 
-        output.append(item)
-        time = time_end
+        keyframes_value  = [(0.0, current_brightness), (1.0, 0)] if enable_fade_out else None
+        brightness_value = None if enable_fade_out else current_brightness
+        easing_value     = "linear" if enable_fade_out else None
+
+        output.append(
+            create_glyph_event(
+                track      = glyph_data["track"],
+                start      = current_time,
+                duration   = step_duration,
+                segments   = sorted(list(set(chosen))),
+                brightness = brightness_value,
+                keyframes  = keyframes_value,
+                easing     = easing_value
+            )
+        )
+
+        current_time = next_time
 
     return output
 
 def ripple_effect(
-        glyph:            dict,
-        model:            str,
-        bpm:              int,
-        tail:             int  = 4
-    ) -> list:
-    
-    data = extract_glyph_data(glyph, model)
-    
-    if data["total_segments"] is None or data["total_segments"] <= 0 or (data["end"] - data["start"]) <= 0:
+        glyph:         dict,
+        model:         str | None,
+        bpm:           int | float,
+        tail:          int = 4,
+        center_offset: int | float = 50.0
+    ) -> list[dict]:
+
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+    segment_count   = len(target_segments)
+
+    if segment_count == 0 or glyph_data["duration"] <= 0:
         return []
 
-    center_indices = []
-    
-    if data["total_segments"] % 2 == 1:
-        center_indices.append(data["total_segments"] // 2)
-    
-    else:
-        center_indices.append(data["total_segments"] // 2 - 1)
-        center_indices.append(data["total_segments"] // 2)
+    offset_ratio    = max(0.0, min(100.0, float(center_offset))) / 100.0
+    center_position = int(round(offset_ratio * (segment_count - 1)))
+    center_indices  = [center_position]
 
-    actual_duration   = data["end"] - data["start"]
-    max_radius_glyph  = max(center_indices[-1], data["total_segments"] - 1 - center_indices[0])
-    max_total_radius  = max_radius_glyph + tail
+    actual_duration  = glyph_data["duration"]
+    max_radius_glyph = max(center_position, (segment_count - 1) - center_position)
+    max_total_radius = max_radius_glyph + tail
 
     if max_radius_glyph <= 0:
         full_duration = actual_duration
-    
+
     else:
         full_duration = (max_total_radius / max_radius_glyph) * actual_duration
 
@@ -522,312 +704,376 @@ def ripple_effect(
     if full_duration <= 1e-12:
         return []
 
-    frame    = 20
-    time     = data["start"]
-    output   = []
-    end_time = data["start"] + full_duration
+    frame_duration = 20.0
+    current_time   = glyph_data["start"]
+    end_time       = glyph_data["start"] + full_duration
+    output         = []
 
-    while time < end_time - 1e-9:
-        time_next = min(time + frame, end_time)
-        elapsed   = time - data["start"]
-        progress  = elapsed / full_duration
-        radius    = int(progress * max_total_radius)
+    while current_time < end_time - 1e-9:
+        next_time     = min(current_time + frame_duration, end_time)
+        step_interval = next_time - current_time
+        elapsed_time  = current_time - glyph_data["start"]
+        progress      = elapsed_time / full_duration
+        radius        = int(progress * max_total_radius)
 
-        for r in range(max(0, radius - tail), radius):
-            distance       = radius - r
+        for offset in range(max(0, radius - tail), radius):
+            distance       = radius - offset
             decay          = 1.0 - (distance / max(1, tail))
-            brightness_now = max(0, int(data["brightness"] * decay))
-            left           = center_indices[0] - r
-            right          = center_indices[-1] + r
-            indices        = []
-            
-            if 0 <= left < data["total_segments"]:
-                indices.append(left)
-            
-            if 0 <= right < data["total_segments"] and right != left:
-                indices.append(right)
+            decayed_bright = max(0, int(glyph_data["brightness"] * decay))
+            left_index     = center_indices[0] - offset
+            right_index    = center_indices[-1] + offset
+            tail_segments  = []
 
-            for i in indices:
+            if 0 <= left_index < segment_count:
+                tail_segments.append(target_segments[left_index])
+
+            if 0 <= right_index < segment_count and right_index != left_index:
+                tail_segments.append(target_segments[right_index])
+
+            for segment_item in tail_segments:
                 output.append(
-                    {
-                        "start":      time,
-                        "duration":   time_next - time,
-                        "track":      data["track"],
-                        "segments":   [i],
-                        "brightness": brightness_now
-                    }
+                    create_glyph_event(
+                        track      = glyph_data["track"],
+                        start      = current_time,
+                        duration   = step_interval,
+                        segments   = [segment_item],
+                        brightness = decayed_bright
+                    )
                 )
 
         head_segments = []
-        left          = center_indices[0] - radius
-        right         = center_indices[-1] + radius
+        left_head     = center_indices[0] - radius
+        right_head    = center_indices[-1] + radius
 
-        if 0 <= left < data["total_segments"]:
-            head_segments.append(left)
-        
-        if 0 <= right < data["total_segments"] and right != left:
-            head_segments.append(right)
+        if 0 <= left_head < segment_count:
+            head_segments.append(target_segments[left_head])
+
+        if 0 <= right_head < segment_count and right_head != left_head:
+            head_segments.append(target_segments[right_head])
 
         if head_segments:
             output.append(
-                {
-                    "start":      time,
-                    "duration":   time_next - time,
-                    "track":      data["track"],
-                    "segments":   head_segments,
-                    "brightness": data["brightness"]
-                }
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time,
+                    duration   = step_interval,
+                    segments   = head_segments,
+                    brightness = glyph_data["brightness"]
+                )
             )
 
-        time = time_next
+        current_time = next_time
 
     return output
 
-
 def chase_effect(
         glyph:     dict,
-        model:     str,
-        bpm:       int,
-        width:     int = 3,
-        direction: int = 1,
-        gap:       int = 0
-    ) -> list:
-    
-    data = extract_glyph_data(glyph, model)
-    
-    if not data["total_segments"]:
+        model:     str | None,
+        bpm:       int | float,
+        width:     int  = 3,
+        direction: int  = 1,
+        gap:       int  = 0,
+        tail_fade: bool = False,
+        invert:    bool = False
+    ) -> list[dict]:
+
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+    segment_count   = len(target_segments)
+
+    if segment_count == 0 or glyph_data["duration"] <= 0:
         return []
 
-    width           = max(1, width)
-    gap             = max(0, gap)
-    effective_width = width + (width - 1) * gap
-    total_steps     = data["total_segments"] + effective_width - 1
-    
+    width_clamped   = max(1, width)
+    gap_clamped     = max(0, gap)
+    effective_width = width_clamped + (width_clamped - 1) * gap_clamped
+    total_steps     = segment_count + effective_width - 1
+
     if total_steps <= 0:
         return []
-    
-    step_time = data["duration"] / total_steps
-    output    = []
-    time      = data["start"]
 
-    for step in range(total_steps):
-        segments_to_light = []
-        
-        for i in range(width):
-            offset = i * (1 + gap)
-            
+    step_time    = glyph_data["duration"] / total_steps
+    current_time = glyph_data["start"]
+    output       = []
+
+    for step_index in range(total_steps):
+        segments_ordered = []
+
+        for width_index in range(width_clamped):
+            offset = width_index * (1 + gap_clamped)
+
             if direction == 1:
-                index = step - offset
-            
-            else:
-                index = (data["total_segments"] - 1) - (step - offset)
-            
-            if 0 <= index < data["total_segments"]:
-                segments_to_light.append(index)
+                target_index = step_index - offset
 
-        if segments_to_light:
+            else:
+                target_index = (segment_count - 1) - (step_index - offset)
+
+            if 0 <= target_index < segment_count:
+                segments_ordered.append((target_segments[target_index], width_index))
+
+        if not segments_ordered:
+            current_time += step_time
+            continue
+
+        active_indices = [segment_index for segment_index, _ in segments_ordered]
+
+        if invert:
+            inverted_set = [seg for seg in target_segments if seg not in active_indices]
+
+            if inverted_set:
+                output.append(
+                    create_glyph_event(
+                        track      = glyph_data["track"],
+                        start      = current_time,
+                        duration   = step_time,
+                        segments   = sorted(inverted_set),
+                        brightness = glyph_data["brightness"]
+                    )
+                )
+
+        elif tail_fade:
+            for segment_index, width_index in segments_ordered:
+                decay_factor = 1.0 - (width_index / width_clamped) * 0.85
+                segment_brightness = max(5, int(glyph_data["brightness"] * decay_factor))
+
+                output.append(
+                    create_glyph_event(
+                        track      = glyph_data["track"],
+                        start      = current_time,
+                        duration   = step_time,
+                        segments   = [segment_index],
+                        brightness = segment_brightness
+                    )
+                )
+
+        else:
             output.append(
-                {
-                    "start":      time,
-                    "duration":   step_time,
-                    "track":      data["track"],
-                    "segments":   sorted(list(set(segments_to_light))),
-                    "brightness": data["brightness"]
-                }
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time,
+                    duration   = step_time,
+                    segments   = sorted(list(set(active_indices))),
+                    brightness = glyph_data["brightness"]
+                )
             )
 
-        time += step_time
-        
-        if time > data["end"]:
+        current_time += step_time
+        if current_time > glyph_data["end"]:
             break
 
     return output
 
 def zebra_effect(
         glyph:     dict,
-        model:     str,
-        bpm:       int,
-        fps:       int  = 1,
-        on_count:  int  = 1,
-        off_count: int  = 1,
-        side:      int  = 1,
-        bpm_snap:  bool = False
-    ) -> list:
-    
-    data = extract_glyph_data(glyph, model)
-    
+        model:     str | None,
+        bpm:       int | float,
+        fps:       int | float = 1,
+        on_count:  int = 1,
+        off_count: int = 1,
+        side:      int = 1,
+        bpm_snap:  int | float | bool = False
+    ) -> list[dict]:
+
     if bpm_snap:
-        fps = (bpm / 60) * bpm_snap
+        fps = (bpm / 60) * float(bpm_snap)
 
-    step_duration = 1000.0 / fps
-    total_steps   = max(1, int(data["duration"] / step_duration))
-    pattern_len   = on_count + off_count
-    output        = []
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
 
-    for step in range(total_steps):
-        time_start = data["start"] + step * step_duration
-        time_end   = min(time_start + step_duration, data["start"] + data["duration"])
+    if not target_segments or fps <= 0 or glyph_data["duration"] <= 0:
+        return []
 
-        for i in range(data["total_segments"]):
-            shifted_index = (i - step * side) % pattern_len
-            
-            if shifted_index < on_count:
-                output.append(
-                    {
-                        "start":      time_start,
-                        "duration":   time_end - time_start,
-                        "track":      data["track"],
-                        "segments":   [i],
-                        "brightness": data["brightness"]
-                    }
+    step_duration  = 1000.0 / fps
+    total_steps    = max(1, int(glyph_data["duration"] / step_duration))
+    pattern_length = on_count + off_count
+    output         = []
+
+    for step_index in range(total_steps):
+        time_start    = glyph_data["start"] + step_index * step_duration
+        time_end      = min(time_start + step_duration, glyph_data["end"])
+        step_interval = time_end - time_start
+
+        if step_interval <= 0:
+            continue
+
+        lit_segments = []
+
+        for index, segment_index in enumerate(target_segments):
+            shifted_index = (index - step_index * side) % pattern_length
+            is_lit        = shifted_index < on_count
+
+            if is_lit:
+                lit_segments.append(segment_index)
+
+        if lit_segments:
+            output.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = time_start,
+                    duration   = step_interval,
+                    segments   = lit_segments,
+                    brightness = glyph_data["brightness"]
                 )
+            )
 
     return output
-
 
 def shocker_effect(
         glyph:     dict,
-        model:     str,
-        bpm:       int,
+        model:     str | None,
+        bpm:       int | float,
         frequency: float = 5.0,
-        fade_out:  bool  = True,
-        bpm_snap:  bool  = False
-    ) -> list:
-    
+        fade_out:  bool = True,
+        bpm_snap:  int | float | bool = False
+    ) -> list[dict]:
+
     if bpm_snap:
-        frequency = (bpm / 60) * bpm_snap
+        frequency = (bpm / 60) * float(bpm_snap)
 
-    data     = extract_glyph_data(glyph, model)
-    interval = 1000.0 / frequency
-    time     = data["start"]
-    output   = []
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
 
-    even_indices = [i + 1 for i in range(data["total_segments"]) if (i + 1) % 2 == 0]
-    odd_indices  = [i + 1 for i in range(data["total_segments"]) if (i + 1) % 2 == 1]
+    if not target_segments or frequency <= 0 or glyph_data["duration"] <= 0:
+        return []
 
-    while time < data["end"]:
-        time_half = min(time + interval / 2, data["end"])
-        time_next = min(time + interval, data["end"])
+    interval     = 1000.0 / frequency
+    current_time = glyph_data["start"]
+    output       = []
 
-        for i in even_indices:
-            element = {
-                "start":    time,
-                "duration": time_half - time,
-                "track":    data["track"],
-                "segments": [i - 1]
-            }
-            
-            if fade_out:
-                element["keyframes"] = [(0.0, data["brightness"]), (1.0, 0)]
-                element["easing"]    = "linear"
-            
-            else:
-                element["brightness"] = data["brightness"]
-            
-            output.append(element)
+    even_segments = [segment for index, segment in enumerate(target_segments) if index % 2 == 0]
+    odd_segments  = [segment for index, segment in enumerate(target_segments) if index % 2 == 1]
 
-        for i in odd_indices:
-            element = {
-                "start":    time_half,
-                "duration": time_next - time_half,
-                "track":    data["track"],
-                "segments": [i - 1]
-            }
-            
-            if fade_out:
-                element["keyframes"] = [(0.0, data["brightness"]), (1.0, 0)]
-                element["easing"]    = "linear"
-            
-            else:
-                element["brightness"] = data["brightness"]
-            
-            output.append(element)
+    if not odd_segments:
+        odd_segments = even_segments
 
-        time = time_next
+    while current_time < glyph_data["end"]:
+        time_half     = min(current_time + interval / 2.0, glyph_data["end"])
+        time_next     = min(current_time + interval, glyph_data["end"])
+        first_period  = time_half - current_time
+        second_period = time_next - time_half
+
+        keyframes_value  = [(0.0, glyph_data["brightness"]), (1.0, 0)] if fade_out else None
+        brightness_value = None if fade_out else glyph_data["brightness"]
+        easing_value     = "linear" if fade_out else None
+
+        if first_period > 0 and even_segments:
+            output.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time,
+                    duration   = first_period,
+                    segments   = even_segments,
+                    brightness = brightness_value,
+                    keyframes  = keyframes_value,
+                    easing     = easing_value
+                )
+            )
+
+        if second_period > 0 and odd_segments:
+            output.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = time_half,
+                    duration   = second_period,
+                    segments   = odd_segments,
+                    brightness = brightness_value,
+                    keyframes  = keyframes_value,
+                    easing     = easing_value
+                )
+            )
+
+        current_time = time_next
 
     return output
 
-# Advanced motion effects
+# Motion Effects
 
 def calculate_tail_brightness(
         head_brightness: int,
         tail_position:   int,
         tail_length:     int
     ) -> int:
-    
+
     if tail_position == 0 or tail_length <= 1:
         return head_brightness
 
     min_brightness = max(5, int(head_brightness * 0.05))
     span           = head_brightness - min_brightness
+    decay_factor   = tail_position / (tail_length - 1)
 
-    return max(min_brightness, int(head_brightness - span * (tail_position / (tail_length - 1))))
+    return max(min_brightness, int(head_brightness - span * decay_factor))
 
 def boomerang_effect(
         glyph: dict,
-        model: str,
-        bpm:   int,
+        model: str | None,
+        bpm:   int | float,
         jumps: int
-    ) -> list:
-    
-    data          = extract_glyph_data(glyph, model)
-    jumps        += 2
-    growth_range  = data["total_segments"] - 1
-    steps_to_grow = jumps - 1 if jumps > 1 else 1
+    ) -> list[dict]:
+
+    glyph_data      = extract_glyph_data(glyph, model)
+    target_segments = resolve_target_segments(glyph_data)
+    segment_count   = len(target_segments)
+
+    if segment_count == 0 or glyph_data["duration"] <= 0:
+        return []
+
+    actual_jumps  = jumps + 2
+    growth_range  = segment_count - 1
+    steps_to_grow = max(1, actual_jumps - 1)
     tail_step     = max(1, round(growth_range / steps_to_grow))
 
     output       = []
     tail_length  = 1
     direction    = -1
-    virtual_head = data["total_segments"]
-    time         = data["start"]
+    virtual_head = segment_count - 1
+    current_time = glyph_data["start"]
 
-    def get_step(current_tail: int) -> float:
-        return data["duration"] / (jumps * (data["total_segments"] + current_tail))
-
-    while time < data["end"] - 1e-9:
-        step      = get_step(tail_length)
-        time_next = time + step
+    while current_time < glyph_data["end"] - 1e-9:
+        step_time = glyph_data["duration"] / (actual_jumps * (segment_count + tail_length))
+        next_time = current_time + step_time
 
         segments_to_light = [
-            (virtual_head + i if direction == -1 else virtual_head - i, i)
-            for i in range(tail_length)
+            (virtual_head + position if direction == -1 else virtual_head - position, position)
+            for position in range(tail_length)
         ]
 
-        for segment_index, tail_position in segments_to_light:
-            if 1 <= segment_index <= data["total_segments"]:
-                brightness = calculate_tail_brightness(data["brightness"], tail_position, tail_length)
-                
+        for segment_position, tail_position in segments_to_light:
+            if 0 <= segment_position < segment_count:
+                calculated_brightness = calculate_tail_brightness(
+                    glyph_data["brightness"],
+                    tail_position,
+                    tail_length
+                )
+
                 output.append(
-                    {
-                        "start":      time,
-                        "duration":   step,
-                        "track":      data["track"],
-                        "segments":   [segment_index - 1],
-                        "brightness": brightness
-                    }
+                    create_glyph_event(
+                        track      = glyph_data["track"],
+                        start      = current_time,
+                        duration   = step_time,
+                        segments   = [target_segments[segment_position]],
+                        brightness = calculated_brightness
+                    )
                 )
 
         virtual_head += direction
 
-        if (
-            (direction == -1 and virtual_head + tail_length - 1 < 1) or
-            (direction == 1 and virtual_head - tail_length + 1 > data["total_segments"])
-        ):
-            
-            remaining = (data["end"] - time_next)
-            new_step  = step * (data["total_segments"] + tail_length + tail_step)
-            
-            if remaining > new_step:
-                tail_length  = min(tail_length + tail_step, data["total_segments"])
-                direction   *= -1
-                virtual_head = data["total_segments"] if direction == -1 else 1
+        is_left_turn  = direction == -1 and (virtual_head + tail_length - 1 < 0)
+        is_right_turn = direction == 1 and (virtual_head - tail_length + 1 >= segment_count)
 
-        time = time_next
+        if is_left_turn or is_right_turn:
+            remaining_time = glyph_data["end"] - next_time
+            estimated_step = step_time * (segment_count + tail_length + tail_step)
+
+            if remaining_time > estimated_step:
+                tail_length  = min(tail_length + tail_step, segment_count)
+                direction   *= -1
+                virtual_head = (segment_count - 1) if direction == -1 else 0
+
+        current_time = next_time
 
     return output
 
-# Configuration & Utilities
+# Configuration And Utilities
 
 EffectsConfig = {
     "None": {
@@ -870,7 +1116,7 @@ EffectsConfig = {
 
     "Fill": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              fill_effect,
         "settings": [
             {
@@ -879,6 +1125,12 @@ EffectsConfig = {
                 "key":     "side",
                 "map":     {"To the left": -1, "To the right": 1},
                 "default": "To the left"
+            },
+            {
+                "type":    "checkbox",
+                "title":   "Invert (Dark Fill)",
+                "key":     "invert",
+                "default": False
             }
         ]
     },
@@ -900,11 +1152,11 @@ EffectsConfig = {
                 "title":   "Snap to BPM",
                 "key":     "bpm_snap",
                 "map": {
-                    "Disabled":  False,
-                    "BPM x0.5":  0.5,
-                    "BPM x1":    1,
-                    "BPM x2":    2,
-                    "BPM x4":    4
+                    "Disabled": False,
+                    "BPM x0.5": 0.5,
+                    "BPM x1":   1,
+                    "BPM x2":   2,
+                    "BPM x4":   4
                 },
                 "default": "Disabled"
             }
@@ -913,7 +1165,7 @@ EffectsConfig = {
 
     "Zebra": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              zebra_effect,
         "settings": [
             {
@@ -921,11 +1173,11 @@ EffectsConfig = {
                 "title":   "Snap to BPM",
                 "key":     "bpm_snap",
                 "map": {
-                    "Disabled":  False,
-                    "BPM x0.5":  0.5,
-                    "BPM x1":    1,
-                    "BPM x2":    2,
-                    "BPM x4":    4
+                    "Disabled": False,
+                    "BPM x0.5": 0.5,
+                    "BPM x1":   1,
+                    "BPM x2":   2,
+                    "BPM x4":   4
                 },
                 "default": "Disabled"
             },
@@ -984,6 +1236,15 @@ EffectsConfig = {
                 "default": "BPM x1"
             },
             {
+                "type":    "slider",
+                "title":   "Density",
+                "key":     "density",
+                "min":     1,
+                "max":     5,
+                "offset":  1,
+                "default": 1
+            },
+            {
                 "type":    "checkbox",
                 "title":   "Enable fade out",
                 "key":     "fade_out",
@@ -1002,11 +1263,11 @@ EffectsConfig = {
                 "title":   "Snap to BPM",
                 "key":     "bpm_snap",
                 "map": {
-                    "Disabled":  False,
-                    "BPM x0.5":  0.5,
-                    "BPM x1":    1,
-                    "BPM x2":    2,
-                    "BPM x4":    4
+                    "Disabled": False,
+                    "BPM x0.5": 0.5,
+                    "BPM x1":   1,
+                    "BPM x2":   2,
+                    "BPM x4":   4
                 },
                 "default": "Disabled"
             },
@@ -1017,6 +1278,15 @@ EffectsConfig = {
                 "min":     1,
                 "max":     20,
                 "default": 5
+            },
+            {
+                "type":    "slider",
+                "title":   "Duty Cycle (%)",
+                "key":     "duty_cycle",
+                "min":     5,
+                "max":     95,
+                "offset":  5,
+                "default": 50
             },
             {
                 "type":    "slider",
@@ -1039,7 +1309,7 @@ EffectsConfig = {
 
     "Shocker": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              shocker_effect,
         "settings": [
             {
@@ -1047,11 +1317,11 @@ EffectsConfig = {
                 "title":   "Snap to BPM",
                 "key":     "bpm_snap",
                 "map": {
-                    "Disabled":  False,
-                    "BPM x0.5":  0.5,
-                    "BPM x1":    1,
-                    "BPM x2":    2,
-                    "BPM x4":    4
+                    "Disabled": False,
+                    "BPM x0.5": 0.5,
+                    "BPM x1":   1,
+                    "BPM x2":   2,
+                    "BPM x4":   4
                 },
                 "default": "Disabled"
             },
@@ -1082,13 +1352,23 @@ EffectsConfig = {
                 "title":   "Snap to BPM",
                 "key":     "bpm_snap",
                 "map": {
-                    "Disabled":  False,
-                    "BPM x0.5":  0.5,
-                    "BPM x1":    1,
-                    "BPM x2":    2,
-                    "BPM x4":    4
+                    "Disabled": False,
+                    "BPM x0.5": 0.5,
+                    "BPM x1":   1,
+                    "BPM x2":   2,
+                    "BPM x4":   4
                 },
                 "default": "Disabled"
+            },
+            {
+                "type":    "selector",
+                "title":   "Cluster Mode",
+                "key":     "cluster_mode",
+                "map": {
+                    "Scattered": "Scattered",
+                    "Clustered": "Clustered"
+                },
+                "default": "Scattered"
             },
             {
                 "type":    "slider",
@@ -1129,7 +1409,29 @@ EffectsConfig = {
         "settings": [
             {
                 "type":    "selector",
-                "title":   "BPM",
+                "title":   "Mode",
+                "key":     "mode",
+                "map": {
+                    "Standard":   "Standard",
+                    "Punch":      "Punch",
+                    "Dispersion": "Dispersion",
+                    "Pumping":    "Pumping",
+                    "Heartbeat":  "Heartbeat"
+                },
+                "default": "Standard"
+            },
+            {
+                "type":    "slider",
+                "title":   "Decay Length (%)",
+                "key":     "decay_length",
+                "min":     10,
+                "max":     100,
+                "offset":  5,
+                "default": 50
+            },
+            {
+                "type":    "selector",
+                "title":   "Multiplier",
                 "key":     "multiplier",
                 "map": {
                     "BPM x0.5": 0.5,
@@ -1150,7 +1452,7 @@ EffectsConfig = {
 
     "Sidebeat": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              sidebeat_effect,
         "settings": [
             {
@@ -1169,7 +1471,7 @@ EffectsConfig = {
 
     "Boomerang": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              boomerang_effect,
         "settings": [
             {
@@ -1185,7 +1487,7 @@ EffectsConfig = {
 
     "Chase": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              chase_effect,
         "settings": [
             {
@@ -1212,13 +1514,25 @@ EffectsConfig = {
                 "key":     "direction",
                 "map":     {"To the left": -1, "To the right": 1},
                 "default": "To the left"
+            },
+            {
+                "type":    "checkbox",
+                "title":   "Tail Gradient Fade",
+                "key":     "tail_fade",
+                "default": False
+            },
+            {
+                "type":    "checkbox",
+                "title":   "Invert (Dark Wave)",
+                "key":     "invert",
+                "default": False
             }
         ]
     },
 
     "Ripple": {
         "segmented":             True,
-        "supports_segmentation": False,
+        "supports_segmentation": True,
         "function":              ripple_effect,
         "settings": [
             {
@@ -1229,6 +1543,15 @@ EffectsConfig = {
                 "max":     10,
                 "offset":  1,
                 "default": 5
+            },
+            {
+                "type":    "slider",
+                "title":   "Center Offset (%)",
+                "key":     "center_offset",
+                "min":     0,
+                "max":     100,
+                "offset":  5,
+                "default": 50
             }
         ]
     }
@@ -1244,41 +1567,41 @@ def get_all_effects() -> dict:
 
 def get_non_segmented_effects() -> dict:
     return {
-        name: config for name, config in EffectsConfig.items()
-        if not config.get("segmented", False)
+        name: configuration for name, configuration in EffectsConfig.items()
+        if not configuration.get("segmented", False)
     }
 
 def get_segmented_effects() -> dict:
     return {
-        name: config for name, config in EffectsConfig.items()
-        if config.get("segmented", False)
+        name: configuration for name, configuration in EffectsConfig.items()
+        if configuration.get("segmented", False)
     }
 
 def get_segmentation_supported_effects() -> dict:
     return {
-        name: config for name, config in EffectsConfig.items()
-        if config.get("supports_segmentation", False)
+        name: configuration for name, configuration in EffectsConfig.items()
+        if configuration.get("supports_segmentation", False)
     }
 
 def generate_effect_dict(
         name:     str,
         settings: dict | None = None
     ) -> dict:
-    
+
     return {
         "name":     name,
         "settings": settings or {}
     }
 
 def generate_glyph_dict(
-        track:      str  = "1",
-        brightness: int  = 100,
-        duration:   int  = 100,
-        start:      int  = 0,
-        effect:     dict = None
+        track:      str = "1",
+        brightness: int = 100,
+        duration:   int = 100,
+        start:      int = 0,
+        effect:     dict | None = None
     ) -> dict:
-    
-    glyph_dict = {
+
+    glyph_dictionary = {
         "track":      track,
         "brightness": brightness,
         "duration":   duration,
@@ -1286,6 +1609,6 @@ def generate_glyph_dict(
     }
 
     if effect:
-        glyph_dict["effect"] = effect
-    
-    return glyph_dict
+        glyph_dictionary["effect"] = effect
+
+    return glyph_dictionary
