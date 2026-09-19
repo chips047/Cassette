@@ -20,6 +20,8 @@ from System.Interface import Widgets
 
 from System.Interface.Windows import FloatingWindowGPU
 
+from System.Interface.Windows.FeedbackWindow import FeedbackWindow
+
 # About Window
 
 class AboutWindow(FloatingWindowGPU):
@@ -55,26 +57,32 @@ class AboutWindow(FloatingWindowGPU):
                 "Made with care, way too much profiling, and a genuine love for smooth interfaces."
             )
 
-        self.about_label = Widgets.DescriptionLabel(text, 500)
+        about_label = Widgets.DescriptionLabel(text, 500)
 
-        self.image_pixmap = QPixmap("System/Assets/Image/Version.png").scaled(
+        image_pixmap = QPixmap("System/Assets/Image/Version.png").scaled(
             500, 500,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
 
-        self.image_label = QLabel()
-        self.image_label.setPixmap(self.image_pixmap)
+        image_label = QLabel()
+        image_label.setPixmap(image_pixmap)
 
-        ok_button     = Widgets.NothingButton("Five Stars?")
-        github_button = Widgets.ButtonWithOutline("Check for updates on GitHub")
+        row = Widgets.ButtonRow(
+            [
+                (Widgets.ButtonWithOutline, "GitHub",   self.on_github),
+                (Widgets.ButtonWithOutline, "Feedback", self.on_feedback)
+            ]
+        )
 
+        ok_button = Widgets.NothingButton("Five Stars?")
         ok_button.clicked.connect(self.on_ok)
-        github_button.clicked.connect(self.on_github)
 
-        for widget in (self.about_label, self.image_label, github_button, ok_button):
-            self.content_layout.addWidget(widget)
-
+        self.content_layout.addWidget(about_label)
+        self.content_layout.addWidget(image_label)
+        self.content_layout.addLayout(row)
+        self.content_layout.addWidget(ok_button)
+    
     def on_github(self) -> None:
         github_link = Constants.GITHUB_LINK
 
@@ -84,3 +92,6 @@ class AboutWindow(FloatingWindowGPU):
 
         fox_image = Utils.get_fox_image()
         webbrowser.open(fox_image if fox_image else github_link)
+
+    def on_feedback(self) -> None:
+        FeedbackWindow().exec()
