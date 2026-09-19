@@ -77,6 +77,7 @@ class PlaybackManager(QObject):
         self.is_playing               = False
         self.track_peak_level         = 1.0
         self.current_audio_level      = 0.0
+        self.current_beat_impact      = 0.0
         self.playback_start_audio_ms  = 0.0
         self.playback_start_wall_time = 0.0
 
@@ -106,6 +107,7 @@ class PlaybackManager(QObject):
 
         self.onset_buffer        = numpy.empty(0, dtype = numpy.float32)
         self.level_decay_ms      = 120.0
+        self.impact_decay_ms     = 180.0
 
         self.setup_effect_properties()
         self.reset_playback_state()
@@ -152,10 +154,9 @@ class PlaybackManager(QObject):
         ]
 
         for item in self.defaults:
-            name       = item[0]
-            base_value = item[1]
-            callback   = item[2] if len(item) > 2 else None
-
+            name            = item[0]
+            base_value      = item[1]
+            callback        = item[2] if len(item) > 2 else None
             property_handle = ui_engine.bind(self, name, base_value, on_change = callback)
 
             setattr(self, f"{name}_property", property_handle)
@@ -204,6 +205,7 @@ class PlaybackManager(QObject):
         for item in self.defaults:
             name       = item[0]
             base_value = item[1]
+
             getattr(self, f"{name}_property").set_base(base_value)
 
         self.pass_frequencies = []
@@ -268,7 +270,7 @@ class PlaybackManager(QObject):
 
         self.onset_detector.set_threshold(0.345)
 
-    # Beat Detection
+    # BeatDetection
 
     def set_analysis_window_size(self, window_size: int) -> None:
         if window_size == self.window_size:
@@ -308,8 +310,7 @@ class PlaybackManager(QObject):
         if data.ndim == 1:
             data = numpy.column_stack((data, data))
 
-        data = numpy.ascontiguousarray(data, dtype = numpy.float32)
-
+        data     = numpy.ascontiguousarray(data, dtype = numpy.float32)
         channels = data.shape[1]
 
         with self.lock:
@@ -364,8 +365,7 @@ class PlaybackManager(QObject):
         self.stream_sample_rate = self.sample_rate
         self.stream_channels    = channels
         self.stream_block_size  = self.block_size_ms
-
-        self.mix_generator = self.create_playback_generator()
+        self.mix_generator      = self.create_playback_generator()
 
         next(self.mix_generator)
         self.stream.start(self.mix_generator)
@@ -418,16 +418,17 @@ class PlaybackManager(QObject):
 
     def stop(self) -> None:
         with self.lock:
-            if self.is_playing:
-                if self.data is not None and self.position >= len(self.data):
-                    self.playback_start_audio_ms = self.duration_ms
+            if not self.is_playing:
+                return
 
-                else:
-                    self.playback_start_audio_ms = self.get_position()
+            if self.data is not None and self.position >= len(self.data):
+                self.playback_start_audio_ms = self.duration_ms
 
-                self.playback_start_wall_time = time.time()
+            else:
+                self.playback_start_audio_ms = self.get_position()
 
-            self.is_playing = False
+            self.playback_start_wall_time = time.time()
+            self.is_playing               = False
 
         self.playback_state_changed.emit(False)
 
@@ -545,10 +546,9 @@ class PlaybackManager(QObject):
             context: dict[str, object]
         ) -> numpy.ndarray:
 
-        low  = context["eq_low"]
-        mid  = context["eq_mid"]
-        high = context["eq_high"]
-
+        low        = context["eq_low"]
+        mid        = context["eq_mid"]
+        high       = context["eq_high"]
         is_neutral = abs(low - 1.0) < 0.01 and abs(mid - 1.0) < 0.01 and abs(high - 1.0) < 0.01
 
         if is_neutral:
@@ -742,14 +742,14 @@ class PlaybackManager(QObject):
             self.radio_noise_frames_remaining = 0
             return block
 
+        if not self.radio_noise_permanent and self.radio_noise_frames_remaining <= 0:
+            self.radio_noise_active = False
+            return block
+
         if self.radio_noise_permanent:
             envelope = numpy.ones(len(block), dtype = numpy.float32)
 
         else:
-            if self.radio_noise_frames_remaining <= 0:
-                self.radio_noise_active = False
-                return block
-
             attack_frames  = int((self.sample_rate * float(context["radio_noise_attack_ms"])) / 1000.0)
             peak_frames    = int((self.sample_rate * float(context["radio_noise_peak_ms"])) / 1000.0)
             release_frames = int((self.sample_rate * float(context["radio_noise_release_ms"])) / 1000.0)
@@ -783,11 +783,9 @@ class PlaybackManager(QObject):
         return result
 
     def generate_radio_noise_duration_frames(self) -> int:
-        min_ms = max(0.0, float(self.radio_noise_min_duration_ms))
-        max_ms = max(min_ms, float(self.radio_noise_max_duration_ms))
-
-        duration_ms = random.uniform(min_ms, max_ms) if self.radio_noise_randomize_duration else max_ms
-
+        min_ms              = max(0.0, float(self.radio_noise_min_duration_ms))
+        max_ms              = max(min_ms, float(self.radio_noise_max_duration_ms))
+        duration_ms         = random.uniform(min_ms, max_ms) if self.radio_noise_randomize_duration else max_ms
         minimum_envelope_ms = (
             float(self.radio_noise_attack_ms_property.value)  +
             float(self.radio_noise_peak_ms_property.value)    +
@@ -1075,7 +1073,8 @@ class PlaybackManager(QObject):
                 "bitcrush_downsample": float(downsample),
                 "bitcrush_mix":        float(mix)
             },
-            duration_ms, easing
+            duration_ms,
+            easing
         )
 
     def set_eq(
@@ -1097,7 +1096,8 @@ class PlaybackManager(QObject):
                 "eq_mid":  clamped_mid,
                 "eq_high": clamped_high
             },
-            duration_ms, easing
+            duration_ms,
+            easing
         )
 
     def set_background_noise(
@@ -1170,30 +1170,54 @@ class PlaybackManager(QObject):
 
     def set_passes(
             self,
-            frequencies: list[float] | tuple[float, ...] = (),
-            q:           float                           = 1.0,
-            mix:         float                           = 1.0,
-            gain:        float                           = 1.0,
-            duration_ms: int                             = 0,
-            easing:      Easing                          = Easing.smooth
+            frequencies: list[float] | tuple[float, ...] | None = None,
+            q:           float                                  = 1.0,
+            mix:         float                                  = 1.0,
+            gain:        float                                  = 1.0,
+            duration_ms: int                                    = 0,
+            easing:      Easing                                 = Easing.smooth
         ) -> None:
 
-        cleaned_frequencies = self.clean_pass_frequencies(frequencies)
+        target_mix          = max(0.0, min(1.0, float(mix)))
+        target_gain         = max(0.0, float(gain))
+        target_q            = max(0.1, float(q))
+        cleaned_frequencies = self.clean_pass_frequencies(frequencies) if frequencies is not None else None
 
-        with self.lock:
-            self.pass_frequencies = cleaned_frequencies
-            self.pass_q           = max(0.1, float(q))
+        if target_mix <= 0.0 or (cleaned_frequencies is not None and len(cleaned_frequencies) == 0):
+            def on_finish() -> None:
+                with self.lock:
+                    self.pass_frequencies = []
 
-            if duration_ms <= 0 and self.data is not None:
-                self.ensure_pass_states(self.data.shape[1])
+            if duration_ms <= 0:
+                on_finish()
+                self.set_property("pass_mix", 0.0)
+                return
+
+            self.set_property(
+                "pass_mix",
+                0.0,
+                duration_ms,
+                easing,
+                on_finish
+            )
+            return
+
+        if cleaned_frequencies is not None:
+            with self.lock:
+                self.pass_frequencies = cleaned_frequencies
+                self.pass_q           = target_q
+
+                if duration_ms <= 0 and self.data is not None:
+                    self.ensure_pass_states(self.data.shape[1])
 
         self.apply_properties(
             {
-                "pass_mix":  max(0.0, min(1.0, mix)),
-                "pass_gain": max(0.0, gain),
-                "pass_q":    max(0.1, float(q))
+                "pass_mix":  target_mix,
+                "pass_gain": target_gain,
+                "pass_q":    target_q
             },
-            duration_ms, easing
+            duration_ms,
+            easing
         )
 
     def set_noise(
@@ -1228,7 +1252,8 @@ class PlaybackManager(QObject):
                 "radio_noise_release_ms": max(0.0, float(release_ms)),
                 "radio_noise_mute_mix":   max(0.0, min(1.0, float(mute_audio)))
             },
-            duration_ms, easing
+            duration_ms,
+            easing
         )
 
     def set_echo(
@@ -1251,7 +1276,8 @@ class PlaybackManager(QObject):
                 "echo_delay_ms": max(1.0, float(delay_ms)),
                 "echo_feedback": max(0.0, min(0.98, float(feedback)))
             },
-            duration_ms, easing
+            duration_ms,
+            easing
         )
 
     # Shutdown
@@ -1370,21 +1396,20 @@ class UISoundManager:
             spread = -clamped_pan
             return 1.0 - spread * 0.3, 1.0 - spread * 0.7
 
-        else:
-            spread = clamped_pan
-            return 1.0 - spread * 0.7, 1.0 - spread * 0.3
+        spread = clamped_pan
+        return 1.0 - spread * 0.7, 1.0 - spread * 0.3
 
     def play_sound(
             self,
             name:                   str,
-            loop:                   bool         = False,
-            speed:                  float        = 1.0,
-            volume:                 float        = 1.0,
-            pan:                    float        = 0.0,
-            enable_tone_randomizer: bool         = True,
-            tone_spread:            float        = 0.04,
-            lock_tag:               str | None   = None,
-            setting_key:            str | None   = None
+            loop:                   bool       = False,
+            speed:                  float      = 1.0,
+            volume:                 float      = 1.0,
+            pan:                    float      = 0.0,
+            enable_tone_randomizer: bool       = True,
+            tone_spread:            float      = 0.04,
+            lock_tag:               str | None = None,
+            setting_key:            str | None = None
         ) -> UISound:
 
         if lock_tag and lock_tag in self.locked_tags:
@@ -1405,12 +1430,11 @@ class UISoundManager:
 
         audio_data = self.preloaded[name]
 
-        if Constants.current_settings["sound_tone_effects"]:
-            if enable_tone_randomizer and speed == 1.0:
-                speed = random.uniform(1.0 - tone_spread, 1.0 + tone_spread)
-
-        else:
+        if not Constants.current_settings["sound_tone_effects"]:
             speed = 1.0
+
+        elif enable_tone_randomizer and speed == 1.0:
+            speed = random.uniform(1.0 - tone_spread, 1.0 + tone_spread)
 
         self.ensure_device()
 
@@ -1456,8 +1480,10 @@ class UISoundManager:
         ) -> None:
 
         with self.lock:
-            if sound_id in self.active_sounds:
-                self.active_sounds[sound_id]["speed"] = float(speed)
+            if sound_id not in self.active_sounds:
+                return
+
+            self.active_sounds[sound_id]["speed"] = float(speed)
 
     def set_volume(
             self,
@@ -1466,8 +1492,10 @@ class UISoundManager:
         ) -> None:
 
         with self.lock:
-            if sound_id in self.active_sounds:
-                self.active_sounds[sound_id]["volume"] = float(new_volume)
+            if sound_id not in self.active_sounds:
+                return
+
+            self.active_sounds[sound_id]["volume"] = float(new_volume)
 
     def stop_all(self) -> None:
         with self.lock:
@@ -1554,6 +1582,7 @@ def shift_right_unsigned(
         value:  int,
         amount: int
     ) -> int:
+
     return (value % 0x100000000) >> (amount & 0x1F)
 
 class ByteBeatPlayer:
@@ -1716,6 +1745,7 @@ class BPMAnimator(QObject):
 
     def __init__(self) -> None:
         super().__init__()
+
         self.counter       = 0
         self.current_bpm   = 120
         self.current_speed = 1.0
@@ -1733,7 +1763,7 @@ class BPMAnimator(QObject):
         self.elapsed.start()
 
     def beat16_interval(self) -> int:
-        bpm   = max(1,    self.current_bpm)
+        bpm   = max(1, self.current_bpm)
         speed = max(0.01, self.current_speed)
 
         return int(60000 / (bpm * speed * 4))
