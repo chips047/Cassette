@@ -1153,6 +1153,11 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if self.is_despawning:
             return
 
+        if event.button() == Qt.MouseButton.RightButton:
+            self.marquee_select_animation()
+            super().mousePressEvent(event)
+            return
+
         if event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
             return
