@@ -116,7 +116,7 @@ def handle_exception(
         )
 
         title = (
-            f"Panic: {exception_value}"
+            f"Fatal Error: {exception_value}"
             if random.random() > 0.005
             else "0x000000DEAD"
         )
@@ -124,7 +124,8 @@ def handle_exception(
         Windows.ErrorWindow(
             title,
             error_message,
-            "No way"
+            "OH WELL",
+            True
         ).exec()
 
     except Exception as failure:
@@ -663,7 +664,7 @@ class ApplicationWindow(QMainWindow):
     def setup_screenshot_shortcut(self) -> None:
         self.screenshot_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         self.screenshot_shortcut.activated.connect(self.capture_4k_screenshot)
-
+    
     def capture_4k_screenshot(self) -> None:
         target_width  = 3840
         source_width  = self.width()
