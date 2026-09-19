@@ -5,7 +5,7 @@ def track_ram(cls):
 
     def new_del(self):
         class_name = self.__class__.__name__
-        logger.success(f"{class_name} {id(self)} has been deleted from RAM")
+        #logger.success(f"{class_name} {id(self)} has been deleted from RAM")
         
         if orig_delete is not None:
             orig_delete(self)
