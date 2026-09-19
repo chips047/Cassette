@@ -3,14 +3,13 @@ from PyQt6.QtWidgets import (
     QHBoxLayout
 )
 
-from System.Common import   Constants
-from System.Services import Player
-
+from System.Common    import Constants
+from System.Services  import Player
 from System.Interface import Widgets
 
 from System.Interface.Windows import BPMEditorBase
 
-# Audio Setup Dialog
+# Audio Setup Layout
 
 class AudioSetupDialog(BPMEditorBase):
     def __init__(

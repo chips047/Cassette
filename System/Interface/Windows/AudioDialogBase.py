@@ -1,6 +1,5 @@
 import os
 import math
-import numpy
 import random
 
 from pathlib import Path
@@ -10,6 +9,7 @@ from PyQt6.QtCore import (
     Qt,
     QSize,
     QTimer,
+    QObject,
     QThread
 )
 
@@ -28,7 +28,10 @@ from System.Common import (
     Constants
 )
 
-from System.Services import Player
+from System.Services import (
+    Player,
+    Workers
+)
 
 from System.Interface import (
     Timing,
@@ -37,65 +40,84 @@ from System.Interface import (
 
 from System.Interface.Animation import LoomEngine
 
-from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
-from System.Interface.Windows.Helpers           import make_fade_textbox, make_time_textbox
 from System.Interface.Windows.ErrorWindow       import ErrorWindow
+from System.Interface.Windows.FloatingWindowGPU import FloatingWindowGPU
 
-from System.Services.AudioWorkers import (
-    BPMWorker,
-    PrepareWorker,
-    LoadAudioWorker
+from System.Interface.Windows.Helpers import (
+    make_fade_textbox,
+    make_time_textbox
 )
 
-# Audio Loading Dialog
+# Pipeline Execution
 
 class AudioLoadingDialog(FloatingWindowGPU):
+    def launch_worker_thread(
+            self,
+            worker:            QObject,
+            finished_callback: object,
+            error_callback:    object,
+            priority:          QThread.Priority = QThread.Priority.InheritPriority
+        ) -> QThread:
+
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+
+        worker.finished.connect(finished_callback)
+        worker.error.connect(error_callback)
+
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+
+        thread.start(priority)
+
+        return thread
+
     def run_loading_pipeline(self, file_path: str) -> None:
-        self.cached_wav = None
+        self.cached_wav_path = None
+        self.audio_path      = file_path
 
-        self.prepare_thread = QThread(self)
-        self.prepare_worker = PrepareWorker(file_path)
-        self.prepare_worker.moveToThread(self.prepare_thread)
-        self.prepare_thread.started.connect(self.prepare_worker.run)
+        self.on_loading_started()
 
-        self.prepare_worker.finished.connect(self.on_prepare_success)
-        self.prepare_worker.error.connect(self.on_load_failed)
-
-        self.prepare_worker.finished.connect(self.prepare_thread.quit)
-        self.prepare_worker.finished.connect(self.prepare_worker.deleteLater)
-        self.prepare_thread.finished.connect(self.prepare_thread.deleteLater)
-
-        self.prepare_thread.start()
+        self.prepare_worker = Workers.PrepareWorker(file_path)
+        self.prepare_thread = self.launch_worker_thread(
+            self.prepare_worker,
+            self.on_prepare_success,
+            self.on_load_failed
+        )
 
         self.load_thread = None
         self.load_worker = None
 
+    def on_loading_started(self) -> None:
+        pass
+
+    def on_loading_failed(self, message: str) -> None:
+        pass
+
     def on_prepare_success(self, cached_wav_path: str) -> None:
-        self.cached_wav  = cached_wav_path
+        self.cached_wav_path = cached_wav_path
 
-        self.load_thread = QThread(self)
-        self.load_worker = LoadAudioWorker(self.cached_wav)
-        self.load_worker.moveToThread(self.load_thread)
-        self.load_thread.started.connect(self.load_worker.run)
-
-        self.load_worker.finished.connect(self.on_load_finished)
-        self.load_worker.error.connect(self.on_load_failed)
-
-        self.load_worker.finished.connect(self.load_thread.quit)
-        self.load_worker.finished.connect(self.load_worker.deleteLater)
-        self.load_thread.finished.connect(self.load_thread.deleteLater)
-
-        self.load_thread.start(QThread.Priority.LowPriority)
+        self.load_worker = Workers.LoadAudioWorker(self.cached_wav_path)
+        self.load_thread = self.launch_worker_thread(
+            self.load_worker,
+            self.on_load_finished,
+            self.on_load_failed,
+            QThread.Priority.LowPriority
+        )
 
     def on_load_finished(self, result: tuple) -> None:
         pass
 
     def on_load_failed(self, message: str) -> None:
+        self.on_loading_failed(message)
+
         window = ErrorWindow("Load Error", message)
         window.destroyed.connect(self.close)
         window.exec()
 
-    def cleanup_threads(self, threads: list) -> None:
+    def cleanup_threads(self, threads: list[QThread | None]) -> None:
         threads_to_wait = []
 
         for thread in threads:
@@ -109,38 +131,38 @@ class AudioLoadingDialog(FloatingWindowGPU):
             except Exception:
                 pass
 
-        if threads_to_wait:
-            self.wait_and_cleanup(threads_to_wait)
-
-        else:
+        if not threads_to_wait:
             self.safe_delete_cache()
+            return
 
-    def wait_and_cleanup(self, threads: list) -> None:
+        self.wait_and_cleanup(threads_to_wait)
+
+    def wait_and_cleanup(self, threads: list[QThread]) -> None:
         for thread in threads:
             thread.wait(500)
 
         self.safe_delete_cache()
 
     def safe_delete_cache(self) -> None:
-        if not self.cached_wav:
+        if not self.cached_wav_path:
             return
 
-        cached_wav_normalized = str(Path(self.cached_wav).resolve())
-        audio_path_normalized = str(Path(self.audio_path).resolve()) if hasattr(self, "audio_path") and self.audio_path else None
+        cached_wav_normalized = str(Path(self.cached_wav_path).resolve())
+        audio_path_normalized = str(Path(self.audio_path).resolve()) if self.audio_path else None
 
         if cached_wav_normalized == audio_path_normalized:
             return
 
         try:
-            if os.path.exists(self.cached_wav):
-                os.unlink(self.cached_wav)
-                logger.info(f"Cache deleted: {self.cached_wav}")
+            if os.path.exists(self.cached_wav_path):
+                os.unlink(self.cached_wav_path)
+                logger.info(f"Cache deleted: {self.cached_wav_path}")
 
         except Exception as error:
             logger.warning(f"Could not delete cache yet, retrying... {error}")
             QTimer.singleShot(1000, self.safe_delete_cache)
 
-# AudioEditorBase
+# Audio Editor Layout
 
 class AudioEditorBase(AudioLoadingDialog):
     def setup_trim_section(self) -> None:
@@ -172,7 +194,7 @@ class AudioEditorBase(AudioLoadingDialog):
             ok_text:     str = "Ok",
             cancel_text: str = "Cancel"
         ) -> None:
-        
+
         self.cancel_button = Widgets.ButtonWithOutline(cancel_text)
         self.ok_button     = Widgets.NothingButton(ok_text)
 
@@ -181,15 +203,21 @@ class AudioEditorBase(AudioLoadingDialog):
         self.cancel_button.clicked.connect(self.close)
 
     def build_playback_row(self) -> QHBoxLayout:
-        row = QHBoxLayout()
+        row_layout = QHBoxLayout()
 
-        row.addWidget(self.start_time_textbox)
-        row.addWidget(self.fade_in_textbox)
-        row.addWidget(self.play_button)
-        row.addWidget(self.fade_out_textbox)
-        row.addWidget(self.end_time_textbox)
+        row_layout.addWidget(self.start_time_textbox)
+        row_layout.addWidget(self.fade_in_textbox)
+        row_layout.addWidget(self.play_button)
+        row_layout.addWidget(self.fade_out_textbox)
+        row_layout.addWidget(self.end_time_textbox)
 
-        return row
+        return row_layout
+
+    def on_loading_started(self) -> None:
+        self.trim_widget.start_loading()
+
+    def on_loading_failed(self, message: str) -> None:
+        self.trim_widget.show_error()
 
     def on_load_finished(self, result: tuple) -> None:
         try:
@@ -207,6 +235,7 @@ class AudioEditorBase(AudioLoadingDialog):
             self.on_audio_ready()
 
         except Exception as error:
+            self.trim_widget.show_error()
             ErrorWindow("Load Error", str(error)).exec()
 
     def on_audio_ready(self) -> None:
@@ -318,7 +347,7 @@ class AudioEditorBase(AudioLoadingDialog):
             "fade_out": self.fade_out_textbox.text()
         }
 
-    def get_threads(self) -> list:
+    def get_threads(self) -> list[QThread | None]:
         return [self.prepare_thread, self.load_thread]
 
     def cleanup_audio(self) -> None:
@@ -340,7 +369,7 @@ class AudioEditorBase(AudioLoadingDialog):
         super().on_cancel()
         super().closeEvent(event)
 
-# BPM Editor Base
+# BPM Editor Layout
 
 class BPMEditorBase(AudioEditorBase):
     def setup_bpm_section(self) -> None:
@@ -395,19 +424,16 @@ class BPMEditorBase(AudioEditorBase):
             return False
 
     def start_bpm_pipeline(self) -> None:
-        self.bpm_thread = QThread(self)
-        self.bpm_worker = BPMWorker(self.cached_wav)
-        self.bpm_worker.moveToThread(self.bpm_thread)
-        self.bpm_thread.started.connect(self.bpm_worker.run)
+        self.bpm_worker = Workers.BPMWorker(self.cached_wav_path)
+        self.bpm_thread = self.launch_worker_thread(
+            self.bpm_worker,
+            self.on_bpm_finished,
+            self.on_bpm_failed,
+            QThread.Priority.LowPriority
+        )
 
-        self.bpm_worker.finished.connect(self.on_bpm_finished)
-        self.bpm_worker.error.connect(lambda message: ErrorWindow("BPM error", message).exec())
-
-        self.bpm_worker.finished.connect(self.bpm_thread.quit)
-        self.bpm_worker.finished.connect(self.bpm_worker.deleteLater)
-        self.bpm_thread.finished.connect(self.bpm_thread.deleteLater)
-
-        self.bpm_thread.start(QThread.Priority.LowPriority)
+    def on_bpm_failed(self, message: str) -> None:
+        ErrorWindow("BPM error", message).exec()
 
     def on_bpm_finished(
             self,
@@ -430,27 +456,27 @@ class BPMEditorBase(AudioEditorBase):
         self.snapped_times = snapped_times
         self.bpm_animation_timer.stop()
 
-        if bpm:
-            bpm_value              = round(bpm)
-            self.detected_bpm      = bpm_value
-            self.bpm_text          = "Counting BPM "
-            self.bpm_number_string = str(bpm_value)
+        if not bpm:
+            self.bpm_text          = "Counting BPM FAILURE"
+            self.bpm_number_string = ""
 
-            self.bpm_input.setPlaceholderText(f"{self.bpm_text}{self.bpm_number_string}")
+            self.bpm_input.setPlaceholderText(self.bpm_text)
+            self.bpm_remove_timer.start(100)
 
-            remove_interval = round(60000 / bpm / 8)
-            self.bpm_remove_timer.start(remove_interval)
+            if random.randint(1, 500) == 500:
+                Player.ui_player.play_sound("Packs/NOK/Gambling")
 
             return
 
-        self.bpm_text          = "Counting BPM FAILURE"
-        self.bpm_number_string = ""
+        bpm_value              = round(bpm)
+        self.detected_bpm      = bpm_value
+        self.bpm_text          = "Counting BPM "
+        self.bpm_number_string = str(bpm_value)
 
-        self.bpm_input.setPlaceholderText(self.bpm_text)
-        self.bpm_remove_timer.start(100)
+        self.bpm_input.setPlaceholderText(f"{self.bpm_text}{self.bpm_number_string}")
 
-        if random.randint(1, 500) == 500:
-            Player.ui_player.play_sound("Packs/NOK/Gambling")
+        remove_interval = round(60000 / bpm / 8)
+        self.bpm_remove_timer.start(remove_interval)
 
     def get_perfect_bpm_width(self) -> int:
         text       = str(self.bpm_input.text() or self.bpm_input.placeholderText() or "BPM")
@@ -476,7 +502,7 @@ class BPMEditorBase(AudioEditorBase):
 
     def animate_bpm_spinbox(self) -> None:
         if not self.bpm_animation_target or self.bpm_animation_current == self.bpm_animation_target:
-            self.bpm_animation_target = numpy.random.randint(60, 180)
+            self.bpm_animation_target = random.randint(60, 180)
 
         if self.bpm_animation_current < self.bpm_animation_target:
             self.bpm_animation_current += 1
@@ -499,6 +525,7 @@ class BPMEditorBase(AudioEditorBase):
             return
 
         self.bpm_remove_timer.stop()
+        
         self.finalize_bpm_placeholder()
         self.shrink_bpm_input()
 
@@ -517,7 +544,7 @@ class BPMEditorBase(AudioEditorBase):
             "beats": self.snapped_times
         }
 
-    def get_threads(self) -> list:
+    def get_threads(self) -> list[QThread | None]:
         return [*super().get_threads(), self.bpm_thread]
 
     def cleanup_audio(self) -> None:

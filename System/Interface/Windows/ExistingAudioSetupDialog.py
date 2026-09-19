@@ -13,10 +13,12 @@ from System.Services import (
 
 from System.Interface import Widgets
 
-from System.Interface.Windows import TrimWarningDialog
-from System.Interface.Windows import BPMEditorBase
+from System.Interface.Windows import (
+    BPMEditorBase,
+    TrimWarningDialog
+)
 
-# Existing Audio Setup Dialog
+# Existing Audio Setup Layout
 
 class ExistingAudioSetupDialog(BPMEditorBase):
     def __init__(
@@ -24,7 +26,7 @@ class ExistingAudioSetupDialog(BPMEditorBase):
             composition: ProjectSaver.Composition,
             parent:      QWidget | None = None
         ) -> None:
-        
+
         self.composition    = composition
         self.audio_path     = composition.full_song_path
         self.filename       = os.path.basename(self.audio_path)
