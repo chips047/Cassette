@@ -1,6 +1,7 @@
 from PyQt6.QtGui import (
+    QHideEvent,
     QShowEvent,
-    QHideEvent
+    QMouseEvent
 )
 
 from PyQt6.QtCore import (
@@ -25,8 +26,73 @@ from System.Interface.Animation import (
     LoomEngine
 )
 
-from System.Services  import Player
+from System.Services import Player
 from System.Interface import Widgets
+
+# Direct Jump Slider
+
+class DirectJumpSlider(QSlider):
+    def __init__(
+            self,
+            orientation: Qt.Orientation,
+            parent:      Widgets.BaseControlContainer | None = None
+        ) -> None:
+        super().__init__(orientation, parent)
+
+        self.setFixedHeight(26)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def update_position_from_mouse(self, mouse_horizontal_position: float) -> None:
+        if self.maximum() <= self.minimum():
+            return
+
+        total_width = self.width()
+
+        if total_width <= 0:
+            return
+
+        clamped_position = max(0.0, min(float(total_width), mouse_horizontal_position))
+        progress_ratio   = clamped_position / total_width
+
+        if self.invertedAppearance():
+            progress_ratio = 1.0 - progress_ratio
+
+        calculated_value = self.minimum() + progress_ratio * (self.maximum() - self.minimum())
+        rounded_value    = int(round(calculated_value))
+
+        self.setValue(rounded_value)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mousePressEvent(event)
+            return
+
+        self.setFocus()
+        self.setSliderDown(True)
+        self.sliderPressed.emit()
+
+        self.update_position_from_mouse(event.position().x())
+
+        event.accept()
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if not self.isSliderDown():
+            super().mouseMoveEvent(event)
+            return
+
+        self.update_position_from_mouse(event.position().x())
+
+        event.accept()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mouseReleaseEvent(event)
+            return
+
+        self.setSliderDown(False)
+        self.sliderReleased.emit()
+
+        event.accept()
 
 # Slider With Label
 
@@ -41,7 +107,6 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
             maximum_value: int,
             default_value: int
         ) -> None:
-
         super().__init__()
 
         self.minimum_value          = minimum_value
@@ -50,9 +115,9 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         self.show_animation_pending = True
         self.slider_is_dragging     = False
 
-        self.setMaximumHeight(60)
-        self.inner_layout.setContentsMargins(12, 8, 12, 4)
-        self.inner_layout.setSpacing(4)
+        self.setMaximumHeight(68)
+        self.inner_layout.setContentsMargins(12, 8, 12, 8)
+        self.inner_layout.setSpacing(6)
 
         self.setup_label(description)
         self.setup_slider(default_value)
@@ -74,7 +139,7 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         slider_value_layout.setContentsMargins(0, 0, 0, 0)
         slider_value_layout.setSpacing(12)
 
-        self.slider = QSlider(Qt.Orientation.Horizontal, self.container_background)
+        self.slider = DirectJumpSlider(Qt.Orientation.Horizontal, self.container_background)
         self.slider.setRange(self.minimum_value, self.maximum_value)
         self.slider.setSingleStep(1)
         self.slider.setPageStep(1)
@@ -101,7 +166,7 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
             on_change  = self.on_animated_value_changed
         )
 
-    def on_animated_value_changed(self, value: int) -> None:
+    def on_animated_value_changed(self, value: float) -> None:
         rounded_value = int(round(value))
 
         self.slider.blockSignals(True)
@@ -137,6 +202,13 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         tone = (value - self.minimum_value) / (self.maximum_value - self.minimum_value) + 0.1
         Player.ui_player.play_sound("Click/Toggle2", speed = tone, volume = 0.8)
 
+    def start_value_animation(self, target_value: int) -> None:
+        self.value_handle.set_target(
+            value           = target_value,
+            duration_ms     = 450,
+            easing_function = LoomEngine.Easing.ease_out_quint
+        )
+
     def play_show_animation(self) -> None:
         if self.slider_is_dragging:
             return
@@ -144,11 +216,7 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         self.value_handle.stop()
         self.value_handle.set_base(self.minimum_value)
 
-        self.value_handle.set_target(
-            value           = self.target_value,
-            duration_ms     = 450,
-            easing_function = LoomEngine.Easing.ease_out_quint
-        )
+        self.start_value_animation(self.target_value)
 
     def animate_to_value(self, value: int) -> None:
         self.target_value = self.clamp_value(value)
@@ -156,11 +224,7 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         if self.slider_is_dragging:
             return
 
-        self.value_handle.set_target(
-            value           = self.target_value,
-            duration_ms     = 450,
-            easing_function = LoomEngine.Easing.ease_out_quint
-        )
+        self.start_value_animation(self.target_value)
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -204,10 +268,11 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         if isinstance(value, (int, float)):
             return int(value)
 
-        if isinstance(value, str) and value.isdigit():
+        elif isinstance(value, str) and value.isdigit():
             return int(value)
 
-        return self.target_value
+        else:
+            return self.target_value
 
     def getValueAsText(self) -> str:
         return str(self.value())

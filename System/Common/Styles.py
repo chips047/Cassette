@@ -73,7 +73,7 @@ class Colors:
 
 class Roundings:
     Button          = 13
-    Slider          = 2
+    Slider          = 5
     SliderHandle    = 3
 
     RmbMenu         = 13
@@ -85,8 +85,7 @@ class Metrics:
     ElementHeight    = 40
     GlassBorderThick = 1.2
 
-    SliderHeight    = 5
-    HandleSize      = 11
+    SliderHeight    = 12
 
     CheckboxSize    = 17
 
@@ -333,46 +332,36 @@ class Controls:
         """
 
     Slider = f"""
-        QSlider {{
-            border: none;
-        }}
+    QSlider {{
+        border: none;
+    }}
 
-        QSlider::groove:horizontal {{
-            height: {Metrics.SliderHeight}px;
-            background: {Colors.EffectMenu.Hover};
-            border: 1px solid #555;
-            border-radius: {Roundings.Slider}px;
-        }}
+    QSlider::groove:horizontal {{
+        height: {Metrics.SliderHeight}px;
+        background: {Colors.EffectMenu.Hover};
+        border: 1px solid #555;
+        border-radius: {Roundings.Slider}px;
+    }}
 
-        QSlider::sub-page:horizontal {{
-            background: {Colors.NothingAccent};
-            border: {Metrics.GlassBorderThick} solid {Colors.NothingAccent};
-            border-radius: {Roundings.Slider}px;
-        }}
+    QSlider::sub-page:horizontal {{
+        background: {Colors.NothingAccent};
+        border: none;
+        border-radius: {Roundings.Slider}px;
+    }}
 
-        QSlider::add-page:horizontal {{
-            background: {Colors.EffectMenu.Hover};
-            border: {Metrics.GlassBorderThick} solid #555;
-            border-radius: {Roundings.Slider}px;
-        }}
+    QSlider::add-page:horizontal {{
+        background: transparent;
+        border: none;
+    }}
 
-        QSlider::handle:horizontal {{
-            width: {Metrics.HandleSize};
-            height: {Metrics.HandleSize};
-            margin: -4px 0;
-            background: {Colors.NothingAccent};
-            border: none;
-            border-radius: {Roundings.SliderHandle}px;
-        }}
-
-        QSlider::handle:horizontal:hover {{
-            background: {Colors.NothingAccentHover};
-        }}
-
-        QSlider::handle:horizontal:pressed {{
-            background: {Colors.NothingAccentPressed};
-        }}
-    """
+    QSlider::handle:horizontal {{
+        width: 0px;
+        height: 0px;
+        margin: 0px;
+        border: none;
+        background: transparent;
+    }}
+"""
 
     ValueControl = f"""
         DraggableValueControl {{
