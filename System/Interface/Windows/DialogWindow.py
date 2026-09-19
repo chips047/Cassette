@@ -15,6 +15,7 @@ class DialogWindow(FloatingWindowGPU):
             title:  str,
             parent: QWidget | None = None
         ) -> None:
+        
         super().__init__(title, parent = parent)
 
         button_row = Widgets.ButtonRow(

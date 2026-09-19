@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import random
 
 from functools import partial
@@ -13,11 +14,14 @@ from PyQt6.QtCore import (
     Qt,
     QEvent,
     QObject,
+    QTimer,
     pyqtSignal
 )
 
 from System.Common import Constants
 from System.Services import Player
+
+from System.Interface.Windows import ErrorWindow
 
 from .. import Timeline
 
@@ -66,10 +70,17 @@ class KeyboardController(QObject):
         self.move_increment = Constants.current_settings["arrow_increment"]
         self.shortcuts      = []
 
+        self.space_press_times: list[float] = []
+        self.ee_active:         bool        = False
+
+        self.space_hold_timer = QTimer(self)
+        self.space_hold_timer.setSingleShot(True)
+        self.space_hold_timer.timeout.connect(self.trigger_space_ee)
+
         self.setup_track_hotkeys()
         self.setup_hotkeys()
 
-    # HotkeySetup
+    # Hotkey Setup
 
     def bind(
             self,
@@ -128,7 +139,7 @@ class KeyboardController(QObject):
         for key, track_identifier in self.TRACK_KEY_MAPPINGS.items():
             self.bind(key, partial(self.spawn_track_glyph_requested.emit, track_identifier))
 
-    # EventHandling
+    # Event Handling
 
     def eventFilter(
             self,
@@ -136,35 +147,69 @@ class KeyboardController(QObject):
             event:   QEvent
         ) -> bool:
 
-        if event.type() != QEvent.Type.KeyRelease:
-            return super().eventFilter(watched, event)
+        event_type = event.type()
 
-        if event.isAutoRepeat():
-            return super().eventFilter(watched, event)
+        if event_type == QEvent.Type.KeyPress:
+            if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+                self.space_hold_timer.start(800)
 
-        key_code = event.key()
+        elif event_type == QEvent.Type.KeyRelease:
+            if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
+                self.space_hold_timer.stop()
 
-        if key_code == Qt.Key.Key_Home:
-            Player.ui_player.release_sound("playhead_home")
+            if event.isAutoRepeat():
+                return super().eventFilter(watched, event)
 
-        elif key_code == Qt.Key.Key_End:
-            Player.ui_player.release_sound("playhead_end")
+            key_code = event.key()
 
-        elif key_code == Qt.Key.Key_B:
-            Player.ui_player.release_sound("warning_brightness")
+            if key_code == Qt.Key.Key_Home:
+                Player.ui_player.release_sound("playhead_home")
 
-        elif key_code == Qt.Key.Key_D:
-            Player.ui_player.release_sound("warning_duration")
-            Player.ui_player.release_sound("warning_duplicate")
+            elif key_code == Qt.Key.Key_End:
+                Player.ui_player.release_sound("playhead_end")
 
-        elif key_code in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
-            Player.ui_player.release_sound("glyph_deletion")
+            elif key_code == Qt.Key.Key_B:
+                Player.ui_player.release_sound("warning_brightness")
+
+            elif key_code == Qt.Key.Key_D:
+                Player.ui_player.release_sound("warning_duration")
+                Player.ui_player.release_sound("warning_duplicate")
+
+            elif key_code in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+                Player.ui_player.release_sound("glyph_deletion")
 
         return super().eventFilter(watched, event)
 
-    # PlayheadManagement
+    def trigger_space_ee(self) -> None:
+        if self.ee_active:
+            return
+
+        self.ee_active = True
+        self.space_hold_timer.stop()
+        self.space_press_times.clear()
+
+        if self.playback_manager.is_playing:
+            self.playback_manager.toggle_playback(self.conductor.get_playhead_position_ms())
+
+        try:
+            ErrorWindow("Uhm", "Why?").exec()
+
+        finally:
+            self.ee_active = False
+            self.space_press_times.clear()
+            self.space_hold_timer.stop()
+
+    # Playhead Management
 
     def handle_playback_toggle(self) -> None:
+        current_time = time.time()
+        self.space_press_times = [t for t in self.space_press_times if current_time - t <= 1.5]
+        self.space_press_times.append(current_time)
+
+        if len(self.space_press_times) >= 5:
+            self.trigger_space_ee()
+            return
+
         position_ms        = self.conductor.get_playhead_position_ms()
         duration_ms        = self.playback_manager.duration_ms
         engine_position_ms = self.playback_manager.get_position()
@@ -179,6 +224,7 @@ class KeyboardController(QObject):
             self.conductor.horizontalScrollBar().setValue(0)
             self.conductor.scroll_to_playhead()
             self.playback_manager.toggle_playback(0.0)
+            
             return
 
         if not self.playback_manager.is_playing:
@@ -244,7 +290,7 @@ class KeyboardController(QObject):
     def go_to_end(self) -> None:
         self.jump_to_position(self.playback_manager.duration_ms, "Feedback/PlayheadBackward", "playhead_end")
 
-    # GlyphActions
+    # Glyph Actions
 
     def handle_deletion(self) -> None:
         self.delete_requested.emit()
@@ -286,6 +332,7 @@ class KeyboardController(QObject):
 
     def cleanup_shortcuts(self) -> None:
         self.conductor.removeEventFilter(self)
+        self.space_hold_timer.stop()
 
         for shortcut in self.shortcuts:
             shortcut.activated.disconnect()

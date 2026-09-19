@@ -1,4 +1,3 @@
-
 import random
 import mimetypes
 
@@ -9,8 +8,8 @@ from PyQt6.QtGui import (
 
 from PyQt6.QtWidgets import (
     QWidget,
-    QHBoxLayout,
-    QFileDialog
+    QFileDialog,
+    QHBoxLayout
 )
 
 from System.Services import (
@@ -20,16 +19,18 @@ from System.Services import (
 
 from System.Interface import Widgets
 
-from System.Interface.Windows import ErrorWindow
-from System.Interface.Windows import BPMEditorBase
+from System.Interface.Windows import (
+    ErrorWindow,
+    BPMEditorBase
+)
 
-# ImportWindow
+# Import Window Layout
 
 class ImportWindow(BPMEditorBase):
     def __init__(self, parent: QWidget | None = None) -> None:
         self.audio_path      = None
         self.save_path       = None
-        self.cached_wav      = None
+        self.cached_wav_path = None
 
         self.prepare_thread  = None
         self.load_thread     = None
@@ -47,8 +48,6 @@ class ImportWindow(BPMEditorBase):
 
         self.setup_import_ui()
         self.adjustSize()
-
-    # Setup
 
     def setup_import_ui(self) -> None:
         self.setup_trim_section()
@@ -84,13 +83,12 @@ class ImportWindow(BPMEditorBase):
         self.content_layout.addLayout(playback_row)
         self.content_layout.addLayout(bottom_row)
 
-    # FileSelection
-
     def ask_for_file(
             self,
             types:     list[str],
             type_name: str
         ) -> str | None:
+
         options   = QFileDialog.Option.ReadOnly
         file_path = None
 
@@ -149,8 +147,6 @@ class ImportWindow(BPMEditorBase):
             self.save_path is not None
         )
 
-    # DragAndDrop
-
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         Player.ui_player.play_sound(
             "DragDrop/DragDrop",
@@ -167,6 +163,7 @@ class ImportWindow(BPMEditorBase):
 
         self.move_start_animation()
         self.start_shake()
+        
         event.acceptProposedAction()
 
     def dragLeaveEvent(self, event: object) -> None:
@@ -197,8 +194,8 @@ class ImportWindow(BPMEditorBase):
         found_valid_file = False
 
         for url in event.mimeData().urls():
-            file_path        = url.toLocalFile()
-            mime_type, sound = mimetypes.guess_type(file_path)
+            file_path = url.toLocalFile()
+            mime_type = mimetypes.guess_type(file_path)[0]
 
             if not mime_type:
                 continue
@@ -237,14 +234,13 @@ class ImportWindow(BPMEditorBase):
                     ]
                 )
             )
+
         else:
             self.title_label.setText("Import")
 
         self.move_end_animation()
         self.stop_shake()
         self.refresh_import_button()
-
-    # Import
 
     def accept_callback(self) -> None:
         if not self.validate_trim():
@@ -278,7 +274,7 @@ class ImportWindow(BPMEditorBase):
                 "bpm":      bpm_settings["bpm"],
                 "beats":    bpm_settings["beats"],
                 "start_ms": self.trim_widget.start_time_sec * 1000,
-                "end_ms":   self.trim_widget.end_time_sec * 1000,
+                "end_ms":   self.trim_widget.end_time_sec   * 1000,
                 "fade_in":  self.fade_in_textbox.text(),
                 "fade_out": self.fade_out_textbox.text()
             },

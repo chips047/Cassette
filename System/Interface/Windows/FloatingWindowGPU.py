@@ -912,13 +912,12 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.ensurePolished()
         self.content_widget.ensurePolished()
 
-        # Активируем оба layout, чтобы дочерние виджеты честно посчитали свои размеры
         if self.content_layout:
             self.content_layout.activate()
+        
         if self.layout():
             self.layout().activate()
 
-        # Принудительно сжимаем content_widget до минимально необходимого его детям размера
         self.content_widget.adjustSize()
         content_size = self.content_widget.sizeHint()
 
@@ -950,7 +949,6 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         final_width  = content_width + (self.margin_x * 2)
         final_height = content_height + (self.margin_y * 2)
 
-        # Центрируем и устанавливаем итоговую геометрию с актуальными размерами
         self.center_window(final_width, final_height)
 
     def set_bpm_peak_size(self, coefficient: float) -> None:

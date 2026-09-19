@@ -26,7 +26,7 @@ from System.Common import (
     Constants
 )
 
-from .TileWorker import TileWorker
+from System.Services import Workers
 
 from .. import Timeline
 
@@ -66,7 +66,7 @@ class WaveformController(QObject):
 
         device_pixel_ratio = QGuiApplication.primaryScreen().devicePixelRatio()
         generation         = self.tile_generation_id
-        worker             = TileWorker(self, tile_index, generation, device_pixel_ratio)
+        worker             = Workers.TileWorker(self, tile_index, generation, device_pixel_ratio)
 
         worker.signals.tile_ready.connect(
             lambda index, image, gen = generation:
