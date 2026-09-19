@@ -58,7 +58,14 @@ from .TimelineItems import (
     PlayheadItem
 )
 
+from .LoadAnimation import (
+    WaveMode,
+    PulseStatusWidget
+)
+
 from .Waveforms import (
     MiniWaveformPreview,
     TrimmingWaveformWidget
 )
+
+from .StarRating import StarRatingWidget

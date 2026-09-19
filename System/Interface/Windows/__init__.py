@@ -12,6 +12,7 @@ from System.Interface.Windows.AudioDialogBase import (
     AudioLoadingDialog
 )
 
+from System.Interface.Windows.QuitWindow               import QuitWindow
 from System.Interface.Windows.ErrorWindow              import ErrorWindow
 from System.Interface.Windows.SettingsWindow           import SettingsWindow
 from System.Interface.Windows.DialogWindow             import DialogWindow
@@ -30,3 +31,4 @@ from System.Interface.Windows.ImportWindow             import ImportWindow
 from System.Interface.Windows.Playground               import Playground
 from System.Interface.Windows.Tutorial                 import Tutorial
 from System.Interface.Windows.GlyphVisualizer          import GlyphVisualizer
+from System.Interface.Windows.FeedbackWindow           import FeedbackWindow
