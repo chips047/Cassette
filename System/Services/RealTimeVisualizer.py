@@ -193,9 +193,10 @@ class GlyphSyncer(QObject):
 
             commands = [
                 (["-s", device_id, "forward", "tcp:7777", "tcp:7777"], None),
-                (["shell", "settings", "put", "global", "nt_glyph_interface_debug_enable", "1"], None),
+                (["-s", device_id, "shell", "settings", "put", "global", "nt_glyph_interface_debug_enable", "1"], None),
+                (["-s", device_id, "shell", "dumpsys", "deviceidle", "whitelist", "+com.glyph.receiver"], None),
                 (["-s", device_id, "shell", "am", "force-stop", "com.glyph.receiver"], None),
-                (["-s", device_id, "shell", "am", "start", "-n", "com.glyph.receiver/.MainActivity"], None),
+                (["-s", device_id, "shell", "am", "start-foreground-service", "-n", "com.glyph.receiver/.MainService"], None),
             ]
             
             self.run_sequence(commands, on_done = lambda: self.wait_for_socket(device_id))
