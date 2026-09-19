@@ -573,8 +573,9 @@ class OptionButton(BaseButton):
 class ButtonRow(QHBoxLayout):
     def __init__(
             self,
-            buttons: list[tuple],
-            spacing: int = 10
+            buttons:      list[tuple],
+            spacing:      int        = 10,
+            button_width: int | None = None
         ) -> None:
 
         super().__init__()
@@ -592,6 +593,9 @@ class ButtonRow(QHBoxLayout):
                 callback             = callback,
                 enable_glitch_effect = enable_glitch_effect
             )
+
+            if button_width:
+                button.setMinimumWidth(button_width)
 
             self.addWidget(button)
 
@@ -628,3 +632,11 @@ class ButtonRow(QHBoxLayout):
 
     def get_button_by_number(self, index: int) -> RectangularButton | None:
         return list(self.buttons.values())[index]
+
+    def enable_buttons(self) -> None:
+        for button in self.buttons.values():
+            button.setEnabled(True)
+
+    def disable_buttons(self) -> None:
+        for button in self.buttons.values():
+            button.setEnabled(False)
