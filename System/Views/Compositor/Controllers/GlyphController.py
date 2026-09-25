@@ -335,7 +335,7 @@ class GlyphController(QObject):
 
                     before_state[glyph_identifier] = copy.deepcopy(glyph_data)
 
-                    if "effect" in glyph_data and glyph_data["effect"].get("name") == "Fade":
+                    if "effect" in glyph_data and glyph_data["effect"]["name"] == "Fade":
                         effect_settings = glyph_data["effect"].get("settings", {})
                         new_settings    = {**effect_settings, "keyframes": new_keyframes}
 
@@ -873,6 +873,41 @@ class GlyphController(QObject):
 
     # Keyframes
 
+    def commit_fade_keyframes_mutations(
+            self,
+            mutations: dict[int, tuple[list[tuple[float, int]], list[tuple[float, int]]]]
+        ) -> None:
+
+        for glyph_id, (_, new_keyframes) in mutations.items():
+            glyph = self.composition.get_glyph(glyph_id)
+
+            if glyph is None:
+                continue
+
+            clean_new = [
+                (round(float(time_part), 2), int(round(float(brightness_part))))
+                for time_part, brightness_part in new_keyframes
+            ]
+
+            if "effect" in glyph and glyph["effect"]["name"] == "Fade":
+                new_settings = {**glyph["effect"]["settings"], "keyframes": clean_new}
+                new_glyph    = GlyphEffects.apply_visual_effect(glyph, "Fade", new_settings)
+
+                self.composition.replace_glyph(glyph_id, new_glyph)
+
+            elif "keyframes" in glyph:
+                new_glyph              = copy.deepcopy(glyph)
+                new_glyph["keyframes"] = clean_new
+
+                self.composition.replace_glyph(glyph_id, new_glyph)
+
+        self.push_action(
+            Actions.EditFadeKeyframesCommand(
+                self,
+                mutations
+            )
+        )
+
     def commit_fade_keyframes(
             self,
             glyph_id:      int,
@@ -880,40 +915,8 @@ class GlyphController(QObject):
             new_keyframes: list[tuple[float, int]]
         ) -> None:
 
-        original_glyph = self.conductor.composition.get_glyph(glyph_id)
-
-        if original_glyph is None:
-            return
-
-        effect = original_glyph.get("effect", {})
-
-        if effect.get("name") != "Fade":
-            return
-
-        clean_old = [
-            (round(float(time_part), 2), int(round(float(brightness_part))))
-            for time_part, brightness_part in old_keyframes
-        ]
-
-        clean_new = [
-            (round(float(time_part), 2), int(round(float(brightness_part))))
-            for time_part, brightness_part in new_keyframes
-        ]
-
-        settings     = effect["settings"]
-        new_glyph    = copy.deepcopy(original_glyph)
-        new_settings = {**settings, "keyframes": clean_new}
-
-        new_glyph = GlyphEffects.apply_visual_effect(new_glyph, "Fade", new_settings)
-        self.conductor.composition.replace_glyph(glyph_id, new_glyph)
-
-        self.push_action(
-            Actions.EditFadeKeyframesCommand(
-                self,
-                glyph_id,
-                clean_old,
-                clean_new
-            )
+        self.commit_fade_keyframes_mutations(
+            {glyph_id: (old_keyframes, new_keyframes)}
         )
 
     # Stacking And Groups

@@ -228,7 +228,7 @@ class EditFadeKeyframesCommand:
             for glyph_identifier, (old_keyframes, _) in self.mutations.items():
                 self.apply_glyph_keyframes(glyph_identifier, old_keyframes)
 
-            self.controller.update_glyphs(list(self.mutations.keys()))
+            self.controller.update_glyphs(list(self.mutations.keys()), animate_movement = True)
 
         finally:
             self.composition.stop_batching()
@@ -240,7 +240,7 @@ class EditFadeKeyframesCommand:
             for glyph_identifier, (_, new_keyframes) in self.mutations.items():
                 self.apply_glyph_keyframes(glyph_identifier, new_keyframes)
 
-            self.controller.update_glyphs(list(self.mutations.keys()))
+            self.controller.update_glyphs(list(self.mutations.keys()), animate_movement = True)
 
         finally:
             self.composition.stop_batching()
@@ -273,10 +273,8 @@ class EditFadeKeyframesCommand:
             for time_fraction, brightness_value in keyframes
         ]
 
-        effect = glyph.get("effect", {})
-
-        if effect and effect.get("name") == "Fade":
-            new_settings  = {**effect["settings"], "keyframes": clean_keyframes}
+        if "effect" in glyph and glyph["effect"]["name"] == "Fade":
+            new_settings  = {**glyph["effect"]["settings"], "keyframes": clean_keyframes}
             updated_glyph = GlyphEffects.apply_visual_effect(glyph, "Fade", new_settings)
 
             self.composition.replace_glyph(glyph_identifier, updated_glyph)

@@ -48,6 +48,76 @@ from System.Interface.Animation import (
     LoomEngine
 )
 
+# Keyframe Mathematical Interpolation
+
+def sample_keyframe_value(
+        keyframes:     list[tuple[float, float | int]],
+        time_fraction: float
+    ) -> float:
+
+    if not keyframes:
+        return 100.0
+
+    if time_fraction <= keyframes[0][0]:
+        return float(keyframes[0][1])
+
+    if time_fraction >= keyframes[-1][0]:
+        return float(keyframes[-1][1])
+
+    for index in range(len(keyframes) - 1):
+        time_start, value_start = keyframes[index]
+        time_end, value_end     = keyframes[index + 1]
+
+        if time_start <= time_fraction <= time_end:
+            duration = time_end - time_start
+
+            if duration <= 0.0:
+                return float(value_end)
+
+            progress = (time_fraction - time_start) / duration
+
+            return float(value_start + (value_end - value_start) * progress)
+
+    return float(keyframes[-1][1])
+
+def interpolate_keyframe_lists(
+        start_keyframes:  list[tuple[float, float | int]],
+        target_keyframes: list[tuple[float, float | int]],
+        progress:         float
+    ) -> list[tuple[float, float]]:
+
+    if not start_keyframes and not target_keyframes:
+        return []
+
+    resolved_start  = list(start_keyframes)
+    resolved_target = list(target_keyframes)
+
+    if not resolved_start:
+        resolved_start = [(time_val, 100.0) for time_val, _ in resolved_target]
+
+    elif not resolved_target:
+        resolved_target = [(time_val, 100.0) for time_val, _ in resolved_start]
+
+    if len(resolved_start) == len(resolved_target):
+        return [
+            (
+                s_time + (t_time - s_time) * progress,
+                s_val  + (t_val  - s_val)  * progress
+            )
+            for (s_time, s_val), (t_time, t_val) in zip(resolved_start, resolved_target)
+        ]
+
+    all_times = sorted(set([point[0] for point in resolved_start] + [point[0] for point in resolved_target]))
+
+    return [
+        (
+            time_fraction,
+            sample_keyframe_value(resolved_start, time_fraction) +
+            (sample_keyframe_value(resolved_target, time_fraction) - sample_keyframe_value(resolved_start, time_fraction)) * progress
+        )
+        for time_fraction in all_times
+    ]
+
 @Dev.track_ram
 class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     playhead_pressed = pyqtSignal()
@@ -494,7 +564,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if not data:
             return None
 
-        if "effect" in data and data["effect"].get("name") == "Fade":
+        if "effect" in data and data["effect"]["name"] == "Fade":
             effect_settings = data["effect"].get("settings", {})
 
             if "keyframes" in effect_settings and effect_settings["keyframes"] is not None:
@@ -530,9 +600,12 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.fade_dragged_index     = None
 
     def setup_animations(self) -> None:
-        self.animation_margin_px = 0.0
-        self.is_animating        = False
-        self.stack_depth         = 0
+        self.animation_margin_px       = 0.0
+        self.is_animating              = False
+        self.stack_depth               = 0
+        self.is_animating_keyframes    = False
+        self.keyframe_animation_start  = []
+        self.keyframe_animation_target = []
 
         self.despawn_duration_ms = None
         self.despawn_start_ms    = None
@@ -599,6 +672,14 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             base_value = 0.0,
             mix_mode   = LoomEngine.MixMode.REPLACE,
             on_change  = self.on_width_changed
+        )
+
+        self.keyframe_progress_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "keyframeProgress",
+            base_value = 1.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_keyframe_progress_changed
         )
 
     # Geometry And Metrics Section
@@ -1011,6 +1092,61 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             finished                   = self.on_width_animation_finished
         )
 
+    def animate_keyframes_transition(self, target_keyframes: list[tuple[float, int]]) -> None:
+        current_keyframes = [(round(float(t), 2), round(float(b), 2)) for t, b in self.pending_fade_keyframes]
+        normalized_target = [(round(float(t), 2), round(float(b), 2)) for t, b in target_keyframes]
+
+        if current_keyframes == normalized_target:
+            return
+
+        self.stop_keyframe_animation()
+
+        self.keyframe_animation_start  = current_keyframes
+        self.keyframe_animation_target = normalized_target
+        self.is_animating_keyframes    = True
+
+        self.set_animating(True)
+
+        self.keyframe_progress_handle.play_curve(
+            keyframes                  = [
+                (0.0, 0.0),
+                (1.0, 1.0)
+            ],
+            duration_ms                = 220,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            multiply_duration_by_speed = False,
+            finished                   = self.on_keyframe_animation_finished
+        )
+
+    def on_keyframe_progress_changed(self, progress: float) -> None:
+        if not self.is_animating_keyframes:
+            return
+
+        self.pending_fade_keyframes = interpolate_keyframe_lists(
+            self.keyframe_animation_start,
+            self.keyframe_animation_target,
+            progress
+        )
+
+        self.update()
+
+    def on_keyframe_animation_finished(self) -> None:
+        self.is_animating_keyframes = False
+        self.pending_fade_keyframes = list(self.keyframe_animation_target)
+        self.fade_initial_keyframes = list(self.pending_fade_keyframes)
+
+        self.set_animating(False)
+        self.update()
+
+    def stop_keyframe_animation(self) -> None:
+        self.is_animating_keyframes = False
+
+        try:
+            self.keyframe_progress_handle.stop_targeting()
+
+        except Exception:
+            pass
+
     def stop_horizontal_move(self) -> None:
         self.is_moving_horizontally = False
 
@@ -1039,6 +1175,11 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             pass
 
     def capture_current_visual_state(self) -> None:
+        if self.is_animating_keyframes:
+            self.stop_keyframe_animation()
+            self.pending_fade_keyframes = list(self.keyframe_animation_target)
+            self.fade_initial_keyframes = list(self.pending_fade_keyframes)
+
         was_animating = self.is_moving_horizontally or self.is_moving_vertically or self.is_resizing_width
 
         if not was_animating:
@@ -1110,6 +1251,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             self.set_animating(False)
 
     def on_despawn_finished(self) -> None:
+        self.stop_keyframe_animation()
         self.stop_horizontal_move()
         self.stop_vertical_move()
         self.stop_width_animation()
@@ -1200,7 +1342,16 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if self.is_despawning:
             return
 
+        alt_pressed = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
+
         if event.button() == Qt.MouseButton.RightButton:
+            if alt_pressed and (self.keyframes or self.pending_fade_keyframes):
+                controller = self.conductor.glyph_controller
+                controller.glyph_keyframe_edited.emit()
+                self.handle_fade_delete(event)
+
+                return
+
             self.marquee_select_animation()
             super().mousePressEvent(event)
 
@@ -1223,9 +1374,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         super().mousePressEvent(event)
 
-        alt_pressed = bool(event.modifiers() & Qt.KeyboardModifier.AltModifier)
-
-        if alt_pressed and event.button() == Qt.MouseButton.LeftButton and not self.keyframes:
+        if alt_pressed and not self.keyframes:
             controller.glyph_keyframe_edited.emit()
             self.apply_default_fade_effect(event)
 
@@ -1233,11 +1382,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         if not self.keyframes:
             self.standard_press(event)
-
-            return
-
-        if event.button() == Qt.MouseButton.RightButton and alt_pressed:
-            self.handle_fade_delete(event)
 
             return
 
@@ -1278,21 +1422,32 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             return
 
         if self.keyframes and self.fade_is_dragging:
-            self.fade_is_dragging   = False
-            self.fade_dragged_index = None
+            target_items = self.get_multi_keyframe_targets()
+            mutations    = {}
 
-            formatted_keyframes = [
-                (round(float(time_fraction), 2), int(round(float(brightness_value))))
-                for time_fraction, brightness_value in self.pending_fade_keyframes
-            ]
+            for item in target_items:
+                if not item.fade_is_dragging:
+                    continue
 
-            self.conductor.glyph_controller.commit_fade_keyframes(
-                self.glyph_id,
-                self.fade_initial_keyframes,
-                formatted_keyframes
-            )
+                item.fade_is_dragging   = False
+                item.fade_dragged_index = None
 
-            self.fade_initial_keyframes = list(formatted_keyframes)
+                formatted_keyframes = [
+                    (round(float(time_fraction), 2), int(round(float(brightness_value))))
+                    for time_fraction, brightness_value in item.pending_fade_keyframes
+                ]
+
+                if item.fade_initial_keyframes != formatted_keyframes:
+                    mutations[item.glyph_id] = (
+                        list(item.fade_initial_keyframes),
+                        list(formatted_keyframes)
+                    )
+
+                item.fade_initial_keyframes = list(formatted_keyframes)
+
+            if mutations:
+                self.conductor.glyph_controller.commit_fade_keyframes_mutations(mutations)
+
             event.accept()
 
             return
@@ -1305,6 +1460,17 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         super().mouseReleaseEvent(event)
 
     # Helpers Section
+
+    def get_multi_keyframe_targets(self) -> list[GlyphItem]:
+        if not self.isSelected():
+            return [self]
+
+        selected_items = self.conductor.glyph_controller.get_selected_glyph_items()
+
+        if self not in selected_items:
+            return [self]
+
+        return selected_items
 
     def set_is_occluded(self, state: bool) -> None:
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemHasNoContents, state)
@@ -1326,31 +1492,44 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     def apply_default_fade_effect(self, event: QGraphicsSceneMouseEvent) -> None:
         from System.Views.Compositor import Actions
 
-        current_glyph = self.data
+        target_items = self.get_multi_keyframe_targets()
 
-        if current_glyph is None:
+        before_state = {}
+        after_state  = {}
+
+        for item in target_items:
+            current_glyph = item.data
+
+            if current_glyph is None:
+                continue
+
+            before_state[item.glyph_id] = copy.deepcopy(current_glyph)
+
+            faded_glyph = GlyphEffects.apply_visual_effect(
+                copy.deepcopy(current_glyph),
+                "Fade",
+                {"easing": "linear"}
+            )
+
+            after_state[item.glyph_id] = faded_glyph
+
+        if not after_state:
             return
 
-        original_glyph = copy.deepcopy(current_glyph)
-
-        faded_glyph = GlyphEffects.apply_visual_effect(
-            copy.deepcopy(current_glyph),
-            "Fade",
-            {"easing": "linear"}
-        )
-
-        self.conductor.composition.replace_glyph(self.glyph_id, faded_glyph)
+        self.conductor.composition.update_bunch_of_glyphs(after_state)
         self.conductor.glyph_controller.push_action(
             Actions.ActionModify(
                 self.conductor.glyph_controller,
-                {self.glyph_id: original_glyph},
-                {self.glyph_id: faded_glyph}
+                before_state,
+                after_state
             )
         )
 
-        self.pending_fade_keyframes = list(self.keyframes) if self.keyframes else []
-        self.update_geometry()
-        self.update()
+        for item in target_items:
+            item.pending_fade_keyframes = list(item.keyframes) if item.keyframes else []
+            item.fade_initial_keyframes = list(item.pending_fade_keyframes)
+            item.update_geometry()
+            item.update()
 
         self.handle_fade_press(event)
 
@@ -1368,91 +1547,159 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def handle_fade_press(self, event: QGraphicsSceneMouseEvent) -> None:
-        if not self.fade_is_dragging:
-            self.fade_initial_keyframes = [
-                (round(float(time_fraction), 2), int(round(float(brightness_value))))
-                for time_fraction, brightness_value in self.pending_fade_keyframes
-            ]
+        target_items = self.get_multi_keyframe_targets()
+
+        for item in target_items:
+            if not item.fade_is_dragging:
+                item.fade_initial_keyframes = [
+                    (round(float(time_fraction), 2), int(round(float(brightness_value))))
+                    for time_fraction, brightness_value in item.pending_fade_keyframes
+                ]
 
         width_px        = self.visual_width_px - self.keyframe_line_padding * 2
         height_px       = Styles.Metrics.Tracks.BoxHeight
         position        = event.pos()
-        click_radius_px = 8.0
+        click_radius_px = 14.0
+
+        hit_index = None
 
         for index, (time_fraction, brightness_value) in enumerate(self.pending_fade_keyframes):
             point_x_px = time_fraction * width_px + self.keyframe_line_padding
             point_y_px = (1.0 - brightness_value / 100.0) * (height_px - 2 * self.border_width_px) + self.border_width_px
 
             if math.hypot(position.x() - point_x_px, position.y() - point_y_px) < click_radius_px:
-                self.fade_is_dragging   = True
-                self.fade_dragged_index = index
+                hit_index = index
 
-                self.update()
-                event.accept()
+                break
 
-                return
+        if hit_index is not None:
+            self.fade_is_dragging   = True
+            self.fade_dragged_index = hit_index
 
-        fraction_x = round(max(0.0, min(1.0, (position.x() - self.keyframe_line_padding) / width_px)), 2)
-        fraction_y = int(round((1.0 - max(0.0, min(1.0, position.y() / height_px))) * 100.0))
-        new_point  = (fraction_x, fraction_y)
+            target_time = self.pending_fade_keyframes[hit_index][0]
 
-        insert_position = bisect.bisect_left([point[0] for point in self.pending_fade_keyframes], fraction_x)
+            for item in target_items:
+                if item == self or not item.pending_fade_keyframes:
+                    continue
 
-        self.pending_fade_keyframes.insert(insert_position, new_point)
+                if len(item.pending_fade_keyframes) == len(self.pending_fade_keyframes):
+                    item.fade_dragged_index = hit_index
 
-        self.fade_is_dragging   = True
-        self.fade_dragged_index = insert_position
+                else:
+                    item.fade_dragged_index = min(
+                        range(len(item.pending_fade_keyframes)),
+                        key = lambda candidate_index: abs(item.pending_fade_keyframes[candidate_index][0] - target_time)
+                    )
 
-        self.update()
-        event.accept()
-
-    def handle_fade_delete(self, event: QGraphicsSceneMouseEvent) -> None:
-        width_px        = self.visual_width_px - self.keyframe_line_padding * 2
-        height_px       = Styles.Metrics.Tracks.BoxHeight
-        position        = event.pos()
-        click_radius_px = 8.0
-        last_index      = len(self.pending_fade_keyframes) - 1
-
-        for index, (time_fraction, brightness_value) in enumerate(self.pending_fade_keyframes):
-            if index == 0 or index == last_index:
-                continue
-
-            point_x_px = time_fraction * width_px + self.keyframe_line_padding
-            point_y_px = (1.0 - brightness_value / 100.0) * (height_px - 2 * self.border_width_px) + self.border_width_px
-
-            if math.hypot(position.x() - point_x_px, position.y() - point_y_px) >= click_radius_px:
-                continue
-
-            old_keyframes = [
-                (round(float(time_part), 2), int(round(float(brightness_part))))
-                for time_part, brightness_part in self.pending_fade_keyframes
-            ]
-
-            del self.pending_fade_keyframes[index]
-
-            new_keyframes = [
-                (round(float(time_part), 2), int(round(float(brightness_part))))
-                for time_part, brightness_part in self.pending_fade_keyframes
-            ]
-
-            self.conductor.glyph_controller.commit_fade_keyframes(
-                self.glyph_id,
-                old_keyframes,
-                new_keyframes
-            )
-
-            self.fade_initial_keyframes = list(new_keyframes)
+                item.fade_is_dragging = True
+                item.update()
 
             self.update()
             event.accept()
 
             return
 
-    def handle_fade_move(self, event: QGraphicsSceneMouseEvent) -> None:
-        if not self.fade_is_dragging:
+        fraction_x = round(max(0.0, min(1.0, (position.x() - self.keyframe_line_padding) / width_px)), 2)
+        fraction_y = int(round((1.0 - max(0.0, min(1.0, position.y() / height_px))) * 100.0))
+        new_point  = (fraction_x, fraction_y)
+
+        for item in target_items:
+            if not item.pending_fade_keyframes:
+                continue
+
+            insert_position = bisect.bisect_left([point[0] for point in item.pending_fade_keyframes], fraction_x)
+
+            item.pending_fade_keyframes.insert(insert_position, new_point)
+            item.fade_is_dragging   = True
+            item.fade_dragged_index = insert_position
+            item.update()
+
+        event.accept()
+
+    def handle_fade_delete(self, event: QGraphicsSceneMouseEvent) -> None:
+        width_px        = self.visual_width_px - self.keyframe_line_padding * 2
+        height_px       = Styles.Metrics.Tracks.BoxHeight
+        position        = event.pos()
+        click_radius_px = 14.0
+        last_index      = len(self.pending_fade_keyframes) - 1
+
+        if last_index < 2:
+            event.accept()
+
             return
 
-        if self.fade_dragged_index is None:
+        candidate_distances = [
+            (
+                index,
+                math.hypot(
+                    position.x() - (time_fraction * width_px + self.keyframe_line_padding),
+                    position.y() - ((1.0 - brightness_value / 100.0) * (height_px - 2 * self.border_width_px) + self.border_width_px)
+                )
+            )
+            for index, (time_fraction, brightness_value) in enumerate(self.pending_fade_keyframes)
+            if 0 < index < last_index
+        ]
+
+        if not candidate_distances:
+            event.accept()
+
+            return
+
+        closest_index, distance = min(candidate_distances, key = lambda item: item[1])
+
+        if distance > click_radius_px:
+            event.accept()
+
+            return
+
+        deleted_time = self.pending_fade_keyframes[closest_index][0]
+        target_items = self.get_multi_keyframe_targets()
+        mutations    = {}
+
+        for item in target_items:
+            item_last = len(item.pending_fade_keyframes) - 1
+
+            if item_last < 2:
+                continue
+
+            old_keyframes = [
+                (round(float(time_part), 2), int(round(float(brightness_part))))
+                for time_part, brightness_part in item.pending_fade_keyframes
+            ]
+
+            match_index = None
+
+            if item == self:
+                match_index = closest_index
+
+            else:
+                for candidate_index in range(1, item_last):
+                    if abs(item.pending_fade_keyframes[candidate_index][0] - deleted_time) <= 0.08:
+                        match_index = candidate_index
+
+                        break
+
+            if match_index is None:
+                continue
+
+            del item.pending_fade_keyframes[match_index]
+
+            new_keyframes = [
+                (round(float(time_part), 2), int(round(float(brightness_part))))
+                for time_part, brightness_part in item.pending_fade_keyframes
+            ]
+
+            mutations[item.glyph_id]    = (old_keyframes, new_keyframes)
+            item.fade_initial_keyframes = list(new_keyframes)
+            item.update()
+
+        if mutations:
+            self.conductor.glyph_controller.commit_fade_keyframes_mutations(mutations)
+
+        event.accept()
+
+    def handle_fade_move(self, event: QGraphicsSceneMouseEvent) -> None:
+        if not self.fade_is_dragging or self.fade_dragged_index is None:
             return
 
         width_px        = self.visual_width_px - 2 * self.keyframe_line_padding
@@ -1460,27 +1707,81 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         inner_height_px = height_px - 2 * self.border_width_px
         index           = self.fade_dragged_index
 
-        new_fraction_x = round(max(0.0, min(1.0, (event.pos().x() - self.keyframe_line_padding) / width_px)), 2)
-        new_fraction_y = int(round((1.0 - max(0.0, min(1.0, (event.pos().y() - self.border_width_px) / inner_height_px))) * 100.0))
+        raw_fraction_x = round(max(0.0, min(1.0, (event.pos().x() - self.keyframe_line_padding) / width_px)), 2)
+        raw_fraction_y = int(round((1.0 - max(0.0, min(1.0, (event.pos().y() - self.border_width_px) / inner_height_px))) * 100.0))
 
         keyframes = self.pending_fade_keyframes
 
         if index == 0:
-            keyframes[index] = (0.0, new_fraction_y)
+            new_self_x = 0.0
+            new_self_y = raw_fraction_y
 
         elif index == len(keyframes) - 1:
-            keyframes[index] = (1.0, new_fraction_y)
+            new_self_x = 1.0
+            new_self_y = raw_fraction_y
 
         else:
             clamped_fraction_x = max(
                 keyframes[index - 1][0] + 0.01,
-                min(keyframes[index + 1][0] - 0.01, new_fraction_x)
+                min(keyframes[index + 1][0] - 0.01, raw_fraction_x)
             )
 
-            clamped_fraction_x = round(clamped_fraction_x, 2)
-            keyframes[index]   = (clamped_fraction_x, new_fraction_y)
+            new_self_x = round(clamped_fraction_x, 2)
+            new_self_y = raw_fraction_y
 
+        initial_self_point = (
+            self.fade_initial_keyframes[index]
+            if index < len(self.fade_initial_keyframes)
+            else (new_self_x, new_self_y)
+        )
+
+        delta_fraction_x = new_self_x - initial_self_point[0]
+        delta_fraction_y = new_self_y - initial_self_point[1]
+
+        keyframes[index] = (new_self_x, new_self_y)
         self.update()
+
+        target_items = self.get_multi_keyframe_targets()
+
+        for item in target_items:
+            if item == self or not item.fade_is_dragging or item.fade_dragged_index is None:
+                continue
+
+            item_index     = item.fade_dragged_index
+            item_keyframes = item.pending_fade_keyframes
+
+            if not (0 <= item_index < len(item_keyframes)):
+                continue
+
+            item_initial_point = (
+                item.fade_initial_keyframes[item_index]
+                if item_index < len(item.fade_initial_keyframes)
+                else item_keyframes[item_index]
+            )
+
+            target_x = item_initial_point[0] + delta_fraction_x
+            target_y = item_initial_point[1] + delta_fraction_y
+
+            if item_index == 0:
+                resolved_x = 0.0
+                resolved_y = max(0, min(100, int(round(target_y))))
+
+            elif item_index == len(item_keyframes) - 1:
+                resolved_x = 1.0
+                resolved_y = max(0, min(100, int(round(target_y))))
+
+            else:
+                clamped_x = max(
+                    item_keyframes[item_index - 1][0] + 0.01,
+                    min(item_keyframes[item_index + 1][0] - 0.01, target_x)
+                )
+
+                resolved_x = round(clamped_x, 2)
+                resolved_y = max(0, min(100, int(round(target_y))))
+
+            item_keyframes[item_index] = (resolved_x, resolved_y)
+            item.update()
+
         event.accept()
 
     def calculate_target_tilt(self, position: QPointF) -> tuple[float, float]:
@@ -1515,9 +1816,15 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if not self.data and self.despawn_duration_ms is None:
             return
 
-        extracted_keyframes         = self.keyframes
-        self.pending_fade_keyframes = list(extracted_keyframes) if extracted_keyframes else []
-        self.fade_initial_keyframes = list(self.pending_fade_keyframes)
+        extracted_keyframes = self.keyframes
+        target_keyframes    = list(extracted_keyframes) if extracted_keyframes else []
+
+        if animate_movement and target_keyframes != self.pending_fade_keyframes:
+            self.animate_keyframes_transition(target_keyframes)
+
+        elif not self.is_animating_keyframes:
+            self.pending_fade_keyframes = target_keyframes
+            self.fade_initial_keyframes = list(self.pending_fade_keyframes)
 
         target_fixed_y_px = self.calculate_y_pos()
         target_x_px       = self.ms_to_px(self.start_ms)
