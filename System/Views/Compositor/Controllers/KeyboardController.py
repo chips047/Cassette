@@ -13,17 +13,23 @@ from PyQt6.QtGui import (
 from PyQt6.QtCore import (
     Qt,
     QEvent,
-    QObject,
     QTimer,
+    QObject,
     pyqtSignal
 )
 
 from System.Common import Constants
-from System.Services import Player
+
+from System.Services import (
+    Player,
+    RealTimeVisualizer
+)
 
 from System.Interface.Windows import ErrorWindow
 
 from .. import Timeline
+
+# Keyboard Controller
 
 class KeyboardController(QObject):
     undo_requested              = pyqtSignal()
@@ -43,6 +49,10 @@ class KeyboardController(QObject):
     scale_requested             = pyqtSignal(float)
     brightness_adjust_requested = pyqtSignal(int)
     spawn_track_glyph_requested = pyqtSignal(str)
+    move_track_up_requested     = pyqtSignal()
+    move_track_down_requested   = pyqtSignal()
+    zoom_selection_requested    = pyqtSignal()
+    zoom_fit_requested          = pyqtSignal()
 
     TRACK_KEY_MAPPINGS: dict[Qt.Key, str] = {
         Qt.Key.Key_A:     Constants.MASTER_TRACK_IDENTIFIER,
@@ -59,6 +69,8 @@ class KeyboardController(QObject):
         Qt.Key.Key_Minus: "11"
     }
 
+    # Initialization Section
+
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
 
@@ -71,16 +83,16 @@ class KeyboardController(QObject):
         self.shortcuts      = []
 
         self.space_press_times: list[float] = []
-        self.ee_active:         bool        = False
+        self.easter_egg_active: bool        = False
 
         self.space_hold_timer = QTimer(self)
         self.space_hold_timer.setSingleShot(True)
-        self.space_hold_timer.timeout.connect(self.trigger_space_ee)
+        self.space_hold_timer.timeout.connect(self.trigger_space_easter_egg)
 
         self.setup_track_hotkeys()
         self.setup_hotkeys()
 
-    # Hotkey Setup
+    # Hotkey Setup Section
 
     def bind(
             self,
@@ -111,6 +123,12 @@ class KeyboardController(QObject):
             (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Equal, lambda: self.scale_requested.emit(100.0)),
             (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Minus, lambda: self.scale_requested.emit(-100.0)),
 
+            (Qt.Key.Key_F,                                     self.zoom_fit_requested.emit),
+            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_F, self.handle_zoom_selection),
+
+            (Qt.Key.Key_Up,   self.handle_move_track_up),
+            (Qt.Key.Key_Down, self.handle_move_track_down),
+
             (Qt.Key.Key_Space,                                     self.handle_playback_toggle),
             (Qt.Key.Key_Left,                                      lambda: self.handle_manual_playhead_move(-self.move_increment)),
             (Qt.Key.Key_Right,                                     lambda: self.handle_manual_playhead_move(self.move_increment)),
@@ -123,8 +141,8 @@ class KeyboardController(QObject):
             (Qt.Key.Key_S,            self.speed_cycle_requested.emit),
             (Qt.Key.Key_B,            self.open_brightness_editor),
             (Qt.Key.Key_D,            self.open_duration_editor),
-            (Qt.Key.Key_BracketLeft,  lambda: self.brightness_adjust_requested.emit(-5)),
-            (Qt.Key.Key_BracketRight, lambda: self.brightness_adjust_requested.emit(5)),
+            (Qt.Key.Key_BracketLeft,  lambda: self.handle_brightness_adjust(-5)),
+            (Qt.Key.Key_BracketRight, lambda: self.handle_brightness_adjust(5)),
 
             (Qt.Key.Key_Escape, self.escape_requested.emit),
 
@@ -139,7 +157,7 @@ class KeyboardController(QObject):
         for key, track_identifier in self.TRACK_KEY_MAPPINGS.items():
             self.bind(key, partial(self.spawn_track_glyph_requested.emit, track_identifier))
 
-    # Event Handling
+    # Event Filter Section
 
     def eventFilter(
             self,
@@ -178,13 +196,23 @@ class KeyboardController(QObject):
             elif key_code in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
                 Player.ui_player.release_sound("glyph_deletion")
 
+            elif key_code in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+                Player.ui_player.release_sound("warning_move_track")
+
+            elif key_code in (Qt.Key.Key_BracketLeft, Qt.Key.Key_BracketRight):
+                Player.ui_player.release_sound("warning_brightness")
+
+            elif key_code == Qt.Key.Key_F:
+                Player.ui_player.release_sound("warning_zoom_selection")
+                Player.ui_player.release_sound("warning_already_zoomed")
+
         return super().eventFilter(watched, event)
 
-    def trigger_space_ee(self) -> None:
-        if self.ee_active:
+    def trigger_space_easter_egg(self) -> None:
+        if self.easter_egg_active:
             return
 
-        self.ee_active = True
+        self.easter_egg_active = True
         self.space_hold_timer.stop()
         self.space_press_times.clear()
 
@@ -195,19 +223,20 @@ class KeyboardController(QObject):
             ErrorWindow("Uhm", "Why?").exec()
 
         finally:
-            self.ee_active = False
+            self.easter_egg_active = False
             self.space_press_times.clear()
             self.space_hold_timer.stop()
 
-    # Playhead Management
+    # Playhead Section
 
     def handle_playback_toggle(self) -> None:
-        current_time = time.time()
-        self.space_press_times = [t for t in self.space_press_times if current_time - t <= 1.5]
+        current_time           = time.time()
+        self.space_press_times = [press_time for press_time in self.space_press_times if current_time - press_time <= 1.5]
         self.space_press_times.append(current_time)
 
         if len(self.space_press_times) >= 5:
-            self.trigger_space_ee()
+            self.trigger_space_easter_egg()
+
             return
 
         position_ms        = self.conductor.get_playhead_position_ms()
@@ -224,7 +253,7 @@ class KeyboardController(QObject):
             self.conductor.horizontalScrollBar().setValue(0)
             self.conductor.scroll_to_playhead()
             self.playback_manager.toggle_playback(0.0)
-            
+
             return
 
         if not self.playback_manager.is_playing:
@@ -290,11 +319,35 @@ class KeyboardController(QObject):
     def go_to_end(self) -> None:
         self.jump_to_position(self.playback_manager.duration_ms, "Feedback/PlayheadBackward", "playhead_end")
 
-    # Glyph Actions
+    # Glyph Actions Section
 
     def handle_deletion(self) -> None:
         self.delete_requested.emit()
         Player.ui_player.play_sound("Glyphs/Delete", setting_key = "glyph_deletion_sound", lock_tag = "glyph_deletion")
+
+    def handle_move_track_up(self) -> None:
+        if not self.ensure_selection("warning_move_track"):
+            return
+
+        self.move_track_up_requested.emit()
+
+    def handle_move_track_down(self) -> None:
+        if not self.ensure_selection("warning_move_track"):
+            return
+
+        self.move_track_down_requested.emit()
+
+    def handle_brightness_adjust(self, delta: int) -> None:
+        if not self.ensure_selection("warning_brightness"):
+            return
+
+        self.brightness_adjust_requested.emit(delta)
+
+    def handle_zoom_selection(self) -> None:
+        if not self.ensure_selection("warning_zoom_selection"):
+            return
+
+        self.zoom_selection_requested.emit()
 
     def open_brightness_editor(self) -> None:
         if not self.ensure_selection("warning_brightness"):
@@ -324,11 +377,12 @@ class KeyboardController(QObject):
             )
 
             self.conductor.tooltip.show_tooltip_at("No glyphs selected.", plan_hide = True)
+
             return False
 
         return True
 
-    # Cleanup
+    # Cleanup Section
 
     def cleanup_shortcuts(self) -> None:
         self.conductor.removeEventFilter(self)

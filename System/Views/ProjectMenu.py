@@ -26,6 +26,7 @@ from PyQt6.QtGui import (
     QPaintEvent,
     QResizeEvent,
     QDragEnterEvent,
+    QDragLeaveEvent,
     QLinearGradient
 )
 
@@ -49,8 +50,8 @@ from System.Common import (
 )
 
 from System.Interface import (
-    Windows,
-    Widgets
+    Widgets,
+    Windows
 )
 
 from System.Services import (
@@ -58,35 +59,35 @@ from System.Services import (
     ProjectSaver
 )
 
-# Project Functions
+# Search Helpers
 
 def normalize_text(text: str) -> str:
     return " ".join(text.casefold().split())
 
 def get_search_score(
-    query:      str,
-    project_id: str,
-    title:      str,
-    artist:     str,
-    model:      str
-) -> float:
+        search_query:       str,
+        project_identifier: str,
+        title:              str,
+        artist:             str,
+        model:              str
+    ) -> float:
 
-    normalized_query  = normalize_text(query)
+    normalized_query = normalize_text(search_query)
 
     if not normalized_query:
         return 1.0
 
-    normalized_title  = normalize_text(title)
-    normalized_artist = normalize_text(artist)
-    normalized_model  = normalize_text(model)
-    normalized_id     = normalize_text(project_id)
+    normalized_title      = normalize_text(title)
+    normalized_artist     = normalize_text(artist)
+    normalized_model      = normalize_text(model)
+    normalized_identifier = normalize_text(project_identifier)
 
     tokens = normalized_query.split()
 
     if normalized_query in normalized_title:
         return 1.0 + (len(normalized_query) / max(len(normalized_title), 1))
 
-    all_fields = f"{normalized_title} {normalized_artist} {normalized_model} {normalized_id}"
+    all_fields = f"{normalized_title} {normalized_artist} {normalized_model} {normalized_identifier}"
 
     if all(token in all_fields for token in tokens):
         title_hits = sum(1 for token in tokens if token in normalized_title)
@@ -97,12 +98,14 @@ def get_search_score(
     if title_ratio > 0.6:
         return title_ratio
 
-    other_fields = f"{normalized_artist} {normalized_id} {normalized_model}"
+    other_fields = f"{normalized_artist} {normalized_identifier} {normalized_model}"
 
     if normalized_query in other_fields:
         return 0.5
 
     return 0.0
+
+# Project Discovery
 
 def get_projects_info(songs_folder: str) -> dict[str, dict[str, object]]:
     projects: dict[str, dict[str, object]] = {}
@@ -133,13 +136,12 @@ def get_projects_info(songs_folder: str) -> dict[str, dict[str, object]]:
 
         if not audio_path or not json_path:
             logger.warning(f"Project '{project_name}' is missing audio or JSON file. Removing.")
-
             shutil.rmtree(project_path, ignore_errors = True)
             continue
 
         try:
-            with open(json_path, "r", encoding = "utf-8") as file:
-                save_data = json.load(file)
+            with open(json_path, "r", encoding = "utf-8") as file_handle:
+                save_data = json.load(file_handle)
 
         except Exception:
             continue
@@ -160,30 +162,31 @@ def get_projects_info(songs_folder: str) -> dict[str, dict[str, object]]:
             "save":       save_data,
             "title":      title,
             "artist":     artist,
-            "model":      model_info.short_name
+            "model":      model_info.short_name,
+            "progress":   save_data.get("progress", 0.0)
         }
 
     return projects
 
-# Widgets
+# Track Item Widget
 
 class TrackItemWidget(QWidget):
     edit_clicked  = pyqtSignal(str)
     audio_clicked = pyqtSignal(str)
 
     def __init__(
-        self,
-        project_id: str,
-        title:      str,
-        artist:     str,
-        subtitle:   str,
-        main_menu:  QWidget | None = None
-    ) -> None:
+            self,
+            project_identifier: str,
+            title:              str,
+            artist:             str,
+            subtitle:           str,
+            main_menu:          QWidget | None = None
+        ) -> None:
 
         super().__init__(main_menu)
 
-        self.project_id = project_id
-        self.main_menu  = main_menu
+        self.project_identifier = project_identifier
+        self.main_menu          = main_menu
 
         self.setMinimumWidth(240)
         self.setFixedHeight(120)
@@ -198,7 +201,6 @@ class TrackItemWidget(QWidget):
                 }}
             """
         )
-
         self.background_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         main_layout = QVBoxLayout(self)
@@ -212,19 +214,18 @@ class TrackItemWidget(QWidget):
 
         top_layout  = QHBoxLayout()
         info_layout = QVBoxLayout()
-
         info_layout.setSpacing(4)
 
-        title_label = QLabel(title)
-        title_label.setFont(Utils.NType(11.5))
-        title_label.setStyleSheet(Styles.Other.Font)
+        self.title_label = QLabel(title)
+        self.title_label.setFont(Utils.NType(11.5))
+        self.title_label.setStyleSheet(Styles.Other.Font)
 
-        artist_label = QLabel(f"{artist}  {subtitle}")
-        artist_label.setFont(Utils.NType(9))
-        artist_label.setStyleSheet(Styles.Other.SecondFont)
+        self.artist_label = QLabel(f"{artist}  {subtitle}")
+        self.artist_label.setFont(Utils.NType(9))
+        self.artist_label.setStyleSheet(Styles.Other.SecondFont)
 
-        info_layout.addWidget(title_label)
-        info_layout.addWidget(artist_label)
+        info_layout.addWidget(self.title_label)
+        info_layout.addWidget(self.artist_label)
         info_layout.addStretch()
 
         top_layout.addLayout(info_layout)
@@ -243,12 +244,11 @@ class TrackItemWidget(QWidget):
             ("Delete.png",   self.on_delete_clicked)
         ]
 
-        for icon_name, slot in icons_data:
+        for icon_name, slot_handler in icons_data:
             button = Widgets.IconButtonSmall(
                 QIcon(f"System/Assets/Icons/ProjectMenu/{icon_name}")
             )
-            
-            button.clicked.connect(slot)
+            button.clicked.connect(slot_handler)
             icons_layout.addWidget(button)
 
         bottom_layout.addLayout(icons_layout)
@@ -257,11 +257,21 @@ class TrackItemWidget(QWidget):
         content_layout.addLayout(top_layout)
         content_layout.addLayout(bottom_layout)
 
+    def update_information(
+            self,
+            title:    str,
+            artist:   str,
+            subtitle: str
+        ) -> None:
+
+        self.title_label.setText(title)
+        self.artist_label.setText(f"{artist}  {subtitle}")
+
     def on_edit_clicked(self) -> None:
-        self.edit_clicked.emit(self.project_id)
+        self.edit_clicked.emit(self.project_identifier)
 
     def on_audio_clicked(self) -> None:
-        self.audio_clicked.emit(self.project_id)
+        self.audio_clicked.emit(self.project_identifier)
 
     def on_delete_clicked(self) -> None:
         dialog = Windows.DialogWindow("Remove?")
@@ -270,29 +280,32 @@ class TrackItemWidget(QWidget):
             return
 
         shutil.rmtree(
-            Utils.get_user_path(str(self.project_id), "Cassette/Songs"),
+            Utils.get_user_path(str(self.project_identifier), "Cassette/Songs"),
             ignore_errors = True
         )
 
-        QTimer.singleShot(0, self.main_menu.refresh_tracks)
+        if self.main_menu:
+            QTimer.singleShot(0, self.main_menu.refresh_tracks)
 
     def on_export_clicked(self) -> None:
-        composition = ProjectSaver.MinimalComposition(self.project_id)
+        composition = ProjectSaver.MinimalComposition(self.project_identifier)
         Windows.ExportDialogWindow(composition).exec()
+
+# Fade Overlay Widget
 
 class FadeOverlay(QWidget):
     def __init__(
-        self,
-        color:  QColor,
-        is_top: bool,
-        parent: QWidget | None = None
-    ) -> None:
+            self,
+            color:             QColor,
+            is_top_positioned: bool,
+            parent:            QWidget | None = None
+        ) -> None:
 
         super().__init__(parent)
 
-        self.color         = color
-        self.is_top        = is_top
-        self.opacity_value = 1.0
+        self.overlay_color     = color
+        self.is_top_positioned = is_top_positioned
+        self.opacity_value     = 1.0
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
@@ -303,13 +316,13 @@ class FadeOverlay(QWidget):
 
         gradient = QLinearGradient(0, 0, 0, self.height())
 
-        opaque_color = QColor(self.color)
+        opaque_color = QColor(self.overlay_color)
         opaque_color.setAlpha(255)
 
-        transparent_color = QColor(self.color)
+        transparent_color = QColor(self.overlay_color)
         transparent_color.setAlpha(0)
 
-        if self.is_top:
+        if self.is_top_positioned:
             gradient.setColorAt(0, opaque_color)
             gradient.setColorAt(1, transparent_color)
 
@@ -329,19 +342,21 @@ class FadeOverlay(QWidget):
         self.opacity_value = value
         self.update()
 
+# Fade Scroll Area
+
 class FadeScrollArea(QScrollArea):
     def __init__(
-        self,
-        fade_color:  QColor         = QColor("#000000"),
-        fade_height: int            = 40,
-        parent:      QWidget | None = None,
-    ) -> None:
+            self,
+            fade_color:  QColor         = QColor("#000000"),
+            fade_height: int            = 40,
+            parent:      QWidget | None = None
+        ) -> None:
 
         super().__init__(parent)
 
-        self.fade_color:  QColor                                = fade_color
-        self.fade_height: int                                   = fade_height
-        self.animations:  dict[FadeOverlay, QPropertyAnimation] = {}
+        self.fade_color  = fade_color
+        self.fade_height = fade_height
+        self.animations  = {}
 
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -359,10 +374,10 @@ class FadeScrollArea(QScrollArea):
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
 
-        width = self.viewport().width()
+        viewport_width = self.viewport().width()
 
-        self.top_fade.setGeometry(0, 0, width, self.fade_height)
-        self.bottom_fade.setGeometry(0, self.height() - self.fade_height, width, self.fade_height)
+        self.top_fade.setGeometry(0, 0, viewport_width, self.fade_height)
+        self.bottom_fade.setGeometry(0, self.height() - self.fade_height, viewport_width, self.fade_height)
 
         self.update_fade_visibility()
 
@@ -373,8 +388,13 @@ class FadeScrollArea(QScrollArea):
         self.animate_fade(self.top_fade,    scroll_value > 0)
         self.animate_fade(self.bottom_fade, scroll_value < maximum_value)
 
-    def animate_fade(self, widget: FadeOverlay, show: bool) -> None:
-        target_opacity  = 1.0 if show else 0.0
+    def animate_fade(
+            self,
+            widget:            FadeOverlay,
+            should_be_visible: bool
+        ) -> None:
+
+        target_opacity  = 1.0 if should_be_visible else 0.0
         current_opacity = widget.opacity
 
         if current_opacity == target_opacity:
@@ -388,16 +408,16 @@ class FadeScrollArea(QScrollArea):
         animation.setStartValue(current_opacity)
         animation.setEndValue(target_opacity)
 
-        if show:
+        if should_be_visible:
             widget.show()
-        
+
         else:
-            animation.finished.connect(lambda widget = widget: widget.hide())
+            animation.finished.connect(lambda target_widget = widget: target_widget.hide())
 
         animation.start()
         self.animations[widget] = animation
 
-# Main Menu
+# Main Menu Widget
 
 class MainMenu(QWidget):
     composition_created = pyqtSignal(object)
@@ -408,9 +428,7 @@ class MainMenu(QWidget):
 
         self.projects_info:   dict[str, dict[str, object]] = {}
         self.track_widgets:   dict[str, TrackItemWidget]   = {}
-        self.search_box:      Widgets.Textbox | None        = None
-        self.tracks_widget:   QWidget        | None        = None
-        
+        self.search_box:      Widgets.SearchTextbox | None = None
         self.drag_loop_sound: Player.UISound | None        = None
 
         self.container = QFrame(self)
@@ -427,10 +445,10 @@ class MainMenu(QWidget):
         self.setAcceptDrops(True)
         self.setup_ui()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.container)
-    
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.addWidget(self.container)
+
     def setup_ui(self) -> None:
         container_layout = QVBoxLayout(self.container)
         container_layout.setContentsMargins(12, 12, 12, 12)
@@ -454,7 +472,6 @@ class MainMenu(QWidget):
         self.title_label.setStyleSheet("background-color: transparent; color: #ffffff;")
 
         title_layout.addWidget(self.title_label)
-
         container_layout.addWidget(title_container)
 
         button_container = QFrame()
@@ -471,7 +488,6 @@ class MainMenu(QWidget):
         self.search_box.safeTextChanged.connect(self.apply_search_filter)
 
         button_layout.addWidget(self.search_box)
-
         container_layout.addWidget(button_container)
 
         tracks_container = QFrame()
@@ -500,7 +516,6 @@ class MainMenu(QWidget):
                 }
             """
         )
-
         self.scroll_area.setWidget(tracks_container)
         container_layout.addWidget(self.scroll_area)
 
@@ -508,61 +523,50 @@ class MainMenu(QWidget):
         self.tracks_grid_layout = QGridLayout(self.tracks_grid_widget)
         self.tracks_grid_layout.setSpacing(12)
         self.tracks_grid_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.tracks_grid_widget.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Maximum
         )
-        
+
         self.tracks_layout.addWidget(self.tracks_grid_widget, alignment = Qt.AlignmentFlag.AlignTop)
 
     def create_button_panel(self) -> QWidget:
-        panel  = QWidget()
-        layout = QHBoxLayout(panel)
-
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(8)
+        panel        = QWidget()
+        panel_layout = QHBoxLayout(panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(8)
 
         version_path = Utils.get_resource_path("version")
-        version      = "0.0.0"
+        version_text = "0.0.0"
 
         try:
-            with open(version_path, "r", encoding = "utf-8") as file:
-                version = file.read().strip()
+            with open(version_path, "r", encoding = "utf-8") as file_handle:
+                version_text = file_handle.read().strip()
 
         except OSError:
             pass
 
-        buttons_data = [
-            ("New composition",   True,  "on_new_composition"),
-            ("Glyphtone Trimmer", False, "on_glyphtone_editor"),
-            ("Import",            False, "on_import"),
-            ("Go to glyphtones",  False, "on_glyphtones"),
-            ("Settings",          False, "on_settings"),
-            (version,             False, "on_about"),
+        buttons_configuration = [
+            ("New composition",   True,  self.on_new_composition),
+            ("Glyphtone Trimmer", False, self.on_glyphtone_editor),
+            ("Import",            False, self.on_import),
+            ("Go to glyphtones",  False, self.on_glyphtones),
+            ("Settings",          False, self.on_settings),
+            (version_text,        False, self.on_about)
         ]
 
-        for text, is_accent, slot_name in buttons_data:
-            button = Widgets.OptionButton(
-                text,
-                is_accent,
-                getattr(self, slot_name)
+        for text_label, is_accented, callback_handler in buttons_configuration:
+            option_button = Widgets.OptionButton(
+                text_label,
+                is_accented,
+                callback_handler
             )
-
-            layout.addWidget(button)
+            panel_layout.addWidget(option_button)
 
         panel.setStyleSheet("background-color: transparent;")
+        
         return panel
-
-    def clear_tracks_layout(self) -> None:
-        while self.tracks_layout.count():
-            item   = self.tracks_layout.takeAt(0)
-            widget = item.widget()
-
-            if widget is None:
-                continue
-
-            widget.deleteLater()
 
     def get_visible_projects(self, search_text: str) -> list[tuple[str, dict[str, object]]]:
         projects = list(self.projects_info.items())
@@ -572,10 +576,10 @@ class MainMenu(QWidget):
 
         ranked_projects = []
 
-        for project_id, project_data in projects:
+        for project_identifier, project_data in projects:
             score = get_search_score(
                 search_text,
-                project_id,
+                project_identifier,
                 str(project_data["title"]),
                 str(project_data["artist"]),
                 str(project_data["model"])
@@ -584,101 +588,87 @@ class MainMenu(QWidget):
             if score <= 0.0:
                 continue
 
-            ranked_projects.append((score, project_id, project_data))
+            ranked_projects.append((score, project_identifier, project_data))
 
         ranked_projects.sort(key = lambda item: (-item[0], int(item[1])))
 
         return [
-            (project_id, project_data)
-            for _, project_id, project_data in ranked_projects
+            (project_identifier, project_data)
+            for _, project_identifier, project_data in ranked_projects
         ]
 
-    def create_tracks_grid(self, search_text: str) -> QWidget:
-        widget = QWidget()
-        layout = QGridLayout(widget)
-
-        layout.setSpacing(15)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        visible_projects = self.get_visible_projects(search_text)
-
-        for index, (project_id, data) in enumerate(visible_projects):
-            row    = index // 2
-            column = index % 2
-
-            track_item = TrackItemWidget(
-                project_id,
-                str(data["title"]),
-                str(data["artist"]),
-                f"- {data['model'] or ''}",
-                main_menu = self,
-            )
-
-            track_item.edit_clicked.connect(self.on_edit_project)
-            track_item.audio_clicked.connect(self.on_audio_settings)
-            layout.addWidget(track_item, row, column)
-
-        return widget
-
     def refresh_tracks(self) -> None:
-        path               = Utils.get_user_path("", "Cassette/Songs")
-        self.projects_info = get_projects_info(path)
+        songs_directory    = Utils.get_user_path("", "Cassette/Songs")
+        self.projects_info = get_projects_info(songs_directory)
 
-        for p_id in list(self.track_widgets.keys()):
-            if p_id in self.projects_info:
+        for existing_identifier in list(self.track_widgets.keys()):
+            if existing_identifier in self.projects_info:
                 continue
 
-            widget = self.track_widgets.pop(p_id)
+            widget = self.track_widgets.pop(existing_identifier)
             widget.deleteLater()
 
-        for project_id, data in self.projects_info.items():
-            if project_id in self.track_widgets:
+        for project_identifier, project_data in self.projects_info.items():
+            title_text    = str(project_data["title"])
+            artist_text   = str(project_data["artist"])
+            subtitle_text = f"- {project_data['model'] or ''} • {project_data.get('progress', 0.0)}%"
+
+            if project_identifier in self.track_widgets:
+                self.track_widgets[project_identifier].update_information(
+                    title_text,
+                    artist_text,
+                    subtitle_text
+                )
                 continue
 
             track_item = TrackItemWidget(
-                project_id,
-                str(data["title"]),
-                str(data["artist"]),
-                f"- {data['model'] or ''}",
-                main_menu = self
+                project_identifier,
+                title_text,
+                artist_text,
+                subtitle_text,
+                self
             )
 
             track_item.edit_clicked.connect(self.on_edit_project)
             track_item.audio_clicked.connect(self.on_audio_settings)
-            self.track_widgets[project_id] = track_item
 
-        self.apply_search_filter(self.search_box.text())
+            self.track_widgets[project_identifier] = track_item
+
+        search_query = self.search_box.text() if self.search_box else ""
+        self.apply_search_filter(search_query)
 
     def apply_search_filter(self, search_text: str) -> None:
-        for i in reversed(range(self.tracks_grid_layout.count())):
-            item = self.tracks_grid_layout.takeAt(i)
-            widget = item.widget()
+        for index in reversed(range(self.tracks_grid_layout.count())):
+            layout_item = self.tracks_grid_layout.takeAt(index)
+            grid_widget = layout_item.widget()
 
-            if widget:
-                widget.hide()
+            if grid_widget:
+                grid_widget.hide()
 
         visible_projects = self.get_visible_projects(search_text)
 
-        for index, (project_id, data) in enumerate(visible_projects):
+        for index, (project_identifier, _) in enumerate(visible_projects):
             row    = index // 2
             column = index % 2
 
-            widget = self.track_widgets.get(project_id)
-            
-            if widget:
-                self.tracks_grid_layout.addWidget(widget, row, column)
-                widget.show()
+            matched_widget = self.track_widgets.get(project_identifier)
+
+            if matched_widget:
+                self.tracks_grid_layout.addWidget(matched_widget, row, column)
+                matched_widget.show()
 
     def process_new_composition(self, file_path: str) -> None:
-        window = Windows.AudioSetupDialog(file_path)
+        audio_dialog = Windows.AudioSetupDialog(file_path)
 
-        if window.exec():
-            composition = ProjectSaver.Composition(
-                file_path,
-                window.saved_settings
-            )
+        if not audio_dialog.exec():
+            return
 
-            self.composition_created.emit(composition)
+        composition = ProjectSaver.Composition(
+            file_path,
+            audio_dialog.saved_settings
+        )
+
+        self.composition_created.emit(composition)
 
     def dragEnterEvent(self, event: QDragEnterEvent) -> None:
         if not self.drag_loop_sound:
@@ -696,11 +686,11 @@ class MainMenu(QWidget):
 
         event.acceptProposedAction()
 
-    def dragLeaveEvent(self, event: object) -> None:
+    def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
         if self.drag_loop_sound:
             Player.ui_player.play_sound(
                 "DragDrop/DragDrop",
-                speed = 0.9,
+                speed       = 0.9,
                 setting_key = "drag_drop_sounds"
             )
 
@@ -714,20 +704,20 @@ class MainMenu(QWidget):
             self.drag_loop_sound.stop()
             self.drag_loop_sound = None
 
-        valid_file_found = False
-        file_to_process  = None
+        file_to_process = None
 
         for url in event.mimeData().urls():
-            current_file_path = url.toLocalFile()
-            mime_type         = mimetypes.guess_type(current_file_path)[0]
+            candidate_path = url.toLocalFile()
+            mime_type      = mimetypes.guess_type(candidate_path)[0]
 
-            if mime_type and (mime_type.startswith("audio") or mime_type.startswith("video")):
-                file_to_process  = current_file_path
-                valid_file_found = True
+            if not mime_type:
+                continue
 
+            if mime_type.startswith("audio") or mime_type.startswith("video"):
+                file_to_process = candidate_path
                 break
 
-        if not valid_file_found:
+        if not file_to_process:
             Player.ui_player.play_sound("Signals/Error/MegaCritical")
             self.title_label.setText(
                 random.choice(
@@ -743,16 +733,17 @@ class MainMenu(QWidget):
                     ]
                 )
             )
-        
-        else:
-            Player.ui_player.play_sound(
-                "DragDrop/DragDrop",
-                speed = 0.9,
-                setting_key = "drag_drop_sounds"
-            )
+            super().dropEvent(event)
+            return
 
-            self.process_new_composition(file_to_process)
-            event.acceptProposedAction()
+        Player.ui_player.play_sound(
+            "DragDrop/DragDrop",
+            speed       = 0.9,
+            setting_key = "drag_drop_sounds"
+        )
+
+        self.process_new_composition(file_to_process)
+        event.acceptProposedAction()
 
         super().dropEvent(event)
 
@@ -766,15 +757,17 @@ class MainMenu(QWidget):
         settings_dialog.exec()
 
     def on_import(self) -> None:
-        window = Windows.ImportWindow()
+        import_window = Windows.ImportWindow()
 
-        if window.exec():
-            composition = ProjectSaver.Composition(
-                window.audio_path,
-                window.saved_settings
-            )
+        if not import_window.exec():
+            return
 
-            self.composition_created.emit(composition)
+        composition = ProjectSaver.Composition(
+            import_window.audio_path,
+            import_window.saved_settings
+        )
+
+        self.composition_created.emit(composition)
 
     def on_about(self) -> None:
         modifiers = QApplication.keyboardModifiers()
@@ -784,64 +777,65 @@ class MainMenu(QWidget):
         has_ctrl  = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
 
         if has_shift and has_ctrl:
-            return Windows.WalterWindow().exec()
+            Windows.WalterWindow().exec()
+            return
 
         if has_shift:
-            return Windows.ByteBeatWindow().exec()
-        
+            Windows.ByteBeatWindow().exec()
+            return
+
         if has_alt:
-            return Windows.AboutWindow(more_info = True).exec()
+            Windows.AboutWindow(more_info = True).exec()
+            return
 
         Windows.AboutWindow().exec()
 
     def on_glyphtones(self) -> None:
         webbrowser.open("https://glyphtones.firu.dev/")
 
-    def on_edit_project(self, project_id: str) -> None:
+    def on_edit_project(self, project_identifier: str) -> None:
         self.setEnabled(False)
-        self.edit_requested.emit(project_id)
+        self.edit_requested.emit(project_identifier)
 
-    def on_audio_settings(self, project_id: str) -> None:
+    def on_audio_settings(self, project_identifier: str) -> None:
         try:
-            composition = ProjectSaver.Composition(id = project_id)
-            window = Windows.ExistingAudioSetupDialog(composition)
+            composition  = ProjectSaver.Composition(id = project_identifier)
+            audio_window = Windows.ExistingAudioSetupDialog(composition)
 
-            if not window.exec():
+            if not audio_window.exec():
                 return
 
-            composition.bpm = window.get_bpm_value()
+            composition.bpm = audio_window.get_bpm_value()
 
-            if window.snapped_times:
-                composition.beats = window.snapped_times
+            if audio_window.snapped_times:
+                composition.beats = audio_window.snapped_times
 
-            trim = window.get_trim_settings()
+            trim_settings = audio_window.get_trim_settings()
 
             composition.trim_audio(
-                int(trim["start_ms"]),
-                int(trim["end_ms"]),
-                int(trim["fade_in"]),
-                int(trim["fade_out"])
+                int(trim_settings["start_ms"]),
+                int(trim_settings["end_ms"]),
+                int(trim_settings["fade_in"]),
+                int(trim_settings["fade_out"])
             )
 
         except Exception as exception:
             Windows.ErrorWindow("Audio edit failed", str(exception)).exec()
 
     def ask_for_file(self) -> str | None:
-        options = QFileDialog.Option.ReadOnly
-
-        dialog = QFileDialog(
+        file_dialog = QFileDialog(
             self,
             "Open Audio File",
             "",
-            "Audio Files (*.wav *.mp3 *.ogg *.flac *.opus *.mp4 *.mkv *.mov);;All Files (*)",
+            "Audio Files (*.wav *.mp3 *.ogg *.flac *.opus *.mp4 *.mkv *.mov);;All Files (*)"
         )
 
-        dialog.setOptions(options)
+        file_dialog.setOptions(QFileDialog.Option.ReadOnly)
 
-        if dialog.exec() != QFileDialog.DialogCode.Accepted:
+        if file_dialog.exec() != QFileDialog.DialogCode.Accepted:
             return None
 
-        return dialog.selectedFiles()[0]
+        return file_dialog.selectedFiles()[0]
 
     def on_new_composition(self) -> None:
         file_path = self.ask_for_file()

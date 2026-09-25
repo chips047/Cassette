@@ -1,9 +1,9 @@
-
-from __future__ import annotations
-
 from loguru import logger
 
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import (
+    QIcon,
+    QCloseEvent
+)
 
 from PyQt6.QtCore import (
     Qt,
@@ -36,12 +36,15 @@ from System.Interface import (
 
 from . import Timeline
 
+# Main Compositor Widget
+
 class CompositorWidget(QWidget):
     back_to_main_menu_requested = pyqtSignal()
     loading_finished            = pyqtSignal()
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
+
         self.setStyleSheet("background-color: #1e1e1e;")
 
         self.playback_manager = Player.player
@@ -163,6 +166,7 @@ class CompositorWidget(QWidget):
             state_index: int,
             speed_value: float
         ) -> None:
+
         self.playback_manager.set_speed(speed_value, 700)
         self.content_widget.speed_control_used.emit()
 
@@ -171,6 +175,7 @@ class CompositorWidget(QWidget):
             state_index:  int,
             effect_value: str
         ) -> None:
+
         if not self.content_widget.composition:
             return
 
@@ -241,6 +246,9 @@ class CompositorWidget(QWidget):
     def unload_composition(self) -> None:
         logger.warning("Unloading composition from compositor widget and clearing state")
 
+        if self.content_widget.composition:
+            self.content_widget.composition.update_progress()
+
         self.close_active_tutorial()
 
         self.setEnabled(False)
@@ -275,6 +283,12 @@ class CompositorWidget(QWidget):
         self.playspeed_button.reset()
         self.glyph_dur_control.reset()
         self.brightness_control.reset()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self.content_widget.composition:
+            self.content_widget.composition.update_progress()
+
+        super().closeEvent(event)
 
     def clear_ejecting_flag(self) -> None:
         self.is_ejecting = False

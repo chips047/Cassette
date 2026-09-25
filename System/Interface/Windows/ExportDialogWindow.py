@@ -34,6 +34,7 @@ class ExportDialogWindow(FloatingWindowGPU):
 
         self.combobox          = Widgets.Selector(choices, default_index = len(choices) - 1)
         self.watermark_textbox = Widgets.Textbox("text", max_length = 12, placeholder = "Dot Watermark")
+        self.ringtone_checkbox = Widgets.Checkbox("Transfer to phone ringtones", default = False)
 
         button_row = Widgets.ButtonRow(
             [
@@ -45,25 +46,33 @@ class ExportDialogWindow(FloatingWindowGPU):
 
         self.content_layout.addWidget(self.combobox)
         self.content_layout.addWidget(self.watermark_textbox)
+        self.content_layout.addWidget(self.ringtone_checkbox)
         self.content_layout.addLayout(button_row)
 
     def export(self) -> None:
         Player.ui_player.play_sound("App/ExportStart")
 
-        model     = self.combobox.current_text()
-        watermark = self.watermark_textbox.text() or "Cassette"
+        model            = self.combobox.current_text()
+        watermark        = self.watermark_textbox.text() or "Cassette"
+        send_to_ringtone = self.ringtone_checkbox.isChecked()
 
         self.composition.export(
-            watermark,
-            Constants.NUMBER_TO_CODE[model],
-            open_folder = True
+            watermark        = watermark,
+            model            = Constants.NUMBER_TO_CODE[model],
+            open_folder      = True,
+            send_to_ringtone = send_to_ringtone
         )
 
     def export_all(self) -> None:
         if self.is_closing:
             return
 
-        watermark = self.watermark_textbox.text() or "Cassette"
+        watermark        = self.watermark_textbox.text() or "Cassette"
+        send_to_ringtone = self.ringtone_checkbox.isChecked()
 
         self.on_ok()
-        self.composition.export_all(watermark)
+
+        self.composition.export_all(
+            watermark        = watermark,
+            send_to_ringtone = send_to_ringtone
+        )

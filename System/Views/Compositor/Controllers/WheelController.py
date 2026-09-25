@@ -10,6 +10,8 @@ from System.Common import Constants
 from .. import Timeline
 
 class WheelController:
+    # Initialization Section
+
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         self.conductor                  = conductor
         self.horizontal_velocity        = 0.0
@@ -17,15 +19,15 @@ class WheelController:
         self.vertical_velocity          = 0.0
         self.vertical_target_velocity   = 0.0
 
-        self.zoom_step               = Constants.current_settings["zoom_step"]
-        self.scroll_acceleration     = Constants.current_settings["scroll_acceleration"]
-        self.trackpad_scroll_mode    = Constants.current_settings["trackpad_scroll_mode"]
-        self.scroll_smoothing        = Constants.current_settings["scroll_smoothing"]
-        self.scroll_inertia          = Constants.current_settings["scroll_inertia"]
-        self.scroll_blocked          = False
-        self.scale_animation_active  = False
+        self.zoom_step              = Constants.current_settings["zoom_step"]
+        self.scroll_acceleration    = Constants.current_settings["scroll_acceleration"]
+        self.trackpad_scroll_mode   = Constants.current_settings["trackpad_scroll_mode"]
+        self.scroll_smoothing       = Constants.current_settings["scroll_smoothing"]
+        self.scroll_inertia         = Constants.current_settings["scroll_inertia"]
+        self.scroll_blocked         = False
+        self.scale_animation_active = False
 
-    # State Management
+    # State Management Section
 
     def set_scale_animation_active(self, is_active: bool) -> None:
         self.scale_animation_active = is_active
@@ -39,7 +41,7 @@ class WheelController:
     def block_scroll(self) -> None:
         self.scroll_blocked = True
 
-    # Event Processing
+    # Event Processing Section
 
     def process_wheel_event(self, event: QEvent) -> None:
         if self.scroll_blocked:
@@ -48,10 +50,14 @@ class WheelController:
         modifiers = event.modifiers()
 
         if modifiers & Qt.KeyboardModifier.ControlModifier:
-            delta = event.angleDelta().y()
+            delta             = event.angleDelta().y()
+            anchor_viewport_x = float(event.position().x())
 
             self.stop_smooth_scroll()
-            self.conductor.scale_view(self.zoom_step if delta > 0 else -self.zoom_step)
+            self.conductor.scale_view(
+                delta             = self.zoom_step if delta > 0 else -self.zoom_step,
+                anchor_viewport_x = anchor_viewport_x
+            )
 
             event.accept()
             return
@@ -98,7 +104,7 @@ class WheelController:
         self.stop_smooth_scroll()
         self.conductor.scale_view(scale_delta * Constants.PINCH_ZOOM_SENSITIVITY)
 
-    # Scroll Ticking
+    # Scroll Ticking Section
 
     def tick(self) -> bool:
         if self.scale_animation_active:

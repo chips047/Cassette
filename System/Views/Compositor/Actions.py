@@ -1,14 +1,16 @@
-from __future__ import annotations
-
 import copy
 
-from System.Services import (
-    GlyphEffects,
-    ProjectSaver
-)
+from System.Services import GlyphEffects
+
+# Modifications
 
 class ActionModify:
     FIELDS = [
+        {
+            "key":      "track",
+            "label":    lambda glyph: f"track {glyph['track']}",
+            "template": "moving from {before} to {after}"
+        },
         {
             "key":      "segments",
             "label":    lambda glyph: ", ".join(map(lambda segment_index: str(segment_index + 1), glyph["segments"])) if glyph.get("segments") else "all",
@@ -36,6 +38,8 @@ class ActionModify:
         }
     ]
 
+    # Initialization Section
+
     def __init__(
             self,
             controller:   object,
@@ -47,6 +51,8 @@ class ActionModify:
         self.composition          = controller.composition
         self.glyphs_before_modify = copy.deepcopy(before_state)
         self.glyphs_after_modify  = copy.deepcopy(after_state)
+
+    # Description Section
 
     def get_description(self) -> str:
         before_glyphs = self.glyphs_before_modify
@@ -82,6 +88,8 @@ class ActionModify:
 
         return "nothing"
 
+    # Execution Section
+
     def undo(self) -> None:
         self.composition.start_batching()
 
@@ -102,7 +110,12 @@ class ActionModify:
         finally:
             self.composition.stop_batching()
 
+# Additions
+
 class ActionAdd:
+
+    # Initialization Section
+
     def __init__(
             self,
             controller:   object,
@@ -113,10 +126,14 @@ class ActionAdd:
         self.composition  = controller.composition
         self.added_glyphs = copy.deepcopy(added_glyphs)
 
+    # Description Section
+
     def get_description(self) -> str:
         count = len(self.added_glyphs)
 
         return f"addition of {count} glyph{'s' if count != 1 else ''}"
+
+    # Execution Section
 
     def undo(self) -> None:
         for glyph_id in self.added_glyphs:
@@ -135,7 +152,12 @@ class ActionAdd:
         finally:
             self.composition.stop_batching()
 
+# Deletions
+
 class ActionDelete:
+
+    # Initialization Section
+
     def __init__(
             self,
             controller:     object,
@@ -146,10 +168,14 @@ class ActionDelete:
         self.composition    = controller.composition
         self.deleted_glyphs = copy.deepcopy(deleted_glyphs)
 
+    # Description Section
+
     def get_description(self) -> str:
         count = len(self.deleted_glyphs)
 
         return f"deletion of {count} glyph{'s' if count != 1 else ''}"
+
+    # Execution Section
 
     def undo(self) -> None:
         self.composition.start_batching()
@@ -165,48 +191,101 @@ class ActionDelete:
     def redo(self) -> None:
         self.controller.delete_glyphs(list(self.deleted_glyphs.keys()), push_undo = False)
 
+# Keyframe Group Commands
+
 class EditFadeKeyframesCommand:
+
+    # Initialization Section
+
     def __init__(
             self,
-            controller:    object,
-            glyph_id:      int,
-            old_keyframes: list[tuple[float, int]],
-            new_keyframes: list[tuple[float, int]]
+            controller:     object,
+            mutations_data: dict[int, tuple[list[tuple[float, int]], list[tuple[float, int]]]] | int,
+            old_keyframes:  list[tuple[float, int]] | None = None,
+            new_keyframes:  list[tuple[float, int]] | None = None
         ) -> None:
 
-        self.controller    = controller
-        self.composition   = controller.composition
-        self.glyph_id      = glyph_id
-        self.old_keyframes = list(old_keyframes)
-        self.new_keyframes = list(new_keyframes)
+        self.controller  = controller
+        self.composition = controller.composition
+
+        if isinstance(mutations_data, int):
+            self.mutations = {
+                mutations_data: (
+                    copy.deepcopy(old_keyframes),
+                    copy.deepcopy(new_keyframes)
+                )
+            }
+
+        else:
+            self.mutations = copy.deepcopy(mutations_data)
+
+    # Execution Section
 
     def undo(self) -> None:
-        self.apply(self.old_keyframes)
+        self.composition.start_batching()
+
+        try:
+            for glyph_identifier, (old_keyframes, _) in self.mutations.items():
+                self.apply_glyph_keyframes(glyph_identifier, old_keyframes)
+
+            self.controller.update_glyphs(list(self.mutations.keys()))
+
+        finally:
+            self.composition.stop_batching()
 
     def redo(self) -> None:
-        self.apply(self.new_keyframes)
+        self.composition.start_batching()
+
+        try:
+            for glyph_identifier, (_, new_keyframes) in self.mutations.items():
+                self.apply_glyph_keyframes(glyph_identifier, new_keyframes)
+
+            self.controller.update_glyphs(list(self.mutations.keys()))
+
+        finally:
+            self.composition.stop_batching()
+
+    # Description Section
 
     def get_description(self) -> str:
-        return "editing fade keyframes"
+        count = len(self.mutations)
 
-    def apply(self, keyframes: list[tuple[float, int]]) -> None:
-        glyph = self.composition.get_glyph(self.glyph_id)
+        if count <= 1:
+            return "editing fade keyframes"
+
+        return f"editing fade keyframes on {count} glyphs"
+
+    # Application Section
+
+    def apply_glyph_keyframes(
+            self,
+            glyph_identifier: int,
+            keyframes:        list[tuple[float, int]]
+        ) -> None:
+
+        glyph = self.composition.get_glyph(glyph_identifier)
 
         if glyph is None:
             return
 
-        effect = glyph.get("effect")
-
-        if not effect or effect.get("name") != "Fade":
-            return
-
         clean_keyframes = [
-            (round(float(time_part), 2), int(round(float(brightness_part))))
-            for time_part, brightness_part in keyframes
+            (round(float(time_fraction), 2), int(round(float(brightness_value))))
+            for time_fraction, brightness_value in keyframes
         ]
 
-        new_settings  = {**effect["settings"], "keyframes": clean_keyframes}
-        updated_glyph = GlyphEffects.apply_visual_effect(glyph, "Fade", new_settings)
+        effect = glyph.get("effect", {})
 
-        self.composition.replace_glyph(self.glyph_id, updated_glyph)
-        self.controller.update_glyphs([self.glyph_id])
+        if effect and effect.get("name") == "Fade":
+            new_settings  = {**effect["settings"], "keyframes": clean_keyframes}
+            updated_glyph = GlyphEffects.apply_visual_effect(glyph, "Fade", new_settings)
+
+            self.composition.replace_glyph(glyph_identifier, updated_glyph)
+
+            return
+
+        updated_glyph = copy.deepcopy(glyph)
+        updated_glyph.pop("brightness", None)
+        updated_glyph["keyframes"] = clean_keyframes
+        updated_glyph["easing"]    = glyph.get("easing", "linear")
+
+        self.composition.replace_glyph(glyph_identifier, updated_glyph)

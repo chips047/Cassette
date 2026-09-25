@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from loguru import logger
 
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
@@ -52,6 +50,8 @@ from System.Interface import (
 
 from . import Controllers
 
+# Scrollable Content Class
+
 class ScrollableContent(QGraphicsView):
     playhead_moved_ms         = pyqtSignal(float)
     playhead_moved_normalized = pyqtSignal(float)
@@ -62,6 +62,8 @@ class ScrollableContent(QGraphicsView):
     speed_control_used        = pyqtSignal()
     speed_cycle_requested     = pyqtSignal()
     playground_requested      = pyqtSignal()
+
+    # Initialization Section
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -74,7 +76,7 @@ class ScrollableContent(QGraphicsView):
         self.setup_ui()
         self.init_controllers()
 
-    # Setup
+    # Setup Section
 
     def configure_view(self) -> None:
         if Constants.current_settings["gpu"]:
@@ -105,34 +107,34 @@ class ScrollableContent(QGraphicsView):
         self.viewport().grabGesture(Qt.GestureType.PinchGesture)
 
     def init_state(self, parent: QWidget) -> None:
-        self.playback_manager              = parent.playback_manager
-        self.composition                   = None
-        self.track_names                   = []
-        self.total_content_width           = 0.0
+        self.playback_manager        = parent.playback_manager
+        self.composition             = None
+        self.track_names             = []
+        self.total_content_width     = 0.0
 
-        self.tutorial_window               = None
-        self.glyph_visualizer              = None
+        self.tutorial_window         = None
+        self.glyph_visualizer        = None
 
-        self.ruler_font                    = Utils.NType(10)
-        self.track_label_font              = Utils.NType(12)
+        self.ruler_font              = Utils.NType(10)
+        self.track_label_font        = Utils.NType(12)
 
-        self.cached_background_color       = QColor(0, 0, 0)
-        self.cached_foreground_color       = QColor(31, 31, 31)
-        self.cached_ruler_pen              = QPen(QColor(255, 255, 255), 0.5)
-        self.cached_beat_pen               = QPen(QColor(Styles.Colors.Waveline.BeatColor), 1, Qt.PenStyle.DotLine)
-        self.cached_waveform_pen           = QPen(QColor(255, 255, 255, 90), 2.5)
-        self.cached_waveform_brush         = QBrush(QColor(255, 255, 255, 90))
-        self.cached_waveform_pen2          = QPen(QColor(255, 255, 255, 160), 0.7)
+        self.cached_background_color = QColor(0, 0, 0)
+        self.cached_foreground_color = QColor(31, 31, 31)
+        self.cached_ruler_pen        = QPen(QColor(255, 255, 255), 0.5)
+        self.cached_beat_pen         = QPen(QColor(Styles.Colors.Waveline.BeatColor), 1, Qt.PenStyle.DotLine)
+        self.cached_waveform_pen     = QPen(QColor(255, 255, 255, 90), 2.5)
+        self.cached_waveform_brush   = QBrush(QColor(255, 255, 255, 90))
+        self.cached_waveform_pen2    = QPen(QColor(255, 255, 255, 160), 0.7)
 
         self.cached_track_name_white_color = QColor(255, 255, 255)
         self.cached_track_name_black_color = QColor(0, 0, 0)
         self.cached_track_name_white_pen   = QPen(self.cached_track_name_white_color)
         self.cached_track_name_black_pen   = QPen(self.cached_track_name_black_color)
 
-        self.cached_beat_lines             = []
-        self.cached_track_grid_image       = None
-        self.cached_foreground_mask        = None
-        self.cached_foreground_size        = None
+        self.cached_beat_lines       = []
+        self.cached_track_grid_image = None
+        self.cached_foreground_mask  = None
+        self.cached_foreground_size  = None
 
     def setup_ui(self) -> None:
         self.scroll_tick_timer = Timing.Timer(Constants.FPS_120, self.on_scroll_tick, fps_managed = True)
@@ -172,7 +174,7 @@ class ScrollableContent(QGraphicsView):
         self.mouse_controller    = None
         self.keyboard_controller = None
 
-    # Properties
+    # Properties Section
 
     @property
     def playhead_timer(self) -> object:
@@ -214,7 +216,7 @@ class ScrollableContent(QGraphicsView):
     def tile_width(self) -> int:
         return self.waveform_controller.tile_width
 
-    # Lifecycle
+    # Lifecycle Section
 
     def load_composition(self, composition: ProjectSaver.Composition) -> None:
         self.waveform_controller.prepare_audio()
@@ -223,6 +225,7 @@ class ScrollableContent(QGraphicsView):
         self.composition = composition
         self.playback_manager.speed_changed.connect(self.composition.syncer.set_speed)
         self.composition.syncer.error_occurred.connect(self.show_error_dialog)
+        self.composition.syncer.high_ping_detected.connect(self.handle_high_ping_warning)
 
         self.track_names = composition.track_names
 
@@ -281,10 +284,20 @@ class ScrollableContent(QGraphicsView):
         self.keyboard_controller.duration_dialog_requested.connect(self.duration_control_popup)
         self.keyboard_controller.speed_cycle_requested.connect(self.speed_cycle_requested.emit)
         self.keyboard_controller.playground_requested.connect(self.playground_requested.emit)
+        self.keyboard_controller.move_track_up_requested.connect(lambda: self.glyph_controller.move_selected_glyphs_vertical(-1))
+        self.keyboard_controller.move_track_down_requested.connect(lambda: self.glyph_controller.move_selected_glyphs_vertical(1))
+        self.keyboard_controller.zoom_selection_requested.connect(self.scale_controller.zoom_to_selection)
+        self.keyboard_controller.zoom_fit_requested.connect(self.scale_controller.zoom_to_fit)
 
     def on_scale_started(self) -> None:
         tiles_snapshot = self.waveform_controller.get_tiles_snapshot()
         self.scale_controller.set_frozen_tiles(tiles_snapshot)
+
+    def handle_high_ping_warning(self, latency_ms: float) -> None:
+        self.tooltip.show_tooltip_at(
+            f"High phone latency: {int(latency_ms)} ms",
+            plan_hide = True
+        )
 
     def unload_composition(self) -> None:
         logger.warning("Unloading composition and clearing state")
@@ -299,9 +312,13 @@ class ScrollableContent(QGraphicsView):
         syncer = self.composition.syncer if self.composition else None
 
         if self.composition:
+            self.composition.update_progress()
+            self.composition.cleanup()
             self.composition.syncer.cleanup()
             self.composition.syncer.set_speed(1.0)
             self.composition.syncer.error_occurred.disconnect(self.show_error_dialog)
+            self.composition.syncer.high_ping_detected.disconnect(self.handle_high_ping_warning)
+
             self.composition = None
 
         if syncer is not None:
@@ -345,9 +362,10 @@ class ScrollableContent(QGraphicsView):
             title:   str,
             message: str
         ) -> None:
+
         Windows.ErrorWindow(title, message, "Oh nah").exec()
 
-    # Geometry
+    # Geometry Section
 
     def update_scene_rect(self) -> None:
         audio_duration_sec = self.playback_manager.duration_ms / 1000.0
@@ -379,7 +397,7 @@ class ScrollableContent(QGraphicsView):
         self.update_scene_rect()
         self.viewport().update()
 
-    # Painting
+    # Painting Section
 
     def on_frame_swapped(self) -> None:
         self.frame_count += 1
@@ -401,6 +419,7 @@ class ScrollableContent(QGraphicsView):
             painter:   QPainter,
             rectangle: QRectF
         ) -> None:
+
         painter.fillRect(rectangle, self.cached_background_color)
 
         if Constants.current_settings["antialiasing"]:
@@ -415,6 +434,7 @@ class ScrollableContent(QGraphicsView):
             painter:   QPainter,
             rectangle: QRectF
         ) -> None:
+
         if self.playback_manager.data is None or len(self.playback_manager.data) == 0:
             return
 
@@ -424,6 +444,7 @@ class ScrollableContent(QGraphicsView):
         if self.scale_anim_active and self.scale_controller.frozen_tiles:
             scale_ratio = self.px_per_sec / self.scale_controller.frozen_px_per_sec
             self.draw_scaled_tiles(painter, self.scale_controller.frozen_tiles, scale_ratio, tile_width, waveform_y, rectangle)
+
             return
 
         start_tile = int(rectangle.left() // tile_width)
@@ -438,6 +459,7 @@ class ScrollableContent(QGraphicsView):
 
             if tile is None:
                 self.waveform_controller.request_tile(index)
+
                 continue
 
             draw_x = index * tile_width
@@ -470,6 +492,7 @@ class ScrollableContent(QGraphicsView):
             waveform_y:    float,
             visible_range: QRectF
         ) -> None:
+
         for tile_index, pixmap in tiles.items():
             destination_x     = tile_index * tile_width * scale_ratio
             destination_width = tile_width * scale_ratio
@@ -484,6 +507,7 @@ class ScrollableContent(QGraphicsView):
             painter:   QPainter,
             rectangle: QRectF
         ) -> None:
+
         painter.setFont(self.ruler_font)
         painter.setPen(self.cached_ruler_pen)
 
@@ -506,6 +530,7 @@ class ScrollableContent(QGraphicsView):
             painter:   QPainter,
             rectangle: QRectF
         ) -> None:
+
         if not self.composition.beats:
             return
 
@@ -533,6 +558,9 @@ class ScrollableContent(QGraphicsView):
             painter:   QPainter,
             rectangle: QRectF = None
         ) -> None:
+
+        del rectangle
+
         if not self.track_names:
             return
 
@@ -570,8 +598,8 @@ class ScrollableContent(QGraphicsView):
 
         ignored_items = {self.playhead, self.playhead_hover, self.marquee_item}
 
-        for i in range(start_idx, end_idx):
-            top_y          = start_y + i * row_stride + offset_y
+        for index in range(start_idx, end_idx):
+            top_y          = start_y + index * row_stride + offset_y
             viewport_top_y = self.mapFromScene(0, int(top_y)).y()
 
             if viewport_top_y + box_height < 0 or viewport_top_y > viewport_h:
@@ -585,6 +613,7 @@ class ScrollableContent(QGraphicsView):
             for item in self.scene.items(label_scene_rect):
                 if item not in ignored_items and item.isVisible() and item.opacity() > 0:
                     is_over_glyph = True
+
                     break
 
             if is_over_glyph:
@@ -593,7 +622,7 @@ class ScrollableContent(QGraphicsView):
             else:
                 painter.setPen(self.cached_track_name_white_pen)
 
-            painter.drawText(label_viewport_rect, Qt.AlignmentFlag.AlignCenter, self.track_names[i])
+            painter.drawText(label_viewport_rect, Qt.AlignmentFlag.AlignCenter, self.track_names[index])
 
         painter.restore()
 
@@ -605,6 +634,7 @@ class ScrollableContent(QGraphicsView):
             painter:   QPainter,
             rectangle: QRectF
         ) -> None:
+
         painter.resetTransform()
 
         self.draw_track_grid(painter, rectangle)
@@ -622,6 +652,7 @@ class ScrollableContent(QGraphicsView):
         if view_rect.isEmpty():
             self.cached_foreground_mask = None
             self.cached_foreground_size = None
+
             return
 
         size = (view_rect.width(), view_rect.height())
@@ -654,7 +685,7 @@ class ScrollableContent(QGraphicsView):
         self.cached_foreground_mask = QPixmap.fromImage(image)
         self.cached_foreground_size = size
 
-    # Playhead Delegation
+    # Playhead Delegation Section
 
     def get_audio_delay_ms(self) -> float:
         return self.playback_controller.get_audio_delay_ms()
@@ -670,6 +701,7 @@ class ScrollableContent(QGraphicsView):
             position_px: float,
             animate:     bool = False
         ) -> None:
+
         self.playback_controller.set_playhead_position_px(position_px, animate)
 
     def get_playhead_position_ms(self) -> float:
@@ -680,6 +712,7 @@ class ScrollableContent(QGraphicsView):
             position_ms: float,
             animate:     bool = False
         ) -> None:
+
         self.playback_controller.set_playhead_position_ms(position_ms, animate)
 
     def scroll_to_playhead(self) -> None:
@@ -691,16 +724,22 @@ class ScrollableContent(QGraphicsView):
     def sync_scroll_to_playhead(self) -> None:
         self.playback_controller.sync_scroll_to_playhead()
 
-    # Scaling Delegation
+    # Scaling Delegation Section
 
     def scale_view(
             self,
-            delta:        float = 0.0,
-            force_update: bool  = False
+            delta:             float        = 0.0,
+            force_update:      bool         = False,
+            anchor_viewport_x: float | None = None
         ) -> None:
-        self.scale_controller.scale_view(delta, force_update)
 
-    # Scrolling
+        self.scale_controller.scale_view(
+            delta,
+            force_update,
+            anchor_viewport_x
+        )
+
+    # Scrolling Section
 
     def start_scroll_tick(self) -> None:
         if not self.scroll_tick_timer.isActive():
@@ -709,6 +748,7 @@ class ScrollableContent(QGraphicsView):
     def on_scroll_tick(self) -> None:
         if not self.wheel_controller or not self.mouse_controller:
             self.scroll_tick_timer.stop()
+
             return
 
         wheel_idle = self.wheel_controller.tick()
@@ -717,7 +757,7 @@ class ScrollableContent(QGraphicsView):
         if wheel_idle and drag_idle:
             self.scroll_tick_timer.stop()
 
-    # Context Menu Delegation
+    # Context Menu Delegation Section
 
     def brightness_control_popup(self) -> None:
         self.context_menu_controller.brightness_control_popup()
@@ -728,7 +768,7 @@ class ScrollableContent(QGraphicsView):
     def segment_control_popup(self) -> None:
         self.context_menu_controller.segment_control_popup()
 
-    # Event Handlers
+    # Event Handlers Section
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         self.context_menu_controller.handle_context_menu(event)
@@ -742,6 +782,7 @@ class ScrollableContent(QGraphicsView):
 
             if gesture_event.gestureType() == Qt.NativeGestureType.ZoomNativeGesture:
                 self.wheel_controller.process_pinch_event(gesture_event.value())
+
                 return True
 
         return super().event(event)
@@ -760,18 +801,22 @@ class ScrollableContent(QGraphicsView):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         self.mouse_controller.process_mouse_press_event(event)
+
         return super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self.mouse_controller.process_mouse_move_event(event)
+
         return super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         self.mouse_controller.process_mouse_release_event(event)
+
         return super().mouseReleaseEvent(event)
 
     def leaveEvent(self, event: QEvent) -> None:
         self.mouse_controller.process_mouse_leave_event(event)
+
         return super().leaveEvent(event)
 
     def showEvent(self, event: QEvent) -> None:

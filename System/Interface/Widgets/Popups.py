@@ -66,7 +66,7 @@ class ValuePopup(Lifecycle.LoomAnimationMixin, QWidget):
         )
 
         self.manual_hide_timer = Timing.Timer(
-            1000,
+            1500,
             self.hide,
             single_shot = True,
             parent      = self
@@ -235,7 +235,7 @@ class Tooltip(ValuePopup):
     def show_tooltip_at(
             self,
             text:        str,
-            target_item  = None,
+            target_item       = None,
             plan_hide:   bool = False
         ) -> None:
 

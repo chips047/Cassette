@@ -1,13 +1,15 @@
-from __future__ import annotations
-
 import os
 import json
 import copy
 import shutil
 import random
 
-from loguru          import logger
-from PyQt6.QtCore   import QTimer
+from loguru import logger
+
+from PyQt6.QtCore import (
+    QTimer,
+    QCoreApplication
+)
 
 from System.Common import (
     Utils,
@@ -24,7 +26,7 @@ from System.Services import (
     RealTimeVisualizer
 )
 
-# UtilityFunctions
+# Utility Functions
 
 def is_valid_opus_file(file_path: str) -> bool:
     try:
@@ -83,16 +85,18 @@ def get_metadata(file_path: str) -> tuple[str | None, str]:
 
         return None, "Unknown Artist"
 
+# Synchronized Dictionary
+
 class SyncedDict(dict):
     def __init__(
             self,
-            *args:         object,
+            *arguments:    object,
             sync_callback: object,
             composition:   Composition,
-            **kwargs:      object
+            **keywords:    object
         ) -> None:
 
-        super().__init__(*args, **kwargs)
+        super().__init__(*arguments, **keywords)
 
         self.composition                   = composition
         self.sync_callback                 = sync_callback
@@ -285,11 +289,11 @@ class SyncedDict(dict):
 
     def update(
             self,
-            *args:    object,
-            **kwargs: object
+            *arguments: object,
+            **keywords:  object
         ) -> None:
 
-        data = dict(*args, **kwargs)
+        data = dict(*arguments, **keywords)
 
         if self.is_batching:
             for key, value in data.items():
@@ -328,14 +332,16 @@ class SyncedDict(dict):
         self.finalize_sync()
         self.needs_sync = False
 
+# Base Composition
+
 class BaseComposition:
     def __init__(
             self,
-            id:       int,
-            settings: dict
+            identifier: int,
+            settings:   dict
         ) -> None:
 
-        self.id    = id if id is not None else random.randint(10000000, 99999999)
+        self.id    = identifier if identifier is not None else random.randint(10000000, 99999999)
         self.model = settings.get("model")
 
         self.audio_settings    = settings.get("audio", {})
@@ -492,7 +498,7 @@ class BaseComposition:
             self.start_ms,
             self.end_ms,
             self.fade_in_duration,
-            self.fade_out_duration,
+            self.fade_out_duration
         )
 
         if os.path.exists(self.cropped_song_path):
@@ -502,22 +508,23 @@ class BaseComposition:
 
     def export(
             self,
-            watermark:   str        = "Cassette",
-            model:       str | None = None,
-            open_folder: bool       = False
+            watermark:        str        = "Cassette",
+            model:            str | None = None,
+            open_folder:      bool       = False,
+            send_to_ringtone: bool       = False
         ) -> None:
 
-        if hasattr(self, "save"):
-            self.save(immediate = True)
+        self.save(immediate = True)
 
         playback_audio_path = self.get_playback_audio_path()
 
         if model and model != self.model:
             ported_glyphs = Porter.port_glyphs(model, self)
+            export_path   = Utils.get_user_path(f"{self.id}/Composed_{model}.ogg", "Cassette/Songs")
 
             Encoder.glyphs_to_ogg(
                 playback_audio_path,
-                Utils.get_user_path(f"{self.id}/Composed_{model}.ogg", "Cassette/Songs"),
+                export_path,
                 ported_glyphs,
                 model,
                 watermark
@@ -529,51 +536,77 @@ class BaseComposition:
             for effect in effects:
                 singles.extend(GlyphEffects.effect_to_glyph(effect, self.bpm, self.model))
 
+            export_path = Utils.get_user_path(f"{self.id}/Composed.ogg", "Cassette/Songs")
+
             Encoder.glyphs_to_ogg(
                 playback_audio_path,
-                Utils.get_user_path(f"{self.id}/Composed.ogg", "Cassette/Songs"),
+                export_path,
                 singles,
                 self.model,
-                watermark,
+                watermark
             )
+
+        if send_to_ringtone:
+            RealTimeVisualizer.rt_visualizer.push_ringtone(export_path)
 
         if open_folder:
             Utils.open_file(Utils.get_user_path(str(self.id), "Cassette/Songs"))
             Player.ui_player.play_sound("App/Export")
 
-    def export_all(self, watermark: str = "Cassette") -> None:
+    def export_all(
+            self,
+            watermark:        str  = "Cassette",
+            send_to_ringtone: bool = False
+        ) -> None:
+
         Player.ui_player.play_sound("App/ExportLong")
-        self.export(watermark)
+
+        self.export(
+            watermark        = watermark,
+            send_to_ringtone = send_to_ringtone
+        )
 
         for model in Constants.DEVICES[self.model].port_variants:
-            self.export(watermark, Constants.NUMBER_TO_CODE[model])
+            self.export(
+                watermark        = watermark,
+                model            = Constants.NUMBER_TO_CODE[model],
+                send_to_ringtone = send_to_ringtone
+            )
 
         Utils.open_file(Utils.get_user_path(str(self.id), "Cassette/Songs"))
+
+# Composition
 
 class Composition(BaseComposition):
     def __init__(
             self,
-            audiofile_path: str | None  = None,
+            audiofile_path: str | None = None,
             settings:       dict | None = None,
-            id:             int | None  = None
+            identifier:     int | None  = None
         ) -> None:
 
         settings = settings or {}
 
-        if id is not None:
-            save_path = Utils.get_user_path(f"{id}/Save.json", "Cassette/Songs")
+        if identifier is not None:
+            save_path = Utils.get_user_path(f"{identifier}/Save.json", "Cassette/Songs")
 
             with open(save_path, "r", encoding = "utf-8") as file_handle:
                 settings = json.load(file_handle)
 
-        super().__init__(id, settings)
+        super().__init__(identifier, settings)
 
         self.cached_save_data = copy.deepcopy(settings)
+        self.progress         = float(self.cached_save_data.get("progress", 0.0))
 
         self.save_timer = QTimer()
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(500)
         self.save_timer.timeout.connect(self.flush_save_to_disk)
+
+        application = QCoreApplication.instance()
+
+        if application:
+            application.aboutToQuit.connect(self.on_application_about_to_quit)
 
         self.syncer = RealTimeVisualizer.rt_visualizer
 
@@ -597,7 +630,7 @@ class Composition(BaseComposition):
         self.glyphs = SyncedDict(
             int_glyphs,
             sync_callback = self.syncer.sync,
-            composition   = self,
+            composition   = self
         )
 
         self.last_glyph_id = max(self.glyphs.keys()) if self.glyphs else 0
@@ -622,6 +655,25 @@ class Composition(BaseComposition):
     def batching_mode(self) -> bool:
         return self.glyphs.is_batching
 
+    def on_application_about_to_quit(self) -> None:
+        self.update_progress(immediate = True)
+
+    def update_progress(self, immediate: bool = True) -> None:
+        self.progress = self.calculate_completion_percentage()
+
+        if immediate:
+            self.save(immediate = True)
+
+    def cleanup(self) -> None:
+        application = QCoreApplication.instance()
+
+        if application:
+            try:
+                application.aboutToQuit.disconnect(self.on_application_about_to_quit)
+
+            except (TypeError, RuntimeError):
+                pass
+
     def new_glyph(
             self,
             track:      str,
@@ -636,7 +688,7 @@ class Composition(BaseComposition):
             "track":      track,
             "start":      start,
             "duration":   duration or self.duration_ms,
-            "brightness": brightness or self.brightness,
+            "brightness": brightness or self.brightness
         }
 
         if self.default_effect != "none":
@@ -699,6 +751,31 @@ class Composition(BaseComposition):
         else:
             self.save_timer.start()
 
+    def calculate_completion_percentage(self) -> float:
+        if not self.glyphs:
+            return 0.0
+
+        max_glyph_end_ms = max(
+            glyph["start"] + glyph["duration"]
+            for glyph in self.glyphs.values()
+        )
+
+        audio_duration_ms = float(self.end_ms or 0)
+
+        if audio_duration_ms <= 0:
+            if os.path.exists(self.full_song_path):
+                audio_duration_ms = float(get_audio_duration_ms(self.full_song_path))
+
+            elif os.path.exists(self.cropped_song_path):
+                audio_duration_ms = float(get_audio_duration_ms(self.cropped_song_path))
+
+        if audio_duration_ms <= 0:
+            return 0.0
+
+        ratio = (max_glyph_end_ms / audio_duration_ms) * 100.0
+
+        return max(0.0, min(100.0, round(ratio, 1)))
+
     def flush_save_to_disk(self) -> None:
         save_path = Utils.get_user_path(f"{self.id}/Save.json", "Cassette/Songs")
         os.makedirs(Utils.get_user_path(str(self.id), "Cassette/Songs"), exist_ok = True)
@@ -721,9 +798,9 @@ class Composition(BaseComposition):
                 "bpm":      self.bpm,
                 "beats":    self.beats,
                 "fade_in":  self.fade_in_duration,
-                "fade_out": self.fade_out_duration,
+                "fade_out": self.fade_out_duration
             },
-            "progress": self.cached_save_data.get("progress", 0),
+            "progress": self.progress,
             "model":    self.model,
             "version":  self.version,
             "glyphs":   dict(self.glyphs)
@@ -814,14 +891,14 @@ class Composition(BaseComposition):
 
     def replace_glyph(
             self,
-            id:   int,
-            data: dict
+            identifier: int,
+            data:       dict
         ) -> None:
 
-        self.glyphs[id] = data
+        self.glyphs[identifier] = data
 
-    def delete_glyph(self, id: int) -> None:
-        del self.glyphs[id]
+    def delete_glyph(self, identifier: int) -> None:
+        del self.glyphs[identifier]
 
     def delete_glyphs(self, keys: list[int]) -> None:
         self.glyphs.delete_keys(keys)
@@ -850,14 +927,16 @@ class Composition(BaseComposition):
 
         self.glyphs.stop_batching()
 
+# Minimal Composition
+
 class MinimalComposition(BaseComposition):
-    def __init__(self, id: int) -> None:
-        save_path = Utils.get_user_path(f"{id}/Save.json", "Cassette/Songs")
+    def __init__(self, identifier: int) -> None:
+        save_path = Utils.get_user_path(f"{identifier}/Save.json", "Cassette/Songs")
 
         with open(save_path, "r", encoding = "utf-8") as file_handle:
             settings = json.load(file_handle)
 
-        super().__init__(id, settings)
+        super().__init__(identifier, settings)
 
         if not os.path.exists(self.full_song_path):
             Windows.ErrorWindow("Corrupted!", "This save is corrupted.").exec()

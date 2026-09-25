@@ -30,8 +30,8 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSlot,
     pyqtSignal,
-    pyqtProperty,
     QEasingCurve,
+    pyqtProperty,
     QPropertyAnimation
 )
 
@@ -87,10 +87,11 @@ logger.debug("Imported system modules")
 is_processing_exception = False
 
 def handle_exception(
-    exception_type:      object,
-    exception_value:     object,
-    exception_traceback: object,
-) -> None:
+        exception_type:      object,
+        exception_value:     object,
+        exception_traceback: object
+    ) -> None:
+
     global is_processing_exception
 
     if is_processing_exception:
@@ -101,6 +102,7 @@ def handle_exception(
     try:
         if issubclass(exception_type, KeyboardInterrupt):
             sys.__excepthook__(exception_type, exception_value, exception_traceback)
+
             return
 
         logger.opt(
@@ -134,10 +136,10 @@ def handle_exception(
     finally:
         is_processing_exception = False
 
-def handle_thread_exception(args: threading.ExceptHookArgs) -> None:
+def handle_thread_exception(arguments: threading.ExceptHookArgs) -> None:
     logger.opt(
-        exception = (args.exc_type, args.exc_value, args.exc_traceback)
-    ).critical(f"Fatal crash in background thread '{args.thread.name}'")
+        exception = (arguments.exc_type, arguments.exc_value, arguments.exc_traceback)
+    ).critical(f"Fatal crash in background thread '{arguments.thread.name}'")
 
 sys.excepthook       = handle_exception
 threading.excepthook = handle_thread_exception
@@ -150,46 +152,46 @@ class WindowEffectManager:
 
     STARTUP_DATA = [
         {
-            "name": "bunny",
+            "name":    "bunny",
             "content": "System/Assets/Image/Woah.png"
         },
         {
-            "name": "walter",
+            "name":    "walter",
             "content": "find the walter..."
         },
         {
-            "name": "anomaly_img",
-            "content": "System/Assets/Image/Anomaly.png",
-            "sound": "Packs/NOK/Anomaly",
+            "name":     "anomaly_img",
+            "content":  "System/Assets/Image/Anomaly.png",
+            "sound":    "Packs/NOK/Anomaly",
             "duration": 7500,
-            "fade": 200,
+            "fade":     200,
         },
         {
-            "name": "ieytd2_img",
+            "name":    "ieytd2_img",
             "content": "System/Assets/Image/IEYTD2.png",
-            "scale": False,
+            "scale":   False,
         },
         {
-            "name": "the_void_text",
+            "name":    "the_void_text",
             "content": "First, there was The Void",
         },
         {
-            "name": "die_like_rest_text",
+            "name":    "die_like_rest_text",
             "content": "The best of the best, still die like the rest",
         },
         {
-            "name": "cake_lie_text",
+            "name":    "cake_lie_text",
             "content": "The cake is a lie The cake is a lie The cake is a lie",
         },
         {
-            "name": "please_text",
+            "name":    "please_text",
             "content": "Please",
-            "sound": "Packs/NOK/ThreeTone",
+            "sound":   "Packs/NOK/ThreeTone",
         },
     ]
 
     def __init__(self, window: QMainWindow) -> None:
-        self.window                  = window
+        self.window = window
 
         self.shake_sound_count       = 0
         self.shake_threshold         = 1500
@@ -218,10 +220,10 @@ class WindowEffectManager:
         )
 
     def process_window_move(
-        self,
-        horizontal_position: int,
-        vertical_position:   int
-    ) -> None:
+            self,
+            horizontal_position: int,
+            vertical_position:   int
+        ) -> None:
 
         del vertical_position
 
@@ -241,9 +243,9 @@ class WindowEffectManager:
         if current_time - self.last_shake_time > 0.8:
             self.shake_direction_changes = 0
 
-        self.shake_direction = current_direction
+        self.shake_direction         = current_direction
         self.shake_direction_changes += 1
-        self.last_shake_time = current_time
+        self.last_shake_time         = current_time
 
         if self.shake_direction_changes < 10:
             return
@@ -268,30 +270,30 @@ class WindowEffectManager:
             self.window.close()
 
     def process_window_resize(
-        self,
-        width:  int,
-        height: int
-    ) -> None:
+            self,
+            width:  int,
+            height: int
+        ) -> None:
 
         current_time = time.time()
         current_area = width * height
 
         if self.last_accordion_time > 0:
             delta_time = current_time - self.last_accordion_time
-        
+
         else:
             delta_time = 0.01
 
         area_difference = current_area - self.last_area
-        velocity = abs(area_difference) / delta_time
+        velocity        = abs(area_difference) / delta_time
 
         minimum_velocity = 50000
         maximum_velocity = 2000000
 
         if abs(area_difference) < 200 or velocity < minimum_velocity:
-            self.last_area = current_area
+            self.last_area           = current_area
             self.last_accordion_time = current_time
-            
+
             return
 
         current_direction = 1 if area_difference > 0 else -1
@@ -309,9 +311,9 @@ class WindowEffectManager:
                 self.is_accordion_active = True
 
         if not self.is_accordion_active:
-            self.last_area = current_area
+            self.last_area           = current_area
             self.last_accordion_time = current_time
-            
+
             return
 
         self.accordion_stop_timer.stop()
@@ -327,7 +329,7 @@ class WindowEffectManager:
             volume = volume
         )
 
-        self.last_area = current_area
+        self.last_area           = current_area
         self.last_accordion_time = current_time
 
     def reset_accordion_state(self) -> None:
@@ -360,7 +362,6 @@ class WindowEffectManager:
     @staticmethod
     def choose_startup_egg() -> dict[str, object] | None:
         if random.random() <= WindowEffectManager.CHANCE:
-            
             available_eggs = []
 
             for egg in WindowEffectManager.STARTUP_DATA:
@@ -371,12 +372,12 @@ class WindowEffectManager:
 
             if not available_eggs:
                 return None
-            
-            chosen_egg = random.choice(available_eggs)
-            
+
+            chosen_egg  = random.choice(available_eggs)
             setting_key = f"_{chosen_egg['name']}_seen"
+
             Constants.current_settings.set_value(setting_key, True)
-            
+
             return chosen_egg
 
         return None
@@ -393,14 +394,14 @@ class StartupFadeOverlay(QWidget):
 
         self.background_opacity = 1.0
         self.current_pixmap     = None
-        
-        self.main_text          = None
-        self.main_text_rect     = None
-        self.font               = None
-        
-        self.egg_text           = None
-        self.egg_text_rect      = None
-        self.egg_font           = None
+
+        self.main_text      = None
+        self.main_text_rect = None
+        self.font           = None
+
+        self.egg_text      = None
+        self.egg_text_rect = None
+        self.egg_font      = None
 
         self.background_fade_animation = QPropertyAnimation(
             self,
@@ -432,17 +433,17 @@ class StartupFadeOverlay(QWidget):
 
         self.setGeometry(parent_widget.rect())
         self.show()
- 
+
         is_new_user = Constants.current_settings.get("_new_user", True)
         hold_time   = default_hold_ms
-        
+
         self.font     = Utils.NType(30)
         self.egg_font = Utils.NType(9)
 
         if is_new_user:
             self.main_text      = "Get ready."
             self.main_text_rect = self.rect()
-            
+
             Constants.current_settings.set_value("_new_user", False)
 
             Player.ui_player.play_sound(
@@ -491,7 +492,7 @@ class StartupFadeOverlay(QWidget):
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation
                 )
-            
+
             else:
                 self.current_pixmap = pixmap
 
@@ -500,11 +501,11 @@ class StartupFadeOverlay(QWidget):
             self.main_text_rect = self.rect()
             self.egg_text       = content
 
-            metrics      = QFontMetrics(self.egg_font)
-            rectangle    = metrics.boundingRect(self.egg_text)
-            text_width   = rectangle.width() + 20
-            text_height  = rectangle.height() + 20
-            margin       = 80
+            metrics     = QFontMetrics(self.egg_font)
+            rectangle   = metrics.boundingRect(self.egg_text)
+            text_width  = rectangle.width() + 20
+            text_height = rectangle.height() + 20
+            margin      = 80
 
             random_x_position = random.randint(
                 margin,
@@ -531,7 +532,7 @@ class StartupFadeOverlay(QWidget):
                 startup_egg["sound"],
                 enable_tone_randomizer = False
             )
-        
+
         else:
             Player.ui_player.play_sound(
                 "App/Start",
@@ -569,7 +570,7 @@ class StartupFadeOverlay(QWidget):
             center_y = (self.height() - self.current_pixmap.height()) // 2
 
             painter.drawPixmap(center_x, center_y, self.current_pixmap)
-            
+
             return
 
         painter.setPen(QColor(255, 255, 255))
@@ -601,7 +602,7 @@ class ApplicationWindow(QMainWindow):
             (self.main_menu_widget, 1.0),
             (self.compositor_widget, 0.0)
         ):
-            
+
             effect = QGraphicsOpacityEffect(widget)
             effect.setOpacity(opacity)
             widget.setGraphicsEffect(effect)
@@ -659,12 +660,12 @@ class ApplicationWindow(QMainWindow):
             event.size().height()
         )
 
-    # Screenshot Setup (This is used to capture screenshots of the application for promotional purposes, so don't be afraid lol)
+    # Screenshot Setup
 
     def setup_screenshot_shortcut(self) -> None:
         self.screenshot_shortcut = QShortcut(QKeySequence("Ctrl+Shift+S"), self)
         self.screenshot_shortcut.activated.connect(self.capture_4k_screenshot)
-    
+
     def capture_4k_screenshot(self) -> None:
         target_width  = 3840
         source_width  = self.width()
@@ -672,6 +673,7 @@ class ApplicationWindow(QMainWindow):
 
         if source_width <= 0 or source_height <= 0:
             logger.warning("Cannot capture screenshot, window has invalid size")
+
             return
 
         scale_factor  = target_width / source_width
@@ -737,8 +739,8 @@ class ApplicationWindow(QMainWindow):
     # Animations
 
     def setup_animations(self) -> None:
-        self.entry_move_animation  = QPropertyAnimation(None, b"geometry")
-        self.entry_fade_animation  = QPropertyAnimation(None, b"opacity")
+        self.entry_move_animation = QPropertyAnimation(None, b"geometry")
+        self.entry_fade_animation = QPropertyAnimation(None, b"opacity")
 
         self.main_menu_fadeout = QPropertyAnimation(
             self.main_menu_widget.graphicsEffect(),
@@ -784,7 +786,7 @@ class ApplicationWindow(QMainWindow):
     def load_project_after_transition(self, project_id: str) -> None:
         try:
             logger.info(f"Loading project {project_id}...")
-            composition = ProjectSaver.Composition(id = project_id)
+            composition = ProjectSaver.Composition(identifier = int(project_id))
             self.compositor_widget.load_composition(composition)
 
         except Exception as exception:
@@ -875,14 +877,15 @@ class ApplicationWindow(QMainWindow):
 
         if not content.composition:
             return False
-        
+
         content.glyph_visualizer.exit(False)
-        
+
         return True
 
     def begin_shutdown(self) -> None:
         if self.is_closing:
             logger.warning("Shutdown already in progress, ignoring additional close request.")
+
             return
 
         self.is_closing = True
@@ -891,6 +894,7 @@ class ApplicationWindow(QMainWindow):
         content_widget = self.compositor_widget.content_widget
 
         if content_widget.composition:
+            content_widget.composition.update_progress()
             content_widget.composition.syncer.exit_app()
             logger.debug("Signaled Cassette Receiver to exit")
 
@@ -1004,6 +1008,7 @@ def main() -> None:
     for font_path in font_paths:
         if QFontDatabase.addApplicationFont(font_path) != -1:
             logger.debug(f"Loaded font: {font_path}")
+
             continue
 
         logger.error(f"Failed to load font: {font_path}")

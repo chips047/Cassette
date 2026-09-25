@@ -52,12 +52,13 @@ from System.Interface.Animation import (
 class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     playhead_pressed = pyqtSignal()
 
+    # Initialization Section
+
     def __init__(
             self,
             conductor:        object,
             custom_height_px: float | None = None
         ) -> None:
-
         super().__init__()
 
         self.conductor               = conductor
@@ -76,7 +77,7 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             on_change  = self.update_actual_position
         )
 
-    # Geometry
+    # Geometry Section
 
     def boundingRect(self) -> QRectF:
         height_px = self.height_px or float(self.conductor.height())
@@ -88,7 +89,7 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             height_px
         )
 
-    # Painting
+    # Painting Section
 
     def paint(
             self,
@@ -96,20 +97,18 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             option:  QStyleOptionGraphicsItem,
             widget:  QWidget | None = None
         ) -> None:
-
         height_px = int(self.height_px or self.conductor.height())
 
         painter.setPen(self.cached_pen)
         painter.drawLine(0, 0, 0, height_px)
 
-    # PlayheadApi
+    # Playhead API Section
 
     def set_target_x(
             self,
             target_x_px: float,
             animate:     bool = False
         ) -> None:
-
         self.target_horizontal_px = target_x_px
         self.playhead_pressed.emit()
 
@@ -150,21 +149,23 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
 @Dev.track_ram
 class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
+    # Initialization Section
+
     def __init__(self, player: Player.PlaybackManager) -> None:
         super().__init__()
 
-        self.player                 = player
-        self.start_position         = QPointF()
-        self.cached_brush_color     = QColor(255, 0, 0)
-        self.cached_brush           = QBrush(self.cached_brush_color)
-        self.cached_pen             = QPen(QColor(215, 20, 31), 1, Qt.PenStyle.DashLine)
-        self.cached_pen_color       = QColor(self.cached_pen.color())
+        self.player             = player
+        self.start_position     = QPointF()
+        self.cached_brush_color = QColor(255, 0, 0)
+        self.cached_brush       = QBrush(self.cached_brush_color)
+        self.cached_pen         = QPen(QColor(215, 20, 31), 1, Qt.PenStyle.DashLine)
+        self.cached_pen_color   = QColor(self.cached_pen.color())
 
         self.setup_animations()
         self.setCacheMode(QGraphicsItem.CacheMode.NoCache)
         self.hide()
 
-    # AnimationSetup
+    # Animation Setup Section
 
     def setup_animations(self) -> None:
         Player.bpm_informer.beat_4.connect(self.bpm_tick)
@@ -209,7 +210,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             on_change  = self.on_animation_updated
         )
 
-    # Geometry
+    # Geometry Section
 
     def boundingRect(self) -> QRectF:
         return QRectF(
@@ -217,14 +218,13 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             self.mouse_point_handle.value
         ).normalized()
 
-    # Painting
+    # Painting Section
 
     def apply_bpm_to_alpha(
             self,
             base_alpha: int,
             opacity:    float
         ) -> int:
-
         pulse_value = self.bpm_pulse_handle.value
 
         return int(base_alpha * opacity * (1.0 + pulse_value))
@@ -235,7 +235,6 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             option:  QStyleOptionGraphicsItem,
             widget:  QWidget | None = None
         ) -> None:
-
         brush_alpha = self.brush_opacity_handle.value
         pen_alpha   = self.pen_opacity_handle.value
         start_point = self.start_position_handle.value
@@ -255,7 +254,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         painter.setBrush(self.cached_brush)
         painter.drawRoundedRect(rectangle, radius_px, radius_px)
 
-    # Animations
+    # Animations Section
 
     def fade_in(self) -> None:
         self.brush_opacity_handle.play_curve(
@@ -297,7 +296,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     def finish_and_hide(self) -> None:
         self.hide()
 
-    # MarqueeApi
+    # Marquee API Section
 
     def start_marquee(self, start_point: QPointF) -> None:
         if self.isVisible():
@@ -324,7 +323,6 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             point:   QPointF,
             animate: bool = False
         ) -> None:
-
         if animate:
             self.mouse_point_handle.set_target(
                 value           = point,
@@ -354,7 +352,7 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             QTransform()
         )
 
-    # Callbacks
+    # Callbacks Section
 
     def on_animation_updated(self, *arguments: object) -> None:
         self.prepareGeometryChange()
@@ -379,9 +377,12 @@ class MarqueeItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             multiply_duration_by_speed = False
         )
 
+@Dev.track_ram
 class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     STACK_LABEL_FONT  = Utils.NType(9)
     STACK_LABEL_COLOR = QColor(0, 0, 0)
+
+    # Initialization Section
 
     def __init__(
             self,
@@ -389,7 +390,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             conductor:     object,
             animate_spawn: bool = True
         ) -> None:
-
         super().__init__()
 
         self.hide()
@@ -404,6 +404,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.resize_margin_px       = 10
         self.is_despawning          = False
         self.is_moving_horizontally = False
+        self.is_moving_vertically   = False
         self.is_resizing_width      = False
         self.interaction_mode       = None
         self.current_width_px       = 0.0
@@ -433,13 +434,14 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.setup_keyframes()
 
         self.fixed_y_px = self.calculate_y_pos()
+        self.position_y_handle.set_base(self.fixed_y_px)
 
         self.update_geometry()
         self.spawn_animation(animate_spawn)
 
         self.show()
 
-    # Properties
+    # Properties Section
 
     @property
     def data(self) -> dict | None:
@@ -509,7 +511,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         return None
 
-    # Setup
+    # Setup Section
 
     def setup_flags(self) -> None:
         self.setFlags(
@@ -583,6 +585,14 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             on_change  = self.on_position_x_changed
         )
 
+        self.position_y_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "positionY",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_position_y_changed
+        )
+
         self.width_handle = LoomEngine.ui_engine.bind(
             owner      = self,
             name       = "widthPx",
@@ -591,7 +601,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             on_change  = self.on_width_changed
         )
 
-    # GeometryAndMetrics
+    # Geometry And Metrics Section
 
     def calculate_y_pos(self) -> float:
         top_margin_px = (
@@ -625,7 +635,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             Styles.Metrics.Tracks.BoxHeight + 2 * margin_px
         )
 
-    # Painting
+    # Painting Section
 
     def paint(
             self,
@@ -633,7 +643,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             option:  QStyleOptionGraphicsItem,
             widget:  QWidget | None = None
         ) -> None:
-
         width_px  = self.visual_width_px
         height_px = Styles.Metrics.Tracks.BoxHeight
 
@@ -661,7 +670,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             width_px:  float,
             height_px: float
         ) -> None:
-
         center_x_px = width_px / 2
         center_y_px = height_px / 2
         scale_value = self.scale_handle.value
@@ -717,7 +725,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             width_px:  float,
             height_px: float
         ) -> None:
-
         has_stack = self.stack_depth > 0 and abs(self.stack_y_offset_handle.value) < 1.0
 
         self.update_radius(width_px)
@@ -790,7 +797,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             width_px:  float,
             height_px: float
         ) -> None:
-
         inner_width_px  = width_px - 2 * self.keyframe_line_padding
         inner_height_px = height_px - 2 * self.border_width_px
 
@@ -823,7 +829,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
             painter.drawEllipse(QPointF(corner_x_px, corner_y_px), dot_radius_px, dot_radius_px)
 
-    # Animations
+    # Animations Section
 
     def set_animating(self, active: bool) -> None:
         if self.is_despawning:
@@ -958,6 +964,29 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             finished                   = self.on_horizontal_move_finished
         )
 
+    def animate_vertical_move(self, target_y_px: float) -> None:
+        current_y_px = self.fixed_y_px
+
+        if abs(current_y_px - target_y_px) < 0.5:
+            self.stop_vertical_move()
+            self.fixed_y_px = target_y_px
+            self.setPos(self.pos().x(), target_y_px + self.stack_y_offset_handle.value)
+
+            return
+
+        self.is_moving_vertically = True
+
+        self.position_y_handle.play_curve(
+            keyframes                  = [
+                (0.0, current_y_px),
+                (1.0, target_y_px)
+            ],
+            duration_ms                = 220,
+            easing_function            = LoomEngine.Easing.ease_out_cubic,
+            multiply_duration_by_speed = False,
+            finished                   = self.on_vertical_move_finished
+        )
+
     def animate_width_resize(self, target_width_px: float) -> None:
         current_width_px = self.visual_width_px
 
@@ -991,6 +1020,15 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         except Exception:
             pass
 
+    def stop_vertical_move(self) -> None:
+        self.is_moving_vertically = False
+
+        try:
+            self.position_y_handle.stop_targeting()
+
+        except Exception:
+            pass
+
     def stop_width_animation(self) -> None:
         self.is_resizing_width = False
 
@@ -1001,12 +1039,13 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             pass
 
     def capture_current_visual_state(self) -> None:
-        was_animating = self.is_moving_horizontally or self.is_resizing_width
+        was_animating = self.is_moving_horizontally or self.is_moving_vertically or self.is_resizing_width
 
         if not was_animating:
             return
 
         self.stop_horizontal_move()
+        self.stop_vertical_move()
         self.stop_width_animation()
 
         current_start_ms    = max(0, int(round(self.px_to_ms(self.pos().x()))))
@@ -1028,7 +1067,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.conductor.glyph_controller.elements_changed.emit()
         self.conductor.glyph_controller.refresh_all_occlusion()
 
-    # Callbacks
+    # Callbacks Section
 
     def on_visual_property_changed(self, value: object) -> None:
         self.update()
@@ -1045,6 +1084,11 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         self.setPos(value, self.fixed_y_px + self.stack_y_offset_handle.value)
         self.update()
 
+    def on_position_y_changed(self, value: float) -> None:
+        self.fixed_y_px = value
+        self.setPos(self.pos().x(), value + self.stack_y_offset_handle.value)
+        self.update()
+
     def on_width_changed(self, value: float) -> None:
         self.prepareGeometryChange()
         self.current_width_px = value
@@ -1052,6 +1096,9 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
     def on_horizontal_move_finished(self) -> None:
         self.is_moving_horizontally = False
+
+    def on_vertical_move_finished(self) -> None:
+        self.is_moving_vertically = False
 
     def on_width_animation_finished(self) -> None:
         self.is_resizing_width = False
@@ -1064,6 +1111,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
     def on_despawn_finished(self) -> None:
         self.stop_horizontal_move()
+        self.stop_vertical_move()
         self.stop_width_animation()
 
         if self.scene():
@@ -1071,7 +1119,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         self.deleteLater()
 
-    # Events
+    # Events Section
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         if not self.conductor.glyph_controller.drag_session:
@@ -1109,7 +1157,6 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             change: QGraphicsItem.GraphicsItemChange,
             value:  object
         ) -> object:
-
         if change != QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             return super().itemChange(change, value)
 
@@ -1156,10 +1203,12 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         if event.button() == Qt.MouseButton.RightButton:
             self.marquee_select_animation()
             super().mousePressEvent(event)
+
             return
 
         if event.button() != Qt.MouseButton.LeftButton:
             super().mousePressEvent(event)
+
             return
 
         self.capture_current_visual_state()
@@ -1255,7 +1304,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         super().mouseReleaseEvent(event)
 
-    # Helpers
+    # Helpers Section
 
     def set_is_occluded(self, state: bool) -> None:
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemHasNoContents, state)
@@ -1450,7 +1499,7 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         return (-normalized_y * 25, -normalized_x * max_tilt_y)
 
-    # GlyphApi
+    # Glyph API Section
 
     def update_drag_geometry(self) -> None:
         target_x_px     = self.ms_to_px(self.start_ms)
@@ -1469,11 +1518,11 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
         extracted_keyframes         = self.keyframes
         self.pending_fade_keyframes = list(extracted_keyframes) if extracted_keyframes else []
         self.fade_initial_keyframes = list(self.pending_fade_keyframes)
-        self.fixed_y_px             = self.calculate_y_pos()
 
-        target_x_px     = self.ms_to_px(self.start_ms)
-        target_width_px = self.ms_to_px(self.duration_ms)
-        target_y_px     = self.fixed_y_px + self.stack_y_offset_handle.value
+        target_fixed_y_px = self.calculate_y_pos()
+        target_x_px       = self.ms_to_px(self.start_ms)
+        target_width_px   = self.ms_to_px(self.duration_ms)
+        target_y_px       = target_fixed_y_px + self.stack_y_offset_handle.value
 
         current_x_px     = self.pos().x()
         current_y_px     = self.pos().y()
@@ -1490,11 +1539,14 @@ class GlyphItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
 
         if animate_movement:
             self.animate_horizontal_move(target_x_px)
+            self.animate_vertical_move(target_fixed_y_px)
             self.animate_width_resize(target_width_px)
 
         else:
             self.stop_horizontal_move()
+            self.stop_vertical_move()
             self.stop_width_animation()
+            self.fixed_y_px = target_fixed_y_px
 
             if geometry_changed:
                 self.setPos(target_x_px, target_y_px)
