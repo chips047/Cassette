@@ -29,13 +29,13 @@ RECEIVER_TCP_PORT = 7777
 RECEIVER_UDP_PORT = 7778
 
 if sys.platform == "win32":
-    ADB_PATH = "System/ADB/adb.exe"
+    ADB_PATH = Utils.get_resource_path("System/ADB/adb.exe")
 
 elif sys.platform == "darwin":
-    ADB_PATH = "System/ADB/adb-macos"
+    ADB_PATH = Utils.get_resource_path("System/ADB/adb-macos")
 
 else:
-    ADB_PATH = "System/ADB/adb-linux"
+    ADB_PATH = Utils.get_resource_path("System/ADB/adb-linux")
 
 # Enrichment
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from loguru import logger
 
 from PyQt6.QtOpenGLWidgets import QOpenGLWidget
@@ -137,6 +139,8 @@ class ScrollableContent(QGraphicsView):
         self.cached_track_grid_image = None
         self.cached_foreground_mask  = None
         self.cached_foreground_size  = None
+
+        self.empty_double_click_times = []
 
     def setup_ui(self) -> None:
         self.scroll_tick_timer = Timing.Timer(
@@ -843,6 +847,40 @@ class ScrollableContent(QGraphicsView):
         self.mouse_controller.process_mouse_release_event(event)
 
         return super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            super().mouseDoubleClickEvent(event)
+            return
+
+        item_under_mouse = self.itemAt(event.pos())
+        if isinstance(item_under_mouse, Widgets.GlyphItem):
+            super().mouseDoubleClickEvent(event)
+            return
+
+        now = time.monotonic()
+        
+        self.empty_double_click_times = [
+            t for t in self.empty_double_click_times
+            if now - t < 2.5
+        ]
+        
+        self.empty_double_click_times.append(now)
+
+        if len(self.empty_double_click_times) < 3:
+            super().mouseDoubleClickEvent(event)
+            return
+
+        self.empty_double_click_times.clear()
+        global_pos = self.viewport().mapToGlobal(event.pos())
+
+        self.tooltip.show_text(
+            "Psst... press numbers to spawn a glyph here.",
+            global_pos,
+            auto_hide = True
+        )
+
+        event.accept()
 
     def leaveEvent(self, event: QEvent) -> None:
         self.mouse_controller.process_mouse_leave_event(event)

@@ -49,7 +49,7 @@ PHONE4B = DeviceConfig(
         },
 
         "PHONE4A": {
-            "1": "1",
+            "1": ["1"],
 
             "effects": {
                 "segments": {

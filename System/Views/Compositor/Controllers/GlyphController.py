@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import copy
+import time
+import random
+
+from collections import deque
 
 from PyQt6.QtCore import (
     Qt,
@@ -93,6 +97,8 @@ class GlyphController(QObject):
         self.max_history       = 1000
         self.temp_before_state = {}
         self.current_drag_mode = None
+
+        self.undo_redo_history = deque(maxlen=10)
 
     # Hover Management
 
@@ -294,12 +300,10 @@ class GlyphController(QObject):
         self.update_glyphs(selected_ids)
 
     def shift_selected_glyph_segments(self, delta: int) -> None:
-        if delta not in (-1, 1):
-            raise ValueError(f"Segment shift must be -1 or 1, got {delta}")
-
         device = Constants.DEVICES[self.composition.model]
-        before_state: dict[int, dict] = {}
-        after_state:  dict[int, dict] = {}
+
+        before_state:   dict[int, dict] = {}
+        after_state:    dict[int, dict] = {}
         deleted_glyphs: dict[int, dict] = {}
 
         for glyph_id in self.get_selected_glyph_ids():
@@ -555,14 +559,14 @@ class GlyphController(QObject):
     def undo(self) -> None:
         if not self.undo_stack:
             self.conductor.tooltip.show_tooltip_at("Nothing to undo.", plan_hide = True)
-
             return
+
+        is_pingpong = self.check_indecisive_pingpong("undo")
 
         if self.is_processing:
             return
 
         self.cancel_drag()
-
         self.is_processing = True
 
         try:
@@ -571,8 +575,9 @@ class GlyphController(QObject):
             self.redo_stack.append(action)
             self.elements_changed.emit()
 
-            detail = action.get_description()
-            self.conductor.tooltip.show_tooltip_at(f"Undo {detail}", plan_hide = True)
+            if not is_pingpong:
+                detail = action.get_description()
+                self.conductor.tooltip.show_tooltip_at(f"Undo {detail}", plan_hide = True)
 
         finally:
             self.refresh_all_occlusion()
@@ -582,14 +587,14 @@ class GlyphController(QObject):
     def redo(self) -> None:
         if not self.redo_stack:
             self.conductor.tooltip.show_tooltip_at("Nothing to redo.", plan_hide = True)
-
             return
+
+        is_pingpong = self.check_indecisive_pingpong("redo")
 
         if self.is_processing:
             return
 
         self.cancel_drag()
-
         self.is_processing = True
 
         try:
@@ -598,8 +603,9 @@ class GlyphController(QObject):
             self.undo_stack.append(action)
             self.elements_changed.emit()
 
-            detail = action.get_description()
-            self.conductor.tooltip.show_tooltip_at(f"Redo {detail}", plan_hide = True)
+            if not is_pingpong:
+                detail = action.get_description()
+                self.conductor.tooltip.show_tooltip_at(f"Redo {detail}", plan_hide = True)
 
         finally:
             self.refresh_all_occlusion()
@@ -1636,3 +1642,31 @@ class GlyphController(QObject):
                 items,
                 expanded_stack = self.expanded_stack
             )
+
+    def check_indecisive_pingpong(self, action_name: str) -> bool:
+        now = time.monotonic()
+        self.undo_redo_history.append((now, action_name))
+
+        recent = [action for t, action in self.undo_redo_history if now - t < 3.0]
+
+        if len(recent) >= 5:
+            if recent[-5:] in (
+                ["undo", "redo", "undo", "redo", "undo"],
+                ["redo", "undo", "redo", "undo", "redo"]
+            ):
+                self.undo_redo_history.clear()
+                
+                phrases = [
+                    "Bro.",
+                    "Please stop.",
+                    "Make up your mind.",
+                    "They both look good.",
+                    "I will ban Undo keybind.",
+                    "I don't like the amount of my movement."
+                ]
+                
+                self.conductor.tooltip.show_tooltip_at(random.choice(phrases), plan_hide=True)
+                
+                return True
+
+        return False

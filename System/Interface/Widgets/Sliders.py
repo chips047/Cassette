@@ -32,7 +32,11 @@ from System.Interface.Animation import (
     LoomEngine
 )
 
-from System.Services  import Player
+from System.Services import (
+    Player,
+    Haptics
+)
+
 from System.Interface import Widgets
 
 # Direct Jump Slider
@@ -227,6 +231,8 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
             pan    = stereo_pan
         )
 
+        Haptics.ui_haptics.step()
+
     # Event Handlers
 
     def handle_slider_pressed(self) -> None:
@@ -304,15 +310,19 @@ class SliderWithLabel(Lifecycle.LoomAnimationMixin, Widgets.BaseControlContainer
         self.value_handle.stop()
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        delta_y = event.angleDelta().y()
+        is_horizontal = event.angleDelta().x() != 0 or bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
 
-        if delta_y == 0:
-            delta_y = event.angleDelta().x()
-
-        if delta_y == 0:
+        if not is_horizontal:
+            event.ignore()
             return
 
-        self.wheel_accumulator += delta_y
+        delta = event.angleDelta().x() if event.angleDelta().x() != 0 else event.angleDelta().y()
+
+        if delta == 0:
+            event.ignore()
+            return
+
+        self.wheel_accumulator += delta
         threshold               = 120.0
 
         if abs(self.wheel_accumulator) < threshold:

@@ -40,9 +40,10 @@ from System.Common import (
     Constants
 )
 
-from System.Services.Player import (
-    ui_player,
-    bpm_informer
+
+from System.Services import (
+    Player,
+    Haptics
 )
 
 from System.Interface import Timing
@@ -121,6 +122,8 @@ class BaseButton(Lifecycle.LoomAnimationMixin, QPushButton):
         )
 
     def animate_release(self) -> None:
+        Haptics.ui_haptics.click()
+
         self.press_scale_handle.set_target(
             value           = 1.0,
             duration_ms     = 100,
@@ -172,7 +175,7 @@ class BaseButton(Lifecycle.LoomAnimationMixin, QPushButton):
 
     def start_glitch(self) -> None:
         if not self.glitch_sound_locked:
-            ui_player.play_sound("Alerts/Refuse")
+            Player.ui_player.play_sound("Alerts/Refuse")
 
         self.glitch_started.emit()
 
@@ -444,7 +447,7 @@ class ConfirmButton(ButtonWithOutline):
         self.setText(self.confirm_text)
 
         if not self.is_connected_to_beat:
-            bpm_informer.beat_4.connect(self.pulse_border)
+            Player.bpm_informer.beat_4.connect(self.pulse_border)
             self.is_connected_to_beat = True
 
     def reset_confirmation(self) -> None:
@@ -458,7 +461,7 @@ class ConfirmButton(ButtonWithOutline):
 
     def stop_confirmation_pulse(self) -> None:
         if self.is_connected_to_beat:
-            bpm_informer.beat_4.disconnect(self.pulse_border)
+            Player.bpm_informer.beat_4.disconnect(self.pulse_border)
             self.is_connected_to_beat = False
 
         self.border_pulse_handle.set_target(
@@ -468,7 +471,7 @@ class ConfirmButton(ButtonWithOutline):
         )
 
     def pulse_border(self) -> None:
-        duration_ms = bpm_informer.get_interval(4)
+        duration_ms = Player.bpm_informer.get_interval(4)
 
         self.border_pulse_handle.play_curve(
             keyframes   = [

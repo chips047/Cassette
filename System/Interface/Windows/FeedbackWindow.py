@@ -7,8 +7,9 @@ from PyQt6.QtCore    import QTimer
 from PyQt6.QtWidgets import QWidget
 
 from System.Common import (
-    Constants,
-    Dev
+    Dev,
+    Utils,
+    Constants
 )
 
 from System.Services import (
@@ -193,7 +194,9 @@ class FeedbackWindow(FloatingWindowGPU):
         resolved_contact = str(contact_value).strip() if contact_value else "Anonymous"
         rating_value     = f"{self.star_rating_widget.value()} / 5"
 
-        with open("version", "r", encoding = "utf-8") as version_file:
+        path = Utils.get_resource_path("version")
+
+        with open(path, "r", encoding = "utf-8") as version_file:
             application_version = version_file.read().strip()
 
         system_platform = f"{platform.system()} {platform.release()} ({platform.machine()}). Cassette Version: {application_version}"

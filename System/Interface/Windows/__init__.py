@@ -14,6 +14,11 @@ from System.Interface.Windows.AudioDialogBase import (
     AudioLoadingDialog
 )
 
+from System.Interface.Windows.VersionPrankWindow import (
+    VersionPrankWindow,
+    should_show_version_prank
+)
+
 from System.Interface.Windows.QuitWindow               import QuitWindow
 from System.Interface.Windows.ErrorWindow              import ErrorWindow
 from System.Interface.Windows.SettingsWindow           import SettingsWindow

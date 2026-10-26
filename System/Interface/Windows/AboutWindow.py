@@ -44,6 +44,8 @@ from System.Common import (
 from System.Interface import Widgets
 from System.Interface.Animation import LoomEngine
 
+from System.Services import Haptics
+
 from System.Interface.Windows import (
     ErrorWindow,
     UpdateWindow,
@@ -167,6 +169,7 @@ class CassetteCanvasWidget(QWidget):
         self.target_manual_pitch    = 0.0
         self.is_mouse_pressed       = False
         self.drag_start_position    = None
+        self.haptic_accumulator     = 0.0
 
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
@@ -198,6 +201,14 @@ class CassetteCanvasWidget(QWidget):
         self.target_manual_yaw   += delta_x * sensitivity
         self.target_manual_pitch += delta_y * sensitivity
         self.target_manual_pitch  = max(-40.0, min(40.0, self.target_manual_pitch))
+
+        drag_distance            = math.hypot(delta_x, delta_y)
+        self.haptic_accumulator += drag_distance
+        haptic_threshold_px      = 22.0
+
+        if self.haptic_accumulator >= haptic_threshold_px:
+            self.haptic_accumulator %= haptic_threshold_px
+            Haptics.ui_haptics.step()
 
         if delta_x != 0.0 or delta_y != 0.0:
             self.model_dragged.emit()

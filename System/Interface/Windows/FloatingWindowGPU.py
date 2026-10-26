@@ -46,7 +46,10 @@ from System.Common import (
     Constants
 )
 
-from System.Services import Player
+from System.Services import (
+    Player,
+    Haptics
+)
 
 from System.Interface import (
     Timing,
@@ -375,6 +378,18 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
     # Animations
 
+    # Haptic Feedback
+
+    def play_rubber_haptics(
+            self,
+            steps_count: int = 5,
+            interval_ms: int = 30
+        ) -> None:
+
+        for step_index in range(steps_count):
+            delay_milliseconds = step_index * interval_ms
+            QTimer.singleShot(delay_milliseconds, Haptics.ui_haptics.step)
+
     def pulse_title(
             self,
             peak_scale:  float = 1.2,
@@ -385,6 +400,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             return
 
         self.title_label.pulse_scale(peak_scale, duration_ms)
+        self.play_rubber_haptics(steps_count = 5, interval_ms = 35)
 
     def animate_resize(
             self,

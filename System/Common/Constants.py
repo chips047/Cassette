@@ -519,6 +519,12 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
 
     @classmethod
     def get_frames_per_second_options(cls) -> tuple[dict[str, int], str]:
+        application = QGuiApplication.instance()
+
+        if not application:
+            frames_per_second_map = {str(rate): rate for rate in cls.candidate_refresh_rates}
+            return frames_per_second_map, "60"
+
         maximum_rate = cls.get_maximum_screen_refresh_rate()
         valid_rates  = [rate for rate in cls.candidate_refresh_rates if rate <= maximum_rate]
 
@@ -530,7 +536,7 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
             valid_rates = [30, 60]
 
         frames_per_second_map = {str(rate): rate for rate in valid_rates}
-        default_selection     = "60" if "60" in frames_per_second_map else str(valid_rates[-1])
+        default_selection     = str(maximum_rate) if str(maximum_rate) in frames_per_second_map else "60"
 
         return frames_per_second_map, default_selection
 
@@ -1007,6 +1013,13 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                     "key":         "_tutorial_shown",
                     "button_text": "Reset",
                     "default":     False
+                },
+                {
+                    "type":        "checkbox",
+                    "title":       "Enable Quit Dialog",
+                    "description": "Enables confirmation dialog before closing.",
+                    "default":     True,
+                    "key":         "quit_dialog"
                 },
                 {
                     "type":    "selector",

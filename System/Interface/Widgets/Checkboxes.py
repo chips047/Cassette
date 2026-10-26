@@ -5,6 +5,7 @@ from PyQt6.QtCore import (
     QSize,
     QRectF,
     QEvent,
+    QTimer,
     pyqtSignal
 )
 
@@ -34,7 +35,11 @@ from System.Interface.Animation import (
     LoomEngine
 )
 
-from System.Services  import Player
+from System.Services import (
+    Player,
+    Haptics
+)
+
 from System.Interface import Widgets
 
 # Checkbox
@@ -140,20 +145,26 @@ class Checkbox(Lifecycle.LoomAnimationMixin, QCheckBox):
         tone = 1.1 if self.isChecked() else 0.82
         Player.ui_player.play_sound("Controls/Checkbox/Toggle", setting_key = "checkbox_sounds", speed = tone)
 
+        Haptics.ui_haptics.snap()
+
         self.indicator_scale.set_base(1.5)
         self.indicator_radius.set_base(0.0)
 
+        animation_duration_ms = 180
+
         self.indicator_scale.set_target(
             value           = 1.0,
-            duration_ms     = 180,
+            duration_ms     = animation_duration_ms,
             easing_function = LoomEngine.Easing.ease_out_quad
         )
 
         self.indicator_radius.set_target(
             value           = self.resting_radius,
-            duration_ms     = 180,
+            duration_ms     = animation_duration_ms,
             easing_function = LoomEngine.Easing.ease_out_quad
         )
+
+        QTimer.singleShot(animation_duration_ms, Haptics.ui_haptics.step)
 
     def enterEvent(self, event: QEnterEvent) -> None:
         super().enterEvent(event)

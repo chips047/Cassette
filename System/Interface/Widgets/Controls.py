@@ -35,7 +35,10 @@ from System.Common import (
     Styles
 )
 
-from System.Services import Player
+from System.Services import (
+    Player,
+    Haptics
+)
 
 from System.Interface.Animation import (
     Lifecycle,
@@ -212,6 +215,8 @@ class DraggableValueControl(BaseControlWidget):
 
     # Audio Feedback
 
+    # Audio & Haptic Feedback
+
     def play_tick_sound(self) -> None:
         current_timestamp_seconds = monotonic()
         time_difference_seconds   = current_timestamp_seconds - self.last_sound_timestamp_seconds
@@ -222,6 +227,14 @@ class DraggableValueControl(BaseControlWidget):
         self.last_sound_timestamp_seconds = current_timestamp_seconds
 
         Player.ui_player.play_sound("Alerts/Clicks/Toggle3")
+
+        modifiers = QApplication.keyboardModifiers()
+
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            Haptics.ui_haptics.snap()
+
+        else:
+            Haptics.ui_haptics.step()
 
     # Value Management
 

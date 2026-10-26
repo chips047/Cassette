@@ -433,6 +433,7 @@ class StartupFadeOverlay(QWidget):
         self.easter_egg_font = Utils.NType(9)
 
         if is_new_user:
+            Constants.current_settings.set_value("_is_og_user", False)
             self.main_text           = "Get ready."
             self.main_text_rectangle = self.rect()
 
@@ -868,6 +869,9 @@ class ApplicationWindow(QMainWindow):
         self.update_thread.resource_loaded.connect(self.handle_resource_loaded)
         self.update_thread.fetch_all()
 
+        if Windows.should_show_version_prank():
+            QTimer.singleShot(600, self.display_version_prank_window)
+
         is_backrooms_seen = bool(Constants.current_settings.get("_backrooms_seen", False))
 
         if not is_backrooms_seen and random.random() < 0.008:
@@ -886,6 +890,10 @@ class ApplicationWindow(QMainWindow):
         )
 
         QTimer.singleShot(500, lambda: animator.start_corrupt_collapse(4500, on_finished = self.switch_to_audit_view))
+
+    def display_version_prank_window(self) -> None:
+        prank_window = Windows.VersionPrankWindow(parent = self)
+        prank_window.exec()
 
     def switch_to_audit_view(self) -> None:
         self.audit_container_widget = AuditContainerWidget(self)
@@ -906,6 +914,12 @@ class ApplicationWindow(QMainWindow):
 
         if self.is_closing:
             return
+
+        if self.stack.currentWidget() == self.main_menu_widget:
+            return self.begin_shutdown()
+
+        if not Constants.current_settings.get("quit_dialog"):
+            return self.begin_shutdown()
 
         quit_window   = Windows.QuitWindow()
         quit_accepted = quit_window.exec()
@@ -1034,11 +1048,6 @@ def main() -> None:
     surface_format.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
     surface_format.setSwapBehavior(QSurfaceFormat.SwapBehavior.TripleBuffer)
 
-    logger.debug("Configuring application settings")
-
-    Constants.prepare_default_settings(Constants.SettingsDict())
-    Constants.load_settings()
-
     if Constants.current_settings.get("msaa"):
         logger.debug(f"Enabling MSAA with {Constants.current_settings['msaa']} samples")
         surface_format.setSamples(Constants.current_settings["msaa"])
@@ -1048,6 +1057,10 @@ def main() -> None:
 
     application = QApplication(sys.argv)
     application.setStyle("Fusion")
+
+    logger.debug("Configuring application settings")
+    Constants.prepare_default_settings(Constants.SettingsDict())
+    Constants.load_settings()
 
     font_paths = [
         "System/Assets/Fonts/NDot57.otf",
@@ -1072,7 +1085,6 @@ def main() -> None:
     main_window.intro_overlay.start_overlay(200)
 
     sys.exit(application.exec())
-
 
 if __name__ == "__main__":
     logger.debug("Hello.")

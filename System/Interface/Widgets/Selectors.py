@@ -37,7 +37,11 @@ from System.Common import (
     Styles
 )
 
-from System.Services  import Player
+from System.Services import (
+    Player,
+    Haptics
+)
+
 from System.Interface import Widgets
 
 from System.Interface.Animation import (
@@ -331,16 +335,20 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
         self.move_indicator(checked_identifier, animated = False)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        delta_y = event.angleDelta().y()
+        is_horizontal = event.angleDelta().x() != 0 or bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
 
-        if delta_y == 0:
-            delta_y = event.angleDelta().x()
-
-        if delta_y == 0:
+        if not is_horizontal:
+            event.ignore()
             return
 
-        self.wheel_accumulator += delta_y
-        threshold               = 120.0
+        delta = event.angleDelta().x() if event.angleDelta().x() != 0 else event.angleDelta().y()
+
+        if delta == 0:
+            event.ignore()
+            return
+
+        self.wheel_accumulator += delta
+        threshold               = 1000.0
 
         if abs(self.wheel_accumulator) < threshold:
             event.accept()
@@ -356,7 +364,7 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
             event.accept()
             return
 
-        direction = -1 if steps > 0 else 1
+        direction = 1 if steps > 0 else -1
         new_index = max(0, min(button_count - 1, current_index + direction))
 
         if new_index == current_index:
@@ -387,6 +395,8 @@ class SegmentedStrip(Lifecycle.LoomAnimationMixin, QWidget):
             setting_key = "selector_sounds",
             volume      = 0.8
         )
+
+        Haptics.ui_haptics.snap()
 
         self.select_index(index, animated = True, emit = True)
 

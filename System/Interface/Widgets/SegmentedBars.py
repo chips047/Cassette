@@ -27,7 +27,11 @@ from System.Common import (
     Constants
 )
 
-from System.Services  import Player
+from System.Services import (
+    Player,
+    Haptics
+)
+
 from System.Interface import Timing
 
 def evaluate_keyframes(
@@ -392,6 +396,8 @@ class SegmentedBar(BaseSegmentedBar):
         tone_speed += 0.05 if self.active[index] else 0.0
 
         Player.ui_player.play_sound("Alerts/Clicks/Toggle3" if alternate else "Alerts/Clicks/Toggle1", speed = tone_speed)
+
+        Haptics.ui_haptics.step()
 
     # Events
 

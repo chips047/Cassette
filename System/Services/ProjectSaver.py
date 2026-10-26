@@ -801,7 +801,8 @@ class Composition(BaseComposition):
 
         self.syncer = RealTimeVisualizer.rt_visualizer
 
-        with open("version", "r", encoding = "utf-8") as file_handle:
+        path = Utils.get_resource_path("version")
+        with open(path, "r", encoding = "utf-8") as file_handle:
             self.version = file_handle.read()
 
         self.song_path      = audiofile_path

@@ -11,6 +11,8 @@ from PyQt6.QtWidgets import (
     QApplication
 )
 
+from System.Common import Utils
+
 from System.Services import (
     Player,
     Workers
@@ -145,7 +147,8 @@ class ErrorWindow(FloatingWindowGPU):
     # Payload Inspector
 
     def read_application_version(self) -> str:
-        with open("version", "r", encoding = "utf-8") as version_file:
+        path = Utils.get_resource_path("version")
+        with open(path, "r", encoding = "utf-8") as version_file:
             return version_file.read().strip()
 
     def build_payload_dictionary(self) -> dict:

@@ -56,7 +56,8 @@ def convert_to_glyphs(
         end_ms:   int
     ) -> tuple[str | None, dict[int, dict] | None]:
 
-    file = open(path).read()
+    with open(path, "r", encoding = "utf-8") as f:
+        file = f.read()
 
     if "\t" in file:
         return labels_to_glyphs(file, start_ms, end_ms)
@@ -85,7 +86,7 @@ def get_audio_duration(path_to_audio: str) -> float:
         path_to_audio
     ]
     
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = Utils.run_hidden(cmd)
     return float(result.stdout.strip())
 
 def get_ogg_metadata(path: str) -> dict:

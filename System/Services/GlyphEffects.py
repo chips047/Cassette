@@ -565,6 +565,9 @@ def random_fill_effect(
         mode:     str                = "Fill"
     ) -> list[dict]:
 
+    if bpm_snap and bpm <= 0:
+        return []
+
     glyph_data      = extract_glyph_data(glyph, model)
     target_segments = resolve_target_segments(glyph_data)
 

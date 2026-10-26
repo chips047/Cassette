@@ -51,7 +51,7 @@ def spare_action(window: QuitWindow) -> int:
     cancel_btn.setText("Ha. Haha. Funny.")
     cancel_btn.start_glitch()
 
-    return 3000
+    return 1000
 
 def give_up_action(window: QuitWindow) -> int:
     ok_button = window.get_ok_button()
@@ -62,7 +62,7 @@ def give_up_action(window: QuitWindow) -> int:
     window.title_label.setText("Shame.")
     window.get_cancel_button().setText("Shame.")
 
-    return 1500
+    return 1000
 
 def not_done_action(window: QuitWindow) -> int:
     ok_button = window.get_ok_button()
@@ -73,7 +73,7 @@ def not_done_action(window: QuitWindow) -> int:
     window.title_label.setText("No")
     window.get_cancel_button().setText("No")
 
-    return 3000
+    return 1000
 
 def scared_action(window: QuitWindow) -> int:
     ok_button = window.get_ok_button()
@@ -93,10 +93,22 @@ def terminal_action(window: QuitWindow) -> int:
     if quit_button:
         quit_button.setText("Flatline...")
 
-    window.player.set_speed(0.1, duration_ms = 1200)
     window.player.set_passes([200], q = 2.0, mix = 1.0, duration_ms = 1000)
 
     return 1200
+
+def fair_action(window: QuitWindow) -> int:
+    window.title_label.setText("Fair enough.")
+    return 0
+
+def funny_action(window: QuitWindow) -> int:
+    window.title_label.setText("So funny.")
+    Player.ui_player.play_sound(".vault/NOK/Funny")
+    return 500
+
+def fake_action(window: QuitWindow) -> int:
+    window.title_label.setText("You are fake.")
+    return 1000
 
 PHRASES = [
     QuitPhrase(
@@ -174,6 +186,27 @@ PHRASES = [
         cancel_text    = "Second opinion?",
         quit_text      = "Pull the plug",
         on_quit_action = terminal_action
+    ),
+
+    QuitPhrase(
+        message        = "Do you press that close button just to see what do I say?",
+        cancel_text    = "Well, yes",
+        quit_text      = "No, I want to quit",
+        on_back_action = fair_action
+    ),
+
+    QuitPhrase(
+        message        = "You are no fun.",
+        cancel_text    = "I'm funny",
+        quit_text      = "Quit",
+        on_back_action = funny_action
+    ),
+
+    QuitPhrase(
+        message        = "You all are incredibly disappointing. But also entertaining. Are you any different?",
+        cancel_text    = "I'm Chips",
+        quit_text      = "Quit",
+        on_back_action = fake_action
     ),
 ]
 
