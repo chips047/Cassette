@@ -33,7 +33,6 @@ a = Analysis(
         'PyQt6.QtSql',
         'PyQt6.QtQml',
         'PyQt6.QtQuick',
-        'PyQt6.QtMultimedia',
         'PyQt6.QtTest',
         'PyQt6.QtPdf',
         

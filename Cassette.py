@@ -65,7 +65,11 @@ from System.Services import (
 
 from System.Interface.Animation.WindowAnimator import WindowAnimator
 
-from System.Views.Editor      import AuditContainerWidget
+from System.Views.Editor import (
+    PortalGunOverlay,
+    AuditContainerWidget
+)
+
 from System.Views.Compositor  import CompositorWidget
 from System.Views.ProjectMenu import MainMenu
 
@@ -877,6 +881,19 @@ class ApplicationWindow(QMainWindow):
         if not is_backrooms_seen and random.random() < 0.008:
             Constants.current_settings.set_value("_backrooms_seen", True)
             QTimer.singleShot(1000, self.trigger_audit_collapse_easter_egg)
+
+        portal_gun_seen = bool(Constants.current_settings.get("_portal_gun_seen", False))
+
+        if not portal_gun_seen and random.randint() > 0.995:
+            Constants.current_settings.set_value("_portal_gun_seen", True)
+            QTimer.singleShot(1400, self.spawn_portal_gun_easter_egg)
+
+    def spawn_portal_gun_easter_egg(self) -> None:
+        if self.stack.currentWidget() != self.main_menu_widget:
+            return
+
+        self.portal_gun_overlay = PortalGunOverlay(self)
+        self.portal_gun_overlay.spawn_falling_gun()
 
     def trigger_audit_collapse_easter_egg(self) -> None:
         animator = WindowAnimator.get()

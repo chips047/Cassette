@@ -392,15 +392,18 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
     def pulse_title(
             self,
-            peak_scale:  float = 1.2,
-            duration_ms: int   = 100
+            peak_scale:     float = 1.2,
+            duration_ms:    int   = 100,
+            enable_haptics: bool  = True
         ) -> None:
 
         if not self.animations_enabled or not self.title_label:
             return
 
         self.title_label.pulse_scale(peak_scale, duration_ms)
-        self.play_rubber_haptics(steps_count = 5, interval_ms = 35)
+
+        if enable_haptics:
+            self.play_rubber_haptics(steps_count = 5, interval_ms = 35)
 
     def animate_resize(
             self,

@@ -90,10 +90,10 @@ class AudioSetupDialog(BPMEditorBase):
         self.beat_counter = (self.beat_counter + 1) % 4
 
         if self.beat_counter == 0:
-            self.pulse_title(peak_scale = 1.4, duration_ms = 200)
+            self.pulse_title(peak_scale = 1.4, duration_ms = 200, enable_haptics = False)
 
         else:
-            self.pulse_title(peak_scale = 1.1, duration_ms = 120)
+            self.pulse_title(peak_scale = 1.1, duration_ms = 120, enable_haptics = False)
 
     def really_close(self) -> None:
         Player.bpm_informer.beat_16.disconnect(self.update_title_beat)
