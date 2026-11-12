@@ -203,7 +203,7 @@ class WaveformController(QObject):
             return None
 
         height       = float(Styles.Metrics.Waveform.Height)
-        sigma        = float(Constants.current_settings["waveform_smoothing"])
+        sigma        = 1.7 * (Constants.current_settings["waveform_smoothing_percent"] / 100.0)
         waveform_max = max(float(self.global_waveform_max), 0.000001)
 
         try:

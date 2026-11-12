@@ -800,7 +800,7 @@ class SearchTextbox(Textbox):
                 "I'm deleting textbox. For disciplinary measures."
             ).exec()
 
-            self.deleteLater()
+            self.hide()
 
     def on_random_title_timer(self) -> None:
         title         = random.choice(self.random_titles)

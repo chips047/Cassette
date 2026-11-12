@@ -7,7 +7,7 @@ import random
 import threading
 import traceback
 
-from datetime  import datetime
+from datetime import datetime
 from functools import partial
 
 from loguru import logger
@@ -63,14 +63,14 @@ from System.Services import (
     ProjectSaver
 )
 
-from System.Interface.Animation.WindowAnimator import WindowAnimator
+from System.Interface.Animation import WindowAnimator
 
 from System.Views.Editor import (
     PortalGunOverlay,
     AuditContainerWidget
 )
 
-from System.Views.Compositor  import CompositorWidget
+from System.Views.Compositor import CompositorWidget
 from System.Views.ProjectMenu import MainMenu
 
 if getattr(sys, "frozen", False):
@@ -85,7 +85,6 @@ sys.path.insert(0, base_directory)
 # Exception Handling
 
 is_processing_exception = False
-
 
 def handle_exception(
         exception_type:      type[BaseException],
@@ -114,7 +113,7 @@ def handle_exception(
             traceback.format_exception(
                 exception_type,
                 exception_value,
-                exception_traceback,
+                exception_traceback
             )
         )
 
@@ -137,12 +136,10 @@ def handle_exception(
     finally:
         is_processing_exception = False
 
-
 def handle_thread_exception(arguments: threading.ExceptHookArgs) -> None:
     logger.opt(
         exception = (arguments.exc_type, arguments.exc_value, arguments.exc_traceback)
     ).critical(f"Fatal crash in background thread '{arguments.thread.name}'")
-
 
 sys.excepthook       = handle_exception
 threading.excepthook = handle_thread_exception
@@ -167,30 +164,30 @@ class WindowEffectManager:
             "content":  "System/Assets/Image/Anomaly.png",
             "sound":    ".vault/NOK/Anomaly",
             "duration": 7500,
-            "fade":     200,
+            "fade":     200
         },
         {
             "name":    "ieytd2_img",
             "content": "System/Assets/Image/IEYTD2.png",
-            "scale":   False,
+            "scale":   False
         },
         {
             "name":    "the_void_text",
-            "content": "First, there was The Void",
+            "content": "First, there was The Void"
         },
         {
             "name":    "die_like_rest_text",
-            "content": "The best of the best, still die like the rest",
+            "content": "The best of the best, still die like the rest"
         },
         {
             "name":    "cake_lie_text",
-            "content": "The cake is a lie The cake is a lie The cake is a lie",
+            "content": "The cake is a lie The cake is a lie The cake is a lie"
         },
         {
             "name":    "please_text",
             "content": "Please",
-            "sound":   ".vault/NOK/ThreeTone",
-        },
+            "sound":   ".vault/NOK/ThreeTone"
+        }
     ]
 
     def __init__(self, window: QMainWindow) -> None:
@@ -224,8 +221,8 @@ class WindowEffectManager:
 
     def process_window_move(
             self,
-            horizontal_position:      int,
-            unused_vertical_position: int
+            horizontal_position: int,
+            vertical_position:   int
         ) -> None:
 
         current_time     = time.time()
@@ -345,7 +342,7 @@ class WindowEffectManager:
                 "Today is a vacuum cleaner day! Enjoy!"
             ).exec()
 
-        if current_time.day == 4 and current_time.month == 5:
+        elif current_time.day == 4 and current_time.month == 5:
             Windows.ErrorWindow(
                 "><",
                 "my birthady, 4 may `:)`"
@@ -546,7 +543,7 @@ class StartupFadeOverlay(QWidget):
     def paintEvent(self, unused_event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHints(
-            QPainter.RenderHint.Antialiasing     |
+            QPainter.RenderHint.Antialiasing          |
             QPainter.RenderHint.SmoothPixmapTransform
         )
 
@@ -589,7 +586,7 @@ class ApplicationWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        self.animator = WindowAnimator(self)
+        self.animator = WindowAnimator.WindowAnimator(self)
 
         self.main_menu_widget       = MainMenu(self)
         self.compositor_widget      = CompositorWidget(self)
@@ -617,6 +614,8 @@ class ApplicationWindow(QMainWindow):
 
         self.setup_animations()
         self.setup_screenshot_shortcut()
+
+    # Window Events
 
     def moveEvent(self, event: QMoveEvent) -> None:
         super().moveEvent(event)
@@ -700,7 +699,7 @@ class ApplicationWindow(QMainWindow):
         else:
             logger.error(f"Failed to save 4K screenshot to: {file_path}")
 
-    # Updates and Data
+    # Data Updates
 
     def process_new_songs_data(self, information: str) -> None:
         with open("System/Assets/Songs.txt", "w", encoding = "utf-8") as file:
@@ -710,10 +709,12 @@ class ApplicationWindow(QMainWindow):
         with open("System/Assets/About.txt", "w", encoding = "utf-8") as file:
             file.write(information)
 
-    def show_update_info(self, information: dict[str, object]) -> None:
-        version_tag = str(information.get("tag_name", "unknown"))
-        changelog   = str(information.get("body", "No changelog available."))
-        release_url = str(information.get("html_url", Constants.GITHUB_LINK))
+    def process_available_update(
+            self,
+            release_information: dict[str, object]
+        ) -> None:
+
+        version_tag = str(release_information.get("tag_name", "unknown"))
 
         current_version_file_path = Utils.get_resource_path("version")
 
@@ -726,21 +727,24 @@ class ApplicationWindow(QMainWindow):
         if not Utils.is_newer_version(version_tag, current_version):
             return
 
-        last_notified_version = Constants.current_settings.get("_last_notified_update")
+        self.main_menu_widget.set_available_update(release_information)
 
-        if version_tag == last_notified_version:
-            return
+    def handle_resource_loaded(
+            self,
+            resource_identifier: str,
+            data:                object
+        ) -> None:
 
-        Windows.UpdateWindow(
-            version             = version_tag,
-            changelog           = changelog,
-            url                 = release_url,
-            release_information = information
-        ).exec()
+        if resource_identifier == "release" and isinstance(data, dict):
+            self.process_available_update(data)
 
-        Constants.current_settings.set_value("_last_notified_update", version_tag)
+        elif resource_identifier == "songs":
+            self.process_new_songs_data(str(data))
 
-    # Animations
+        elif resource_identifier == "about":
+            self.process_new_about_data(str(data))
+
+    # Animation Setup
 
     @staticmethod
     def create_fadeout_animation(target_effect: QGraphicsOpacityEffect) -> QPropertyAnimation:
@@ -769,38 +773,23 @@ class ApplicationWindow(QMainWindow):
 
     # View Transitions
 
-    def handle_resource_loaded(
-            self,
-            resource_identifier: str,
-            data:                object
-        ) -> None:
-
-        if resource_identifier == "release" and isinstance(data, dict):
-            self.show_update_info(data)
-
-        elif resource_identifier == "songs":
-            self.process_new_songs_data(str(data))
-
-        elif resource_identifier == "about":
-            self.process_new_about_data(str(data))
-
     @pyqtSlot(ProjectSaver.Composition)
     def show_compositor_view(self, composition: ProjectSaver.Composition) -> None:
         self.compositor_widget.load_composition(composition)
 
     @pyqtSlot(str)
-    def on_edit_requested(self, project_id: str) -> None:
+    def on_edit_requested(self, project_identifier: str) -> None:
         self.main_menu_fadeout.start()
 
         QTimer.singleShot(
             1000,
-            partial(self.load_project_after_transition, project_id)
+            partial(self.load_project_after_transition, project_identifier)
         )
 
-    def load_project_after_transition(self, project_id: str) -> None:
+    def load_project_after_transition(self, project_identifier: str) -> None:
         try:
-            logger.info(f"Loading project {project_id}...")
-            composition = ProjectSaver.Composition(identifier = int(project_id))
+            logger.info(f"Loading project {project_identifier}...")
+            composition = ProjectSaver.Composition(identifier = int(project_identifier))
             self.compositor_widget.load_composition(composition)
 
         except Exception as exception:
@@ -864,6 +853,8 @@ class ApplicationWindow(QMainWindow):
 
         self.entry_move_animation.setEndValue(stack_rectangle)
 
+    # Easter Eggs
+
     @pyqtSlot()
     def handle_intro_finished(self) -> None:
         self.intro_overlay = None
@@ -884,7 +875,7 @@ class ApplicationWindow(QMainWindow):
 
         portal_gun_seen = bool(Constants.current_settings.get("_portal_gun_seen", False))
 
-        if not portal_gun_seen and random.randint() > 0.995:
+        if not portal_gun_seen and random.random() > 0.995:
             Constants.current_settings.set_value("_portal_gun_seen", True)
             QTimer.singleShot(1400, self.spawn_portal_gun_easter_egg)
 
@@ -896,7 +887,7 @@ class ApplicationWindow(QMainWindow):
         self.portal_gun_overlay.spawn_falling_gun()
 
     def trigger_audit_collapse_easter_egg(self) -> None:
-        animator = WindowAnimator.get()
+        animator = WindowAnimator.WindowAnimator.get()
 
         if animator is None:
             return
@@ -917,7 +908,7 @@ class ApplicationWindow(QMainWindow):
         self.stack.addWidget(self.audit_container_widget)
         self.stack.setCurrentWidget(self.audit_container_widget)
 
-        animator = WindowAnimator.get()
+        animator = WindowAnimator.WindowAnimator.get()
 
         if animator is not None:
             animator.finish_visual_transformation()
@@ -989,12 +980,13 @@ class ApplicationWindow(QMainWindow):
     def shutdown_with_audio_fade(self) -> None:
         logger.debug("Playing exit effects with audio slowdown")
 
-        animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
-        player               = Player.player
+        speed_percent = float(Constants.current_settings.get("animation_speed_percent", 100))
+        multiplier    = speed_percent / 100.0
+        player        = Player.player
 
         remaining_ms  = max(0.0, player.duration_ms - player.get_position())
-        fade_duration = Constants.EXIT_FADE_BASE_MS     * animation_multiplier
-        effects_delay = Constants.EXIT_EFFECTS_DELAY_MS * animation_multiplier
+        fade_duration = Constants.EXIT_FADE_BASE_MS     * multiplier
+        effects_delay = Constants.EXIT_EFFECTS_DELAY_MS * multiplier
         quit_delay    = effects_delay * 2
 
         if quit_delay > remaining_ms:
@@ -1023,11 +1015,12 @@ class ApplicationWindow(QMainWindow):
         self.exit_quit_timer.start(quit_delay)
 
     def shutdown_without_audio_fade(self) -> None:
-        animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
-        has_exit_effects     = self.play_exit_effects()
+        speed_percent    = float(Constants.current_settings.get("animation_speed_percent", 100))
+        multiplier       = speed_percent / 100.0
+        has_exit_effects = self.play_exit_effects()
 
         duration = (
-            int(Constants.NO_AUDIO_EXIT_DELAY_MS * animation_multiplier)
+            int(Constants.NO_AUDIO_EXIT_DELAY_MS * multiplier)
             if has_exit_effects
             else Constants.NO_AUDIO_EXIT_DELAY_MS
         )
@@ -1065,9 +1058,9 @@ def main() -> None:
     surface_format.setOption(QSurfaceFormat.FormatOption.DeprecatedFunctions, False)
     surface_format.setSwapBehavior(QSurfaceFormat.SwapBehavior.TripleBuffer)
 
-    if Constants.current_settings.get("msaa"):
-        logger.debug(f"Enabling MSAA with {Constants.current_settings['msaa']} samples")
-        surface_format.setSamples(Constants.current_settings["msaa"])
+    if msaa_samples := Constants.current_settings.get("msaa"):
+        logger.debug(f"Enabling MSAA with {msaa_samples} samples")
+        surface_format.setSamples(msaa_samples)
 
     QSurfaceFormat.setDefaultFormat(surface_format)
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)

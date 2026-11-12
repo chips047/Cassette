@@ -62,14 +62,20 @@ class AudioSetupDialog(BPMEditorBase):
         self.content_layout.addLayout(self.build_playback_row())
         self.content_layout.addLayout(settings_layout)
 
+    # Playback
+
     def toggle_playback(self) -> None:
+        if self.is_closing or self.is_cleaning_up:
+            return
+
         if self.player.is_playing:
             self.title_label.setText(self.filename)
             self.stop_playback()
-            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec)
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec, animate = True)
 
-        else:
-            self.play_selection()
+            return
+
+        self.play_selection()
 
     def stop_playback(self) -> None:
         super().stop_playback()

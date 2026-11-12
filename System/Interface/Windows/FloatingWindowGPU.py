@@ -167,8 +167,9 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         surface_format.setSwapBehavior(QSurfaceFormat.SwapBehavior.DoubleBuffer)
         surface_format.setAlphaBufferSize(8)
 
-        if Constants.current_settings.get("msaa"):
-            surface_format.setSamples(Constants.current_settings["msaa"])
+        if msaa_samples := Constants.current_settings.get("msaa"):
+            logger.debug(f"Enabling MSAA with {msaa_samples} samples")
+            surface_format.setSamples(msaa_samples)
 
         self.setFormat(surface_format)
 
@@ -230,7 +231,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.target_tilt_x        = 0.0
         self.target_tilt_y        = 0.0
 
-        self.tilt_smoothing       = float(Constants.current_settings["window_hover_smoothing"])
+        self.tilt_smoothing       = 0.07 * (Constants.current_settings["window_hover_tilt_percent"] / 100.0)
         self.bpm_peak_scale       = 1.03
         self.is_pulsing           = False
         self.pulse_original_speed = 1.0
@@ -369,12 +370,24 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
     # Properties
 
     @property
+    def is_style_disabled(self) -> bool:
+        return self.animation_style == "disabled"
+
+    @property
     def animations_enabled(self) -> bool:
-        return Constants.current_settings.get("floating_window_animations", True)
+        return (
+            Constants.current_settings.get("floating_window_animations", True)
+            and not self.is_style_disabled
+        )
 
     @property
     def bpm_animations_enabled(self) -> bool:
-        return self.animations_enabled and Constants.current_settings.get("bpm_animations", True) and self.player is not None
+        bpm_style = Constants.current_settings.get("window_bpm_animation_style", "pulse")
+        return (
+            self.animations_enabled
+            and bpm_style != "disabled"
+            and self.player is not None
+        )
 
     # Animations
 
@@ -411,22 +424,35 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
             target_height: int
         ) -> None:
 
+        new_width  = target_width + (self.margin_x * 2)
+        new_height = target_height + (self.margin_y * 2)
+
+        current_center = self.geometry().center()
+        target_rect    = QRect(
+            current_center.x() - new_width // 2,
+            current_center.y() - new_height // 2,
+            new_width,
+            new_height
+        )
+
         if not self.animations_active or not self.animations_enabled:
-            self.resize(target_width + (self.margin_x * 2), target_height + (self.margin_y * 2))
+            self.setGeometry(target_rect)
+
             return
 
+        self.window_geometry_property.set_base(self.geometry())
         self.window_geometry_property.set_target(
-            value           = QRect(
-                self.x(), self.y(),
-                target_width + (self.margin_x * 2),
-                target_height + (self.margin_y * 2)
-            ),
+            value           = target_rect,
             duration_ms     = 500,
             easing_function = LoomEngine.Easing.ease_out_cubic
         )
 
     def bpm_tick_animation(self) -> None:
         if not self.player.is_playing:
+            return
+
+        bpm_style = Constants.current_settings.get("window_bpm_animation_style", "pulse")
+        if bpm_style == "disabled":
             return
 
         audio_level = self.player.get_current_audio_level()
@@ -438,7 +464,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
         QApplication.setCursorFlashTime(interval_ms)
 
-        if Constants.current_settings.get("window_bpm_animation_style") == "pulse":
+        if bpm_style == "pulse":
             keyframes = [
                 (0.0, 1.0),
                 (0.5, self.bpm_peak_scale + self.squish(audio_level)),
@@ -602,6 +628,9 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         self.play_stage_sound("open")
 
         if not self.animations_active or not self.animations_enabled:
+            self.content_opacity_effect.setOpacity(1.0)
+            self.update()
+
             return
 
         self.current_style().play(
@@ -622,6 +651,7 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
 
     def request_close(self) -> None:
         if not self.enable_close_animation:
+            self.really_close()
             return
 
         self.play_stage_sound("close")
@@ -1059,6 +1089,10 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
                 h
             )
             self.setGeometry(final_rectangle)
+
+            if self.animations_active:
+                self.window_geometry_property.set_base(final_rectangle)
+
             return final_rectangle
 
         window        = self.logical_parent.window() if self.logical_parent else QApplication.activeWindow()
@@ -1072,6 +1106,10 @@ class FloatingWindowGPU(Lifecycle.LoomAnimationMixin, QOpenGLWidget):
         )
 
         self.setGeometry(final_rectangle)
+
+        if self.animations_active:
+            self.window_geometry_property.set_base(final_rectangle)
+
         return final_rectangle
 
     def player_pulse(

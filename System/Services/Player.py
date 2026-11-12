@@ -140,6 +140,8 @@ class PlaybackManager(QObject):
         self.heavy_cooldown                 = 0.3
         self.heavy_rms_threshold            = 0.2
 
+        self.stop_callbacks                 = []
+
         self.setup_effect_properties()
         self.reset_playback_state()
         self.setup_beat_detection()
@@ -254,7 +256,16 @@ class PlaybackManager(QObject):
             multiply_duration
         )
 
-        timer.start(duration_ms)
+        if multiply_duration:
+            speed_percent    = float(Constants.current_settings.get("animation_speed_percent", 100))
+            multiplier       = speed_percent / 100.0
+
+        else:
+            multiplier = 1.0
+        
+        actual_timer_duration = int(duration_ms * multiplier)
+
+        timer.start(actual_timer_duration)
 
     def apply_properties(
             self,
@@ -564,79 +575,6 @@ class PlaybackManager(QObject):
         data, sample_rate = soundfile.read(path, dtype = "float32")
         self.load_audio_from_data(data, sample_rate, on_ready = on_ready)
 
-    def load_audio_from_data(
-            self,
-            data:           numpy.ndarray,
-            sample_rate:    int,
-            on_ready:       object = None,
-            peak_amplitude: float | None = None
-        ) -> None:
-
-        def apply_load() -> None:
-            if data.ndim == 1:
-                stereo_data = numpy.column_stack((data, data))
-
-            else:
-                stereo_data = data
-
-            if not stereo_data.flags.c_contiguous:
-                stereo_data = numpy.ascontiguousarray(stereo_data, dtype = numpy.float32)
-
-            channels = stereo_data.shape[1]
-
-            with self.lock:
-                self.reset_playback_state()
-
-                self.sample_rate      = sample_rate
-                self.data             = stereo_data
-                self.duration_ms      = (len(stereo_data) / sample_rate) * 1000.0
-
-                self.eq_low_states    = numpy.zeros((channels, 4), dtype = numpy.float64)
-                self.eq_mid_states    = numpy.zeros((channels, 4), dtype = numpy.float64)
-                self.eq_high_states   = numpy.zeros((channels, 4), dtype = numpy.float64)
-                self.echo_states      = numpy.zeros((channels, 4), dtype = numpy.float64)
-                self.pass_states      = numpy.zeros((len(self.pass_frequencies), channels, 4), dtype = numpy.float64)
-
-                resolved_peak         = peak_amplitude if peak_amplitude is not None else float(numpy.max(numpy.abs(stereo_data)))
-                self.track_peak_level = max(resolved_peak, 1e-6)
-
-            self.stream_needs_reopen = (
-                self.stream is None                         or
-                self.stream_sample_rate != self.sample_rate or
-                self.stream_channels != channels            or
-                self.stream_block_size != self.block_size_ms
-            )
-
-            self.audio_loaded.emit(
-                self.data,
-                self.sample_rate,
-                len(self.data) / self.sample_rate
-            )
-
-            self.ensure_stream_opened()
-
-            if on_ready:
-                on_ready()
-
-        if self.is_playing and self.data is not None and self.speed > 0.001:
-            remaining_ms = max(0.0, self.duration_ms - self.get_position())
-            fade_ms      = min(120, max(10, int(remaining_ms))) if remaining_ms > 0 else 0
-
-            if fade_ms > 0:
-                self.set_speed(
-                    0.0,
-                    duration_ms           = fade_ms,
-                    easing                = LoomEngine.Easing.ease_out_quart,
-                    use_engine_multiplier = False,
-                    on_finish             = apply_load
-                )
-
-                return
-
-            self.stop()
-
-        apply_load()
-
     def open_stream(self) -> None:
         self.close_stream()
 
@@ -714,30 +652,6 @@ class PlaybackManager(QObject):
             target_ms = 0.0
 
         self.play(target_ms)
-
-    def stop(self) -> None:
-        if self.pulse_timer is not None:
-            self.pulse_timer.stop()
-            self.pulse_timer.deleteLater()
-            self.pulse_timer = None
-
-        self.is_pulsing = False
-
-        with self.lock:
-            if not self.is_playing:
-                return
-
-            if self.data is not None and self.position >= len(self.data):
-                self.playback_start_audio_ms = self.duration_ms
-
-            else:
-                self.playback_start_audio_ms = self.get_position()
-
-            self.playback_start_wall_time = time.time()
-            self.is_playing               = False
-            self.is_stopping              = False
-
-        self.playback_state_changed.emit(False)
 
     def set_block_size(self, block_size_ms: int) -> None:
         if block_size_ms == self.block_size_ms:
@@ -1407,12 +1321,146 @@ class PlaybackManager(QObject):
             use_engine_multiplier
         )
 
-    def fade_out_and_stop(
+    # Playback Control
+
+    def flush_stop_callbacks(self) -> None:
+        if not self.stop_callbacks:
+            return
+
+        callbacks           = list(self.stop_callbacks)
+        self.stop_callbacks = []
+
+        for callback in callbacks:
+            callback()
+
+    def emergency_stop(
             self,
-            duration_ms: int               = 1000,
-            easing:      LoomEngine.Easing = LoomEngine.Easing.ease_out_quart,
-            on_finish:   object | None     = None
+            duration_ms: int           = 800,
+            on_finish:   object | None = None
         ) -> None:
+
+        if on_finish is not None:
+            self.stop_callbacks.append(on_finish)
+
+        if not self.is_playing and not self.is_stopping:
+            self.stop()
+            return
+
+        speed_timer = self.property_timers.get("speed")
+
+        if speed_timer is not None:
+            remaining_ms = speed_timer.remainingTime()
+
+            if self.is_stopping and 0 < remaining_ms <= duration_ms:
+                return
+
+        self.fade_out_and_stop(
+            duration_ms           = duration_ms,
+            easing                = LoomEngine.Easing.ease_out_quart,
+            on_finish             = None,
+            use_engine_multiplier = False
+        )
+
+    def stop(self) -> None:
+        if self.pulse_timer is not None:
+            self.pulse_timer.stop()
+            self.pulse_timer.deleteLater()
+            self.pulse_timer = None
+
+        self.is_pulsing = False
+
+        with self.lock:
+            if not self.is_playing:
+                self.flush_stop_callbacks()
+                return
+
+            if self.data is not None and self.position >= len(self.data):
+                self.playback_start_audio_ms = self.duration_ms
+
+            else:
+                self.playback_start_audio_ms = self.get_position()
+
+            self.playback_start_wall_time = time.time()
+            self.is_playing               = False
+            self.is_stopping              = False
+
+        self.playback_state_changed.emit(False)
+        self.flush_stop_callbacks()
+
+
+    def load_audio_from_data(
+            self,
+            data:           numpy.ndarray,
+            sample_rate:    int,
+            on_ready:       object | None = None,
+            peak_amplitude: float | None  = None
+        ) -> None:
+
+        def apply_load() -> None:
+            if data.ndim == 1:
+                stereo_data = numpy.column_stack((data, data))
+
+            else:
+                stereo_data = data
+
+            if not stereo_data.flags.c_contiguous:
+                stereo_data = numpy.ascontiguousarray(stereo_data, dtype = numpy.float32)
+
+            channels = stereo_data.shape[1]
+
+            with self.lock:
+                self.reset_playback_state()
+
+                self.sample_rate      = sample_rate
+                self.data             = stereo_data
+                self.duration_ms      = (len(stereo_data) / sample_rate) * 1000.0
+
+                self.eq_low_states    = numpy.zeros((channels, 4), dtype = numpy.float64)
+                self.eq_mid_states    = numpy.zeros((channels, 4), dtype = numpy.float64)
+                self.eq_high_states   = numpy.zeros((channels, 4), dtype = numpy.float64)
+                self.echo_states      = numpy.zeros((channels, 4), dtype = numpy.float64)
+                self.pass_states      = numpy.zeros((len(self.pass_frequencies), channels, 4), dtype = numpy.float64)
+
+                resolved_peak         = peak_amplitude if peak_amplitude is not None else float(numpy.max(numpy.abs(stereo_data)))
+                self.track_peak_level = max(resolved_peak, 1e-6)
+
+            self.stream_needs_reopen = (
+                self.stream is None                         or
+                self.stream_sample_rate != self.sample_rate or
+                self.stream_channels != channels            or
+                self.stream_block_size != self.block_size_ms
+            )
+
+            self.audio_loaded.emit(
+                self.data,
+                self.sample_rate,
+                len(self.data) / self.sample_rate
+            )
+
+            self.ensure_stream_opened()
+
+            if on_ready:
+                on_ready()
+
+        if (self.is_playing or self.is_stopping) and self.data is not None and self.speed > 0.001:
+            self.emergency_stop(
+                duration_ms = 600,
+                on_finish   = apply_load
+            )
+            return
+
+        if self.is_playing or self.is_stopping:
+            self.stop()
+
+        apply_load()
+
+    def fade_out_and_stop(
+        self,
+        duration_ms:           int               = 1000,
+        easing:                LoomEngine.Easing = LoomEngine.Easing.ease_out_quart,
+        on_finish:             object | None     = None,
+        use_engine_multiplier: bool              = True
+    ) -> None:
 
         if not self.is_playing:
             self.stop()
@@ -1424,9 +1472,10 @@ class PlaybackManager(QObject):
 
         self.set_speed(
             0.0,
-            duration_ms = duration_ms,
-            easing      = easing,
-            on_finish   = on_finish
+            duration_ms           = duration_ms,
+            easing                = easing,
+            on_finish             = on_finish,
+            use_engine_multiplier = use_engine_multiplier
         )
 
     def pulse_speed(
@@ -1858,7 +1907,10 @@ class UISoundManager:
         if name not in self.preloaded:
             return UISound(-1, self)
 
-        if Constants.current_settings["disable_sounds"]:
+        if not Constants.current_settings["sound_effect_volume"]:
+            return UISound(-1, self)
+
+        if not volume:
             return UISound(-1, self)
 
         if setting_key and not Constants.current_settings.get(setting_key, True):

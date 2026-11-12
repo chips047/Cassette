@@ -135,14 +135,11 @@ class MacHapticController:
 
     def click(self) -> None:
         self.trigger(HapticType.GENERIC)
-        print("CLICK")
 
     def snap(self) -> None:
         self.trigger(HapticType.ALIGNMENT)
-        print("SNAP")
 
     def step(self) -> None:
         self.trigger(HapticType.LEVEL)
-        print("STEP")
 
 ui_haptics = MacHapticController()

@@ -1821,9 +1821,14 @@ class AnimationEngine:
         if key not in self.tracks:
             logger.error(f"Property {key} not found.")
             return
-        
-        multiplier = Constants.current_settings.get("animation_multiplier", 1.0) if multiply_duration_by_speed else 1.0
 
+        if multiply_duration_by_speed:
+            speed_percent    = float(Constants.current_settings.get("animation_speed_percent", 100))
+            multiplier       = speed_percent / 100.0
+
+        else:
+            multiplier = 1.0
+        
         final_duration_ms = int(duration_ms * multiplier)
         self.tracks[key].set_target(value, final_duration_ms, easing_function)
 
@@ -1852,10 +1857,13 @@ class AnimationEngine:
         final_delay_ms    = delay_ms
 
         if should_multiply:
-            if final_duration_ms is not None:
-                final_duration_ms = int(final_duration_ms * Constants.current_settings.get("animation_multiplier", 1.0))
+            speed_percent = float(Constants.current_settings.get("animation_speed_percent", 100))
+            multiplier    = speed_percent / 100.0
 
-            final_delay_ms = int(final_delay_ms * Constants.current_settings.get("animation_multiplier", 1.0))
+            if final_duration_ms is not None:
+                final_duration_ms = int(final_duration_ms * multiplier)
+
+            final_delay_ms = int(final_delay_ms * multiplier)
 
         clip = AnimationClip(
             scheduler               = self.backend.defer,

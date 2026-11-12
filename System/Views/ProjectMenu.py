@@ -179,8 +179,8 @@ def get_projects_info(songs_folder: str) -> dict[str, dict[str, object]]:
 # Track Item Widget
 
 class TrackItemWidget(QWidget):
-    edit_clicked  = pyqtSignal(str)
-    audio_clicked = pyqtSignal(str)
+    edit_clicked    = pyqtSignal(str)
+    audio_clicked   = pyqtSignal(str)
     project_deleted = pyqtSignal()
 
     def __init__(
@@ -324,6 +324,8 @@ class MainMenu(QWidget):
         self.track_widgets:          dict[str, TrackItemWidget]   = {}
         self.search_box:             Widgets.SearchTextbox | None = None
         self.drag_loop_sound:        Player.UISound | None        = None
+        self.version_button:         Widgets.OptionButton | None  = None
+        self.cached_update_info:     dict[str, object] | None     = None
         self.current_column_count:   int                          = 2
         self.project_deletion_times: list[float]                  = []
 
@@ -433,11 +435,27 @@ class MainMenu(QWidget):
                 callback_handler
             )
             option_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+            if callback_handler == self.on_about:
+                self.version_button = option_button
+
             panel_layout.addWidget(option_button)
 
         panel.setStyleSheet(Styles.Other.Transparent)
 
         return panel
+
+    # Update State
+
+    def set_available_update(
+            self,
+            release_information: dict[str, object]
+        ) -> None:
+
+        self.cached_update_info = release_information
+
+        if self.version_button is not None:
+            self.version_button.setText("Update available")
 
     # Grid Dimension Management
 
@@ -486,7 +504,7 @@ class MainMenu(QWidget):
 
         return [
             (project_identifier, project_data)
-            for _, project_identifier, project_data in ranked_projects
+            for score, project_identifier, project_data in ranked_projects
         ]
 
     def refresh_tracks(self) -> None:
@@ -776,7 +794,15 @@ class MainMenu(QWidget):
 
     # Actions & Dialogs
 
-    def process_new_composition(self, file_path: str) -> None:
+    # Actions & Dialogs
+
+    def process_new_composition(
+            self,
+            file_path: str
+        ) -> None:
+
+        Player.player.emergency_stop(600)
+
         audio_dialog = Windows.AudioSetupDialog(file_path)
 
         if not audio_dialog.exec():
@@ -788,6 +814,63 @@ class MainMenu(QWidget):
         )
 
         self.composition_created.emit(composition)
+
+
+    def on_import(self) -> None:
+        Player.player.emergency_stop(600)
+
+        import_window = Windows.ImportWindow()
+
+        if not import_window.exec():
+            return
+
+        composition = ProjectSaver.Composition(
+            import_window.audio_path,
+            import_window.saved_settings
+        )
+
+        self.composition_created.emit(composition)
+
+
+    def on_edit_project(
+            self,
+            project_identifier: str
+        ) -> None:
+
+        Player.player.emergency_stop(600)
+
+        self.setEnabled(False)
+        self.edit_requested.emit(project_identifier)
+
+
+    def on_audio_settings(
+            self,
+            project_identifier: str
+        ) -> None:
+
+        Player.player.emergency_stop(600)
+
+        try:
+            composition  = ProjectSaver.Composition(identifier = int(project_identifier))
+            audio_window = Windows.ExistingAudioSetupDialog(composition)
+
+            if not audio_window.exec():
+                return
+
+            self.refresh_tracks()
+
+        except Exception as exception:
+            Windows.ErrorWindow("Audio edit failed", str(exception)).exec()
+
+
+    def on_glyphtone_editor(self) -> None:
+        file_path = self.ask_for_file()
+
+        if not file_path:
+            return
+
+        Player.player.emergency_stop(600)
+        Windows.GlyphtoneEditor(file_path).exec()
 
     def on_settings(self) -> None:
         settings_dialog = Windows.SettingsWindow()
@@ -819,37 +902,20 @@ class MainMenu(QWidget):
 
             return
 
-        if has_shift:
+        elif has_shift:
             Windows.ByteBeatWindow().exec()
 
             return
 
-        if has_alt:
+        elif has_alt:
             Windows.AboutWindow(more_information = True).exec()
 
             return
 
-        Windows.AboutWindow().exec()
+        Windows.AboutWindow(cached_update_information = self.cached_update_info).exec()
 
     def on_glyphtones(self) -> None:
         webbrowser.open("https://glyphtones.firu.dev/")
-
-    def on_edit_project(self, project_identifier: str) -> None:
-        self.setEnabled(False)
-        self.edit_requested.emit(project_identifier)
-
-    def on_audio_settings(self, project_identifier: str) -> None:
-        try:
-            composition  = ProjectSaver.Composition(identifier = project_identifier)
-            audio_window = Windows.ExistingAudioSetupDialog(composition)
-
-            if not audio_window.exec():
-                return
-
-            self.refresh_tracks()
-
-        except Exception as exception:
-            Windows.ErrorWindow("Audio edit failed", str(exception)).exec()
 
     def ask_for_file(self) -> str | None:
         file_dialog = QFileDialog(
@@ -874,11 +940,3 @@ class MainMenu(QWidget):
 
         QApplication.processEvents()
         self.process_new_composition(file_path)
-
-    def on_glyphtone_editor(self) -> None:
-        file_path = self.ask_for_file()
-
-        if not file_path:
-            return
-
-        Windows.GlyphtoneEditor(file_path).exec()

@@ -582,6 +582,7 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                 "Electric": "electric"
             }
 
+        styles_map    = {"Disabled": "disabled", **styles_map}
         default_style = "Bouncy" if "Bouncy" in styles_map else next(iter(styles_map.keys()))
 
         return styles_map, default_style
@@ -598,10 +599,10 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                     "title":   "OpenGL MSAA: Requires restart.",
                     "key":     "msaa",
                     "map": {
-                        "No MSAA": 0,
-                        "2x":      2,
-                        "4x":      4,
-                        "8x":      8
+                        "Off": 0,
+                        "2x":  2,
+                        "4x":  4,
+                        "8x":  8
                     },
                     "default": "4x"
                 },
@@ -651,114 +652,113 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                     "default": "Classic"
                 },
                 {
-                    "type":    "slider",
-                    "title":   "Zoom Step (on Wheel)",
-                    "min":     1,
-                    "max":     100,
-                    "key":     "zoom_step",
-                    "default": 20
+                    "type":        "slider",
+                    "title":       "Zoom Step",
+                    "description": "Zoom sensitivity multiplier per wheel notch. 100% is standard.",
+                    "unit":        "%",
+                    "min":         10,
+                    "max":         300,
+                    "key":         "zoom_step_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Horizontal Scroll Acceleration",
-                    "key":     "scroll_acceleration",
-                    "map": {
-                        "Low":       0.1,
-                        "Normal":    0.3,
-                        "High":      0.5,
-                        "Very High": 0.8
-                    },
-                    "default": "Normal"
+                    "type":        "slider",
+                    "title":       "Horizontal Scroll Acceleration",
+                    "description": "Multiplier for horizontal scrolling acceleration. 100% is standard.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         300,
+                    "key":         "scroll_acceleration_percent",
+                    "default":     100
                 },
                 {
-                    "type":        "checkbox",
+                    "type":        "slider",
                     "title":       "Scroll Smoothing",
-                    "key":         "scroll_smoothing",
-                    "description": "Makes scrolling more fluid.",
-                    "default":     True
+                    "description": "0% disables smoothing entirely. 100% is standard fluid motion.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         200,
+                    "key":         "scroll_smoothing_percent",
+                    "default":     100
                 },
                 {
-                    "type":        "checkbox",
+                    "type":        "slider",
                     "title":       "Scroll Inertia",
-                    "key":         "scroll_inertia",
-                    "description": "Keeps scrolling naturally after a swipe.",
-                    "default":     True
+                    "description": "0% disables swipe inertia. 100% is natural decay.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         200,
+                    "key":         "scroll_inertia_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Menu Scroll Sensitivity",
-                    "key":     "wheel_scroll_sensitivity",
-                    "map": {
-                        "Low":    0.125,
-                        "Normal": 0.175,
-                        "High":   0.200
-                    },
-                    "default": "Normal"
+                    "type":        "slider",
+                    "title":       "Menu Scroll Sensitivity",
+                    "description": "Response speed in menus and popups. 100% is standard.",
+                    "unit":        "%",
+                    "min":         25,
+                    "max":         250,
+                    "key":         "wheel_scroll_sensitivity_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Menu Scroll Inertia",
-                    "key":     "inertia_deceleration_rate",
-                    "map": {
-                        "Low":    0.85,
-                        "Normal": 0.93,
-                        "High":   0.97
-                    },
-                    "default": "Normal"
+                    "type":        "slider",
+                    "title":       "Menu Inertia Retention",
+                    "description": "How long momentum stays in menus. 100% is standard deceleration.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         150,
+                    "key":         "inertia_deceleration_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "slider",
-                    "title":   "Spring Stiffness",
-                    "min":     1,
-                    "max":     10,
-                    "key":     "scroll_spring_stiffness",
-                    "default": 1
+                    "type":        "slider",
+                    "title":       "Spring Stiffness",
+                    "description": "Spring stiffness multiplier. 100% is standard stiffness.",
+                    "unit":        "%",
+                    "min":         20,
+                    "max":         500,
+                    "key":         "scroll_spring_stiffness_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "slider",
-                    "title":   "Spring Damping",
-                    "min":     10,
-                    "max":     90,
-                    "key":     "scroll_spring_damping",
-                    "default": 15
+                    "type":        "slider",
+                    "title":       "Spring Damping",
+                    "description": "Spring damping multiplier. 100% is standard damping.",
+                    "unit":        "%",
+                    "min":         20,
+                    "max":         300,
+                    "key":         "scroll_spring_damping_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Overscroll Resistance",
-                    "key":     "overscroll_resistance",
-                    "map": {
-                        "Soft":   1200,
-                        "Normal": 600,
-                        "Rigid":  300
-                    },
-                    "default": "Soft"
+                    "type":        "slider",
+                    "title":       "Overscroll Elasticity",
+                    "description": "Elastic resistance at edges. 100% is standard resistance.",
+                    "unit":        "%",
+                    "min":         25,
+                    "max":         200,
+                    "key":         "overscroll_elasticity_percent",
+                    "default":     100
                 }
             ],
 
             "Interface": [
                 {
                     "type":    "selector",
-                    "title":   "Animation Style",
+                    "title":   "Window Animation Style",
                     "key":     "animation_style",
                     "map":     styles_map,
                     "default": default_style
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Animation Multiplier",
-                    "key":     "animation_multiplier",
-                    "map": {
-                        "0.75x": 0.75,
-                        "1.0x":  1.0,
-                        "1.15x": 1.15,
-                        "1.25x": 1.25,
-                        "1.5x":  1.5,
-                        "3.0x":  3.0,
-                        "5.0x":  5.0,
-                        "10.0x": 10.0,
-                        "20.0x": 20.0
-                    },
-                    "default": "1.0x"
+                    "type":        "slider",
+                    "title":       "Animation Speed Multiplier",
+                    "unit":        "%",
+                    "min":         5,
+                    "max":         300,
+                    "key":         "animation_speed_percent",
+                    "default":     100
                 },
                 {
                     "type":    "selector",
@@ -769,37 +769,37 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                 },
                 {
                     "type":        "checkbox",
-                    "title":       "Floating Window Animations",
+                    "title":       "Floating Window Background Effects",
                     "key":         "floating_window_animations",
-                    "description": "Enables popup background animations.",
+                    "description": "Enables popup background animated elements.",
                     "default":     True
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Window Hover Smoothing",
-                    "key":     "window_hover_smoothing",
-                    "map": {
-                        "No Tilt":   0.0,
-                        "Slow":      0.07,
-                        "Normal":    0.2,
-                        "Very Fast": 0.8
-                    },
-                    "default": "Normal"
+                    "type":        "slider",
+                    "title":       "Window 3D Hover Tilt",
+                    "description": "0% disables tilt completely. 100% is standard tilt depth.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         250,
+                    "key":         "window_hover_tilt_percent",
+                    "default":     100
                 },
                 {
                     "type":        "checkbox",
                     "title":       "BPM Animations",
-                    "description": "Enables beat - synced animations.",
+                    "description": "Enables all beat-synced animations across the application.",
                     "key":         "bpm_animations",
                     "default":     True
                 },
                 {
-                    "type":    "selector",
+                    "type":        "selector",
                     "title":   "Window BPM Animation Style",
-                    "key":     "window_bpm_animation_style",
+                    "description": "Visual dynamic for floating windows during playback.",
+                    "key":         "window_bpm_animation_style",
                     "map": {
-                        "Pulse": "pulse",
-                        "Punch": "punch"
+                        "Disabled": "disabled",
+                        "Pulse":    "pulse",
+                        "Punch":    "punch"
                     },
                     "default": "Pulse"
                 },
@@ -864,24 +864,19 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                     "default": "128"
                 },
                 {
-                    "type":        "checkbox",
-                    "title":       "Disable Sounds",
-                    "key":         "disable_sounds",
-                    "description": "Disables all UI sounds.",
-                    "default":     False
-                },
-                {
-                    "type":    "slider",
-                    "title":   "Sound Effect Volume",
-                    "key":     "sound_effect_volume",
-                    "min":     0,
-                    "max":     100,
-                    "default": 100
+                    "type":        "slider",
+                    "title":       "Sound Effects Master Volume",
+                    "description": "0% fully mutes all interface sounds. 100% is standard output volume.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         100,
+                    "key":         "sound_effect_volume",
+                    "default":     100
                 },
                 {
                     "type":        "checkbox",
-                    "title":       "Sound Tone Effects",
-                    "description": "Enables dynamic tonal variation for UI sounds.",
+                    "title":       "Sound Tone Variation",
+                    "description": "Enables dynamic tonal variation for repeated UI sounds.",
                     "key":         "sound_tone_effects",
                     "default":     True
                 },
@@ -1033,11 +1028,11 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                 },
                 {
                     "type":    "selector",
-                    "title":   "Playhead Position",
+                    "title":   "Playhead Anchor Position",
                     "key":     "playhead_position",
                     "map": {
                         "Left":   0.25,
-                        "Center": 0.5,
+                        "Center": 0.50,
                         "Right":  0.75
                     },
                     "default": "Left"
@@ -1051,28 +1046,24 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                     "default": 1
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Default Scaling",
-                    "key":     "default_scaling",
-                    "map": {
-                        "Very Small": 100,
-                        "Small":      200,
-                        "Medium":     300,
-                        "Big":        400,
-                        "Very Big":   500
-                    },
-                    "default": "Very Big"
+                    "type":        "slider",
+                    "title":       "Default Timeline Scale",
+                    "description": "Default timeline zoom factor. 100% is base scale.",
+                    "unit":        "%",
+                    "min":         50,
+                    "max":         300,
+                    "key":         "default_scaling_percent",
+                    "default":     100
                 },
                 {
-                    "type":    "selector",
-                    "title":   "Waveform Smoothing",
-                    "key":     "waveform_smoothing",
-                    "map": {
-                        "Accuracy":   0.5,
-                        "Balance":    1.7,
-                        "Smoothness": 3.0
-                    },
-                    "default": "Balance"
+                    "type":        "slider",
+                    "title":       "Waveform Visual Smoothing",
+                    "description": "0% is sharpest/raw wave, 100% is standard balanced smoothing.",
+                    "unit":        "%",
+                    "min":         0,
+                    "max":         200,
+                    "key":         "waveform_smoothing_percent",
+                    "default":     100
                 },
                 {
                     "type":    "slider",
@@ -1083,12 +1074,13 @@ class SettingsDict(dict, metaclass = SettingsDictionaryMeta):
                     "default": 5
                 },
                 {
-                    "type":    "slider",
-                    "title":   "Glyph Resize Handle Width",
-                    "min":     1,
-                    "max":     25,
-                    "key":     "glyph_resize_handle_width",
-                    "default": 10
+                    "type":        "slider",
+                    "title":       "Glyph Resize Handle Width",
+                    "unit":        "px",
+                    "min":         4,
+                    "max":         25,
+                    "key":         "glyph_resize_handle_width",
+                    "default":     10
                 },
                 {
                     "type":    "selector",

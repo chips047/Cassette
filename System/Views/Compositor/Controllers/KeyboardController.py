@@ -140,14 +140,15 @@ class KeyboardController(QObject):
             (Qt.Key.Key_Up,   self.handle_move_track_up,   True),
             (Qt.Key.Key_Down, self.handle_move_track_down, True),
 
-            (Qt.Key.Key_Space,                                     self.handle_playback_toggle,    False),
-            (Qt.Key.Key_Left,                                      self.handle_arrow_left,         True),
-            (Qt.Key.Key_Right,                                     self.handle_arrow_right,        True),
-            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Left,  self.handle_shift_arrow_left,   True),
-            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Right, self.handle_shift_arrow_right,  True),
-            (Qt.KeyboardModifier.AltModifier | Qt.Key.Key_Left,    lambda: self.shift_segments_requested.emit(-1), True),
-            (Qt.KeyboardModifier.AltModifier | Qt.Key.Key_Right,   lambda: self.shift_segments_requested.emit(1),  True),
-            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_S,      self.open_segments_editor, False),
+            (Qt.Key.Key_Space,                                       self.handle_playback_toggle,                    False),
+            (Qt.KeyboardModifier.ControlModifier | Qt.Key.Key_Space, self.handle_loop_playback_toggle,               False),
+            (Qt.Key.Key_Left,                                        self.handle_arrow_left,                         True),
+            (Qt.Key.Key_Right,                                       self.handle_arrow_right,                        True),
+            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Left,    self.handle_shift_arrow_left,                   True),
+            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Right,   self.handle_shift_arrow_right,                  True),
+            (Qt.KeyboardModifier.AltModifier | Qt.Key.Key_Left,      lambda: self.shift_segments_requested.emit(-1), True),
+            (Qt.KeyboardModifier.AltModifier | Qt.Key.Key_Right,     lambda: self.shift_segments_requested.emit(1),  True),
+            (Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_S,       self.open_segments_editor,                      False),
 
             (Qt.Key.Key_Delete,    self.handle_deletion, True),
             (Qt.Key.Key_Backspace, self.handle_deletion, True),
@@ -295,7 +296,32 @@ class KeyboardController(QObject):
 
     # Playhead
 
+    def handle_loop_playback_toggle(self) -> None:
+        if self.playback_manager.is_playing:
+            self.playback_manager.loop = not self.playback_manager.loop
+            status = "enabled" if self.playback_manager.loop else "disabled"
+            self.conductor.tooltip.show_tooltip_at(f"Loop {status}", plan_hide = True)
+
+            return
+
+        self.playback_manager.loop = True
+        self.conductor.tooltip.show_tooltip_at("Loop playback started", plan_hide = True)
+
+        position_ms = self.conductor.get_playhead_position_ms()
+        duration_ms = self.playback_manager.duration_ms
+
+        if duration_ms > 0 and position_ms >= (duration_ms - 50.0):
+            self.conductor.set_playhead_position_ms(0.0)
+            self.conductor.horizontalScrollBar().setValue(0)
+            self.conductor.scroll_to_playhead()
+            position_ms = 0.0
+
+        self.playback_manager.toggle_playback(position_ms)
+
     def handle_playback_toggle(self) -> None:
+        if not self.playback_manager.is_playing:
+            self.playback_manager.loop = False
+        
         current_time           = time.time()
         self.space_press_times = [press_time for press_time in self.space_press_times if current_time - press_time <= 1.5]
         self.space_press_times.append(current_time)

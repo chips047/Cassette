@@ -90,6 +90,15 @@ class WindowAnimationStyle:
 
     @classmethod
     def load(cls, name: str) -> dict:
+        if name == "disabled":
+            return {
+                "title": "Disabled",
+                "sounds": {},
+                "open": {},
+                "close": {},
+                "disturb": {}
+            }
+
         if name in cls.cache:
             return cls.cache[name]
 
@@ -101,6 +110,44 @@ class WindowAnimationStyle:
         cls.cache[name] = data
 
         return data
+
+    def play(
+            self,
+            stage: str,
+            owner: object,
+            size:  tuple[int, int]
+        ) -> None:
+
+        if self.name == "disabled":
+            if stage == "close":
+                owner.really_close()
+
+            return
+
+        stage_data = self.data.get(stage)
+
+        if not stage_data:
+            if stage == "close":
+                owner.really_close()
+
+            return
+
+        resolver = ValueResolver(owner, size)
+
+        for name, value in stage_data.get("bases", {}).items():
+            handle = getattr(owner, name + "_property")
+            handle.set_base(resolver.resolve(value))
+
+        for name, schedule in stage_data.get("schedules", {}).items():
+            self.play_schedule(owner, name, resolver.resolve_schedule(schedule))
+
+        for name, curve in stage_data.get("curves", {}).items():
+            self.play_curve(owner, name, curve, resolver)
+
+        after_ms = stage_data.get("close_after_ms")
+
+        if after_ms:
+            QTimer.singleShot(after_ms, owner.really_close)
 
     @classmethod
     def get_available_styles(cls) -> dict[str, str]:
@@ -125,35 +172,6 @@ class WindowAnimationStyle:
 
     def sound_for(self, stage: str) -> list[str] | str | None:
         return self.data.get("sounds", {}).get(stage)
-
-    def play(
-            self,
-            stage: str,
-            owner: object,
-            size:  tuple[int, int]
-        ) -> None:
-
-        stage_data = self.data.get(stage)
-
-        if not stage_data:
-            return
-
-        resolver = ValueResolver(owner, size)
-
-        for name, value in stage_data.get("bases", {}).items():
-            handle = getattr(owner, name + "_property")
-            handle.set_base(resolver.resolve(value))
-
-        for name, schedule in stage_data.get("schedules", {}).items():
-            self.play_schedule(owner, name, resolver.resolve_schedule(schedule))
-
-        for name, curve in stage_data.get("curves", {}).items():
-            self.play_curve(owner, name, curve, resolver)
-
-        after_ms = stage_data.get("close_after_ms")
-
-        if after_ms:
-            QTimer.singleShot(after_ms, owner.really_close)
 
     def play_schedule(
             self,

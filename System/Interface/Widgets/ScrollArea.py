@@ -115,7 +115,7 @@ class ElasticScrollArea(QScrollArea):
     def __init__(
             self,
             parent:      QWidget | None = None,
-            fade_color:  QColor  | None = None,
+            fade_color:  QColor | None  = None,
             fade_height: int            = 40
         ) -> None:
 
@@ -126,6 +126,7 @@ class ElasticScrollArea(QScrollArea):
         self.scrolling_is_active = False
         self.fade_height         = fade_height
         self.animations          = {}
+        self.scroll_sensitivity  = 0.175 * (Constants.current_settings["wheel_scroll_sensitivity_percent"] / 100.0)
 
         self.setStyleSheet(Styles.Other.Transparent)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -145,6 +146,12 @@ class ElasticScrollArea(QScrollArea):
         self.layout_manager = self.canvas.layout_manager
 
     def setup_fades(self, fade_color: QColor | None) -> None:
+        if fade_color is None:
+            self.top_fade    = None
+            self.bottom_fade = None
+
+            return
+
         self.top_fade    = FadeOverlay(fade_color, True, self)
         self.bottom_fade = FadeOverlay(fade_color, False, self)
 
@@ -207,10 +214,8 @@ class ElasticScrollArea(QScrollArea):
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta_y         = event.angleDelta().y()
         limit_px        = self.calculate_maximum_scroll()
-        resistance      = self.calculate_resistance(limit_px)
-        raw_sensitivity = Constants.current_settings.get("wheel_scroll_sensitivity", 1.0)
-
-        sensitivity = float(raw_sensitivity)
+        resistance      = self.calculate_resistance(limit_px, float(delta_y))
+        sensitivity     = self.scroll_sensitivity
 
         self.velocity_speed     -= (delta_y * sensitivity / 8.0) * resistance
         self.scrolling_is_active = True
@@ -229,8 +234,19 @@ class ElasticScrollArea(QScrollArea):
     # Animation
 
     def process_animation_tick(self) -> None:
-        limit_px                  = self.calculate_maximum_scroll()
+        limit_px          = self.calculate_maximum_scroll()
+        previous_position = self.raw_scroll_position
+
         self.raw_scroll_position += self.velocity_speed
+
+        if not self.scrolling_is_active:
+            if previous_position < 0.0 and self.raw_scroll_position >= 0.0:
+                self.raw_scroll_position = 0.0
+                self.velocity_speed      = 0.0
+
+            elif previous_position > limit_px and self.raw_scroll_position <= limit_px:
+                self.raw_scroll_position = limit_px
+                self.velocity_speed      = 0.0
 
         overshoot_px = self.calculate_overshoot(limit_px)
 
@@ -251,6 +267,9 @@ class ElasticScrollArea(QScrollArea):
     # Fades
 
     def update_fade_geometry(self) -> None:
+        if self.top_fade is None or self.bottom_fade is None:
+            return
+
         viewport_width_px = self.viewport().width()
         total_height_px   = self.height()
 
@@ -266,6 +285,9 @@ class ElasticScrollArea(QScrollArea):
         self.bottom_fade.raise_()
 
     def update_fade_visibility(self) -> None:
+        if self.top_fade is None or self.bottom_fade is None:
+            return
+
         limit_px = self.calculate_maximum_scroll()
 
         is_scrollable   = limit_px > 0.0
@@ -342,47 +364,60 @@ class ElasticScrollArea(QScrollArea):
         if self.raw_scroll_position < 0.0:
             return self.raw_scroll_position
 
-        if self.raw_scroll_position > limit_px:
+        elif self.raw_scroll_position > limit_px:
             return self.raw_scroll_position - limit_px
 
         return 0.0
 
     # Physics Calculations
 
-    def calculate_resistance(self, limit_px: float) -> float:
+    def calculate_resistance(
+            self,
+            limit_px:       float,
+            scroll_delta_y: float = 0.0
+        ) -> float:
+
         if 0.0 <= self.raw_scroll_position <= limit_px:
             return 1.0
 
-        if self.raw_scroll_position < 0.0:
+        is_stretching_past_top    = self.raw_scroll_position < 0.0 and scroll_delta_y > 0.0
+        is_stretching_past_bottom = self.raw_scroll_position > limit_px and scroll_delta_y < 0.0
+
+        if not (is_stretching_past_top or is_stretching_past_bottom):
+            return 1.75
+
+        elif self.raw_scroll_position < 0.0:
             excess_px = abs(self.raw_scroll_position)
 
         else:
             excess_px = self.raw_scroll_position - limit_px
 
-        raw_base        = Constants.current_settings.get("overscroll_resistance", Constants.VISUAL_RESISTANCE_STRENGTH)
-        resistance_base = float(raw_base if raw_base is not None else Constants.VISUAL_RESISTANCE_STRENGTH)
+        elasticity_percent = Constants.current_settings.get("overscroll_elasticity_percent", 100.0)
+        resistance_base    = 600.0 * (elasticity_percent / 100.0)
 
         return max(0.05, 1.0 / (1.0 + excess_px / (resistance_base * 0.5))) * 0.3
 
     def update_velocity(self, overshoot_px: float) -> None:
         if overshoot_px == 0.0:
-            raw_deceleration  = Constants.current_settings.get("inertia_deceleration_rate", Constants.INERTIA_DECELERATION_RATE)
-            deceleration_rate = float(raw_deceleration if raw_deceleration is not None else Constants.INERTIA_DECELERATION_RATE)
+            inertia_percent      = Constants.current_settings.get("inertia_deceleration_percent", 100.0)
+            deceleration_rate    = 0.93 * (inertia_percent / 100.0)
             self.velocity_speed *= deceleration_rate
-
             return
 
-        if self.scrolling_is_active:
+        elif self.scrolling_is_active:
             self.velocity_speed *= 0.8
-
             return
 
-        stiffness_setting = float(Constants.current_settings.get("scroll_spring_stiffness", 4) or 4) / 100.0
-        damping_setting   = float(Constants.current_settings.get("scroll_spring_damping", 40) or 40) / 100.0
+        stiffness_percent = Constants.current_settings.get("scroll_spring_stiffness_percent", 100.0)
+        damping_percent   = Constants.current_settings.get("scroll_spring_damping_percent", 100.0)
 
-        spring_force         = -overshoot_px        * stiffness_setting
-        damping_force        = -self.velocity_speed * damping_setting
-        self.velocity_speed += spring_force         + damping_force
+        k = 0.08 * (stiffness_percent / 100.0)
+        d = 0.50 * (damping_percent / 100.0)
+        d = max(0.01, min(0.95, d))
+
+        spring_force         = -overshoot_px * k
+        self.velocity_speed += spring_force
+        self.velocity_speed *= (1.0 - d)
 
     def calculate_position(
             self,
@@ -390,15 +425,14 @@ class ElasticScrollArea(QScrollArea):
             limit_px: float
         ) -> float:
 
-        raw_base        = Constants.current_settings.get("overscroll_resistance", Constants.VISUAL_RESISTANCE_STRENGTH)
-        resistance_base = float(raw_base if raw_base is not None else Constants.VISUAL_RESISTANCE_STRENGTH)
+        elasticity_percent = Constants.current_settings.get("overscroll_elasticity_percent", 100.0)
+        resistance_base    = 600.0 * (elasticity_percent / 100.0)
 
         if raw_px < 0.0:
             return raw_px / (1.0 + abs(raw_px) / resistance_base)
 
-        if raw_px > limit_px:
+        elif raw_px > limit_px:
             excess_px = raw_px - limit_px
-
             return limit_px + (excess_px / (1.0 + excess_px / resistance_base))
 
         return raw_px

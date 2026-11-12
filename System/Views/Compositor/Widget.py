@@ -246,23 +246,27 @@ class CompositorWidget(QWidget):
 
     # Lifecycle
 
-    def load_composition(self, composition: ProjectSaver.Composition) -> None:
-        if self.is_ejecting:
-            self.interrupt_eject_and_load(composition)
+    def load_composition(
+            self,
+            composition: ProjectSaver.Composition
+        ) -> None:
 
+        if self.is_ejecting or self.playback_manager.is_playing or self.playback_manager.is_stopping:
+            self.interrupt_eject_and_load(composition)
             return
 
         self.finish_composition_loading(composition)
 
-    def interrupt_eject_and_load(self, composition: ProjectSaver.Composition) -> None:
-        logger.debug("Eject fade interrupted by a new project load, fast-forwarding audio slowdown")
+    def interrupt_eject_and_load(
+            self,
+            composition: ProjectSaver.Composition
+        ) -> None:
 
         self.is_ejecting = False
         self.content_widget.playhead_timer.stop()
 
-        self.playback_manager.fade_out_and_stop(
-            duration_ms = Constants.INTERRUPTED_FADE_DURATION_MS,
-            easing      = LoomEngine.Easing.ease_out_quart,
+        self.playback_manager.emergency_stop(
+            duration_ms = 600,
             on_finish   = lambda: self.finish_composition_loading(composition)
         )
 
@@ -287,8 +291,10 @@ class CompositorWidget(QWidget):
                 easing      = LoomEngine.Easing.ease_out_quart
             )
 
-            animation_multiplier = Constants.current_settings.get("animation_multiplier", 1.0)
-            scaled_fade_duration = int(Constants.EJECT_FADE_DURATION_MS * animation_multiplier)
+            speed_percent = float(Constants.current_settings.get("animation_speed_percent", 100))
+            multiplier    = speed_percent / 100.0
+            
+            scaled_fade_duration = int(Constants.EJECT_FADE_DURATION_MS * multiplier)
 
             QTimer.singleShot(scaled_fade_duration, self.clear_ejecting_flag)
 

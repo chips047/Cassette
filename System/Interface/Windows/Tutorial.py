@@ -27,9 +27,9 @@ from System.Interface.Windows   import FloatingWindowGPU
 class Tutorial(FloatingWindowGPU):
     def __init__(
             self,
-            path:       str,
-            conductor:  object | None = None,
-            parent:     QWidget | None = None
+            path:      str,
+            conductor: object | None  = None,
+            parent:    QWidget | None = None
         ) -> None:
 
         self.conductor  = conductor
@@ -336,20 +336,19 @@ class Tutorial(FloatingWindowGPU):
     def zoom_stage_target(self) -> float:
         if self.conductor is not None:
             zoom_step = float(self.conductor.scroll_controller.zoom_step)
+            return zoom_step * Constants.ZOOM_TARGET_MULTIPLIER
 
-        else:
-            zoom_step = float(Constants.current_settings.get("zoom_step", 20))
-
+        zoom_step = zoom_step = 20 * (Constants.current_settings["zoom_step_percent"] / 100.0)
         return zoom_step * Constants.ZOOM_TARGET_MULTIPLIER
 
     def playhead_progress_delta(self, normalized: float) -> float:
-        last                        = self.playhead_progress_last
+        last_progress               = self.playhead_progress_last
         self.playhead_progress_last = normalized
 
-        if last is None:
+        if last_progress is None:
             return 0.0
 
-        return abs(normalized - last)
+        return abs(normalized - last_progress)
 
     def initialize_ui(self) -> None:
         self.text_label = Widgets.DescriptionLabel("Hello.")
@@ -385,12 +384,18 @@ class Tutorial(FloatingWindowGPU):
             text = f"{text}\n\nDo it now to continue."
 
         self.text_label.setText(text)
-        self.next_button.setVisible(not page.get("wait"))
+        self.next_button.setVisible(self.is_next_button_stage())
 
         QTimer.singleShot(0, self.adjustSize)
 
         if not page.get("keep_focus"):
             QTimer.singleShot(1500, self.return_focus_to_main_window)
+
+    def is_next_button_stage(self) -> bool:
+        if not (0 <= self.stage < self.max_stage):
+            return False
+
+        return not self.pages[self.stage].get("wait")
 
     # Focus
 
@@ -437,7 +442,10 @@ class Tutorial(FloatingWindowGPU):
         self.stop_tutorial_audio()
 
     def finish_tutorial(self) -> None:
-        self.stop_tutorial_audio()
+        if not self.player.is_playing:
+            self.stop_tutorial_audio()
+            self.apply_cycle_button_speed()
+
         self.on_ok()
 
     def skip_tutorial(self) -> None:
@@ -656,7 +664,7 @@ class Tutorial(FloatingWindowGPU):
 
         try:
             signal.disconnect(slot)
-        
+
         except (TypeError, RuntimeError):
             pass
 
@@ -671,9 +679,9 @@ class Tutorial(FloatingWindowGPU):
                 duration_ms = Constants.PLAY_PAUSE_STOP_RAMP_MS,
                 on_finish   = self.finish_prepare_pickup
             )
+            return
 
-        else:
-            self.finish_prepare_pickup()
+        self.finish_prepare_pickup()
 
     def finish_prepare_pickup(self) -> None:
         self.player.stop()
@@ -729,9 +737,9 @@ class Tutorial(FloatingWindowGPU):
                     easing      = LoomEngine.Easing.ease_out_quad,
                     on_finish   = complete_stop
                 )
+                return
 
-            else:
-                complete_stop()
+            complete_stop()
 
         def early_pause_slot(started: bool) -> None:
             if started:
@@ -794,10 +802,27 @@ class Tutorial(FloatingWindowGPU):
             self.on_action_completed()
 
     def target_speed_baseline(self) -> float:
+        if self.is_next_button_stage() and self.stage > 0:
+            return 1.0
+
         if self.user_took_speed_control:
             return self.user_baseline_speed
 
         return Constants.BASELINE_SPEED
+
+    def apply_cycle_button_speed(self) -> None:
+        if self.player.is_playing:
+            return
+
+        if self.conductor is None or self.conductor.parent() is None:
+            return
+
+        button       = self.conductor.parent().playspeed_button
+        button_value = button.get_current_value()
+        target_speed = float(button_value() if callable(button_value) else button_value)
+
+        self.player.speed_property.set_base(target_speed)
+        self.player.set_speed(target_speed)
 
     def animate_speed(
             self,
@@ -884,6 +909,8 @@ class Tutorial(FloatingWindowGPU):
         if not self.audio_enabled:
             return
 
+        self.audio_wind_down_sent = False
+
         page  = self.pages[self.stage] if 0 <= self.stage < self.max_stage else {}
         peak  = page.get("bpm_peak", 1.02)
         speed = self.target_speed_baseline()
@@ -920,9 +947,9 @@ class Tutorial(FloatingWindowGPU):
 
         if self.player.is_playing:
             self.animate_speed(0.0, Constants.PLAY_PAUSE_STOP_RAMP_MS, on_finish = finish_stop)
+            return
 
-        else:
-            finish_stop()
+        finish_stop()
 
     def play_page_transition_pulse(self) -> None:
         if not self.audio_enabled:
@@ -990,6 +1017,10 @@ class Tutorial(FloatingWindowGPU):
         self.disconnect_feedback_audio()
         self.safe_disconnect(self.player.speed_changed, self.on_external_speed_change)
 
+        if not self.player.is_playing:
+            self.stop_tutorial_audio()
+            self.apply_cycle_button_speed()
+
         if self.conductor is not None:
             self.safe_disconnect(self.conductor.destroyed, self.on_conductor_destroyed)
             self.safe_disconnect(self.conductor.speed_control_used, self.on_speed_control_used)
@@ -999,14 +1030,12 @@ class Tutorial(FloatingWindowGPU):
         if self.loop_watchdog is not None:
             self.loop_watchdog.stop()
 
-        self.stop_tutorial_audio()
-
     def eject_close(self) -> None:
         self.text_label.setText("Oh well, see ya.")
         self.close()
 
     def closeEvent(self, event: QCloseEvent) -> None:
         Constants.current_settings.set_value("_tutorial_shown", True)
-        
+
         self.teardown()
         super().closeEvent(event)

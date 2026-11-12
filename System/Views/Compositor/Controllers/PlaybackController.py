@@ -96,7 +96,22 @@ class PlaybackController(QObject):
         duration_ms = self.playback_manager.duration_ms
 
         if duration_ms > 0:
-            position_ms = min(duration_ms, position_ms)
+            if self.playback_manager.loop and position_ms >= duration_ms:
+                overshoot = position_ms - duration_ms
+                speed = max(0.01, self.playback_manager.speed)
+                
+                self.playhead_start_ms = 0.0
+                self.playhead_start_time = time.perf_counter() - (overshoot / (1000.0 * speed))
+                position_ms = overshoot
+
+                if self.conductor.composition:
+                    self.conductor.composition.syncer.play(0.0)
+                
+                if self.conductor.glyph_visualizer:
+                    self.conductor.glyph_visualizer.play_all(0.0)
+
+            else:
+                position_ms = min(duration_ms, position_ms)
 
         return max(0.0, position_ms)
 
@@ -169,6 +184,8 @@ class PlaybackController(QObject):
         self.playhead_start_time = time.perf_counter()
 
     def stop_playback(self) -> None:
+        self.playback_manager.loop = False
+        
         if self.delay_timer.isActive():
             self.delay_timer.stop()
 

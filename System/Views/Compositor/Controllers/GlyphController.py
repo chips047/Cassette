@@ -98,7 +98,7 @@ class GlyphController(QObject):
         self.temp_before_state = {}
         self.current_drag_mode = None
 
-        self.undo_redo_history = deque(maxlen=10)
+        self.undo_redo_history = deque(maxlen = 10)
 
     # Hover Management
 
@@ -166,17 +166,38 @@ class GlyphController(QObject):
         if not selected_glyph_ids:
             return
 
-        before_state = {
-            glyph_id: copy.deepcopy(data)
-            for glyph_id in selected_glyph_ids
-            if (data := self.composition.get_glyph(glyph_id)) is not None
-        }
+        before_state      = {}
+        after_state       = {}
+        audio_duration_ms = self.conductor.playback_manager.duration_ms
+        animate_movement  = property_name in ("duration", "start", "track")
 
-        after_state = {
-            glyph_id: {**copy.deepcopy(data), property_name: property_value}
-            for glyph_id, data in before_state.items()
-            if data.get(property_name) != property_value
-        }
+        for glyph_id in selected_glyph_ids:
+            glyph_data = self.composition.get_glyph(glyph_id)
+
+            if not glyph_data:
+                continue
+
+            if property_name == "duration":
+                maximum_duration = audio_duration_ms - glyph_data["start"] if audio_duration_ms > 0 else int(property_value)
+                resolved_value   = max(10, min(maximum_duration, int(property_value)))
+                current_value    = glyph_data["duration"]
+
+            elif property_name in ("start", "track"):
+                resolved_value = property_value
+                current_value  = glyph_data[property_name]
+
+            else:
+                resolved_value = int(property_value) if property_name == "brightness" and property_value is not None else property_value
+                current_value  = glyph_data.get(property_name)
+
+            if current_value == resolved_value:
+                continue
+
+            before_state[glyph_id] = copy.deepcopy(glyph_data)
+
+            updated_data                = copy.deepcopy(glyph_data)
+            updated_data[property_name] = resolved_value
+            after_state[glyph_id]       = updated_data
 
         if not after_state:
             return
@@ -186,12 +207,13 @@ class GlyphController(QObject):
         try:
             self.push_action(Actions.ActionModify(self, before_state, after_state))
             self.composition.update_bunch_of_glyphs(after_state)
-            self.update_glyphs(after_state)
+            self.update_glyphs(after_state, animate_movement = animate_movement)
 
             self.elements_changed.emit()
             self.glyph_property_changed.emit(property_name)
 
             if property_name in ("start", "duration", "track"):
+                self.refresh_stack_indicators(force = True)
                 self.refresh_all_occlusion()
 
         finally:
@@ -329,9 +351,9 @@ class GlyphController(QObject):
             before_state[glyph_id] = copy.deepcopy(glyph_data)
 
             if shifted_segments:
-                new_glyph_data = copy.deepcopy(glyph_data)
+                new_glyph_data             = copy.deepcopy(glyph_data)
                 new_glyph_data["segments"] = shifted_segments
-                after_state[glyph_id] = new_glyph_data
+                after_state[glyph_id]      = new_glyph_data
 
             else:
                 deleted_glyphs[glyph_id] = copy.deepcopy(glyph_data)
@@ -385,8 +407,8 @@ class GlyphController(QObject):
                 )
 
                 if len(after_state) == 1:
-                    glyph_id = next(iter(after_state))
-                    item = self.glyph_items.get(glyph_id)
+                    glyph_id      = next(iter(after_state))
+                    item          = self.glyph_items.get(glyph_id)
                     segments_text = ", ".join(
                         str(segment + 1)
                         for segment in after_state[glyph_id]["segments"]
@@ -744,7 +766,7 @@ class GlyphController(QObject):
             if not glyph_data:
                 continue
 
-            new_start = min(glyph_data["start"], playhead_ms - 10)
+            new_start    = min(glyph_data["start"], playhead_ms - 10)
             new_duration = playhead_ms - new_start
 
             if (
@@ -755,10 +777,10 @@ class GlyphController(QObject):
 
             before_state[glyph_id] = copy.deepcopy(glyph_data)
 
-            new_glyph_data = copy.deepcopy(glyph_data)
-            new_glyph_data["start"] = new_start
+            new_glyph_data             = copy.deepcopy(glyph_data)
+            new_glyph_data["start"]    = new_start
             new_glyph_data["duration"] = new_duration
-            after_state[glyph_id] = new_glyph_data
+            after_state[glyph_id]      = new_glyph_data
 
         if not after_state:
             return
@@ -784,7 +806,7 @@ class GlyphController(QObject):
         if not selected_glyph_ids:
             return
 
-        playhead_ms = int(round(self.conductor.get_playhead_position_ms()))
+        playhead_ms       = int(round(self.conductor.get_playhead_position_ms()))
         audio_duration_ms = self.conductor.playback_manager.duration_ms
 
         if playhead_ms > audio_duration_ms - 10:
@@ -804,8 +826,8 @@ class GlyphController(QObject):
             if not glyph_data:
                 continue
 
-            old_end = glyph_data["start"] + glyph_data["duration"]
-            new_start = playhead_ms
+            old_end      = glyph_data["start"] + glyph_data["duration"]
+            new_start    = playhead_ms
             new_duration = max(10, old_end - new_start)
             new_duration = min(new_duration, audio_duration_ms - new_start)
 
@@ -816,10 +838,10 @@ class GlyphController(QObject):
                 continue
 
             before_state[glyph_id] = copy.deepcopy(glyph_data)
-            new_glyph_data = copy.deepcopy(glyph_data)
-            new_glyph_data["start"] = new_start
+            new_glyph_data             = copy.deepcopy(glyph_data)
+            new_glyph_data["start"]    = new_start
             new_glyph_data["duration"] = new_duration
-            after_state[glyph_id] = new_glyph_data
+            after_state[glyph_id]      = new_glyph_data
 
         if not after_state:
             return
@@ -879,7 +901,7 @@ class GlyphController(QObject):
 
         else:
             playhead_ms = self.conductor.get_playhead_position_ms()
-            candidates = [
+            candidates  = [
                 index
                 for index, (start, _, _) in enumerate(ordered_glyphs)
                 if (start > playhead_ms if direction > 0 else start < playhead_ms)
@@ -900,7 +922,7 @@ class GlyphController(QObject):
         if self.conductor.total_content_width <= 0:
             return
 
-        target_position_px = start_ms / 1000.0 * self.conductor.px_per_sec
+        target_position_px  = start_ms / 1000.0 * self.conductor.px_per_sec
         normalized_position = target_position_px / self.conductor.total_content_width
         self.conductor.scroll_to_normalized_position(normalized_position)
         Player.ui_player.play_sound(
@@ -1064,7 +1086,8 @@ class GlyphController(QObject):
             Player.ui_player.play_sound(
                 name        = "Alerts/Clicks/Toggle1",
                 speed       = 1.1 if direction < 0 else 0.9,
-                setting_key = "other_glyph_sounds")
+                setting_key = "other_glyph_sounds"
+            )
 
         finally:
             self.composition.stop_batching()
@@ -1655,7 +1678,7 @@ class GlyphController(QObject):
                 ["redo", "undo", "redo", "undo", "redo"]
             ):
                 self.undo_redo_history.clear()
-                
+
                 phrases = [
                     "Bro.",
                     "Please stop.",
@@ -1664,9 +1687,9 @@ class GlyphController(QObject):
                     "I will ban Undo keybind.",
                     "I don't like the amount of my movement."
                 ]
-                
-                self.conductor.tooltip.show_tooltip_at(random.choice(phrases), plan_hide=True)
-                
+
+                self.conductor.tooltip.show_tooltip_at(random.choice(phrases), plan_hide = True)
+
                 return True
 
         return False

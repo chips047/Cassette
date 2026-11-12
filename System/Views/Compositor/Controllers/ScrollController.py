@@ -24,11 +24,11 @@ class ScrollController(QObject):
         self.conductor        = conductor
         self.playback_manager = conductor.playback_manager
 
-        self.zoom_step            = Constants.current_settings["zoom_step"]
-        self.scroll_acceleration  = Constants.current_settings["scroll_acceleration"]
+        self.zoom_step            = 20 * (Constants.current_settings["zoom_step_percent"] / 100.0)
+        self.scroll_acceleration  = 0.3 * (Constants.current_settings["scroll_acceleration_percent"] / 100.0)
         self.trackpad_scroll_mode = Constants.current_settings["trackpad_scroll_mode"]
-        self.scroll_smoothing     = Constants.current_settings["scroll_smoothing"]
-        self.scroll_inertia       = Constants.current_settings["scroll_inertia"]
+        self.scroll_smoothing     = Constants.current_settings.get("scroll_smoothing_percent", 100) > 0
+        self.scroll_inertia       = Constants.current_settings.get("scroll_inertia_percent", 100) > 0
 
         self.horizontal_velocity        = 0.0
         self.horizontal_target_velocity = 0.0

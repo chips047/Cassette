@@ -183,6 +183,8 @@ class ExistingAudioSetupDialog(BPMEditorBase):
 
     # Audio Pipeline Handlers
 
+    # Audio Pipeline Handlers
+
     def on_audio_ready(self) -> None:
         super().on_audio_ready()
 
@@ -190,10 +192,11 @@ class ExistingAudioSetupDialog(BPMEditorBase):
         current_end   = float(self.composition.end_ms) / 1000.0 if self.composition.end_ms is not None else self.trim_widget.duration_sec
 
         self.trim_widget.set_times(current_start, current_end)
+        self.trim_widget.set_playback_position(current_start)
         self.update_textboxes(current_start, current_end)
 
-        self.fade_in_textbox.setText(str(self.composition.fade_in_duration or 0))
-        self.fade_out_textbox.setText(str(self.composition.fade_out_duration or 0))
+        self.fade_in_textbox.setText(str(self.composition.fade_in_duration or ""))
+        self.fade_out_textbox.setText(str(self.composition.fade_out_duration or ""))
 
         fade_in_type  = getattr(self.composition, "fade_in_type", "fade")
         fade_out_type = getattr(self.composition, "fade_out_type", "fade")
@@ -286,9 +289,8 @@ class ExistingAudioSetupDialog(BPMEditorBase):
                 self.playback_timer.stop()
                 self.trim_widget.set_is_playing(False)
                 self.play_button.setIcon(self.play_icon)
-                self.player.fade_out_and_stop(
-                    duration_ms = 800,
-                    easing      = LoomEngine.Easing.ease_out_quart,
+                self.player.emergency_stop(
+                    duration_ms = 150,
                     on_finish   = self.reset_preview_effects
                 )
 
@@ -311,9 +313,8 @@ class ExistingAudioSetupDialog(BPMEditorBase):
             self.playback_timer.stop()
             self.trim_widget.set_is_playing(False)
             self.play_button.setIcon(self.play_icon)
-            self.player.fade_out_and_stop(
-                duration_ms = 800,
-                easing      = LoomEngine.Easing.ease_out_quart,
+            self.player.emergency_stop(
+                duration_ms = 150,
                 on_finish   = self.reset_preview_effects
             )
 

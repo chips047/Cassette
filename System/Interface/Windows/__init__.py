@@ -27,7 +27,6 @@ from System.Interface.Windows.DialogInputWindow        import DialogInputWindow
 from System.Interface.Windows.TrimWarningDialog        import TrimWarningDialog
 from System.Interface.Windows.ExportDialogWindow       import ExportDialogWindow
 from System.Interface.Windows.SegmentEditor            import SegmentEditor
-from System.Interface.Windows.UpdateWindow             import UpdateWindow
 from System.Interface.Windows.AboutWindow              import AboutWindow
 from System.Interface.Windows.WalterWindow             import WalterWindow
 from System.Interface.Windows.ByteBeatWindow           import ByteBeatWindow

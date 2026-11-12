@@ -80,10 +80,17 @@ class AudioLoadingDialog(FloatingWindowGPU):
 
         return thread
 
-    def run_loading_pipeline(self, file_path: str) -> None:
+    # Pipeline
+
+    def run_loading_pipeline(
+            self,
+            file_path: str
+        ) -> None:
+
         self.cached_wav_path = None
         self.audio_path      = file_path
 
+        self.player.emergency_stop(600)
         self.on_loading_started()
 
         self.prepare_worker = Workers.PrepareWorker(file_path)
@@ -342,7 +349,7 @@ class AudioEditorBase(AudioLoadingDialog):
         if not start_seconds:
             return
 
-        self.trim_widget.set_playback_position(start_seconds)
+        self.trim_widget.set_playback_position(start_seconds, animate = True)
         self.trim_widget.start_time_sec = start_seconds
         self.trim_widget.update()
 
@@ -358,7 +365,7 @@ class AudioEditorBase(AudioLoadingDialog):
         if start_seconds >= end_seconds:
             return
 
-        self.trim_widget.set_playback_position(start_seconds)
+        self.trim_widget.set_playback_position(start_seconds, animate = True)
         self.trim_widget.end_time_sec = end_seconds
         self.trim_widget.update()
 
@@ -447,20 +454,26 @@ class AudioEditorBase(AudioLoadingDialog):
         if force or abs(self.player.speed - target_speed) > 0.015:
             self.player.set_speed(target_speed, duration_ms = 0, update_base = False)
 
+    # Playback
+
     def toggle_playback(self) -> None:
+        if self.is_closing or self.is_cleaning_up:
+            return
+
         if self.player.is_playing:
             self.stop_playback()
-            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec)
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec, animate = True)
 
-        else:
-            self.play_selection()
+            return
+
+        self.play_selection()
 
     def play_selection(self) -> None:
         current_position = self.trim_widget.playback_position
 
         if not (self.trim_widget.start_time_sec <= current_position < self.trim_widget.end_time_sec):
             current_position = self.trim_widget.start_time_sec
-            self.trim_widget.set_playback_position(current_position)
+            self.trim_widget.set_playback_position(current_position, animate = False)
 
         self.apply_preview_effects(current_position * 1000.0, force = True)
         self.player.play(current_position * 1000.0)
@@ -477,7 +490,7 @@ class AudioEditorBase(AudioLoadingDialog):
 
     def update_playback(self) -> None:
         if not self.player.is_playing:
-            self.trim_widget.set_playback_position(0)
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec, animate = True)
             self.stop_playback()
 
             return
@@ -485,13 +498,13 @@ class AudioEditorBase(AudioLoadingDialog):
         current_position_ms = self.player.get_position()
 
         if current_position_ms > self.trim_widget.end_time_sec * 1000:
-            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec)
+            self.trim_widget.set_playback_position(self.trim_widget.start_time_sec, animate = True)
             self.toggle_playback()
 
             return
 
         self.apply_preview_effects(current_position_ms)
-        self.trim_widget.set_playback_position(current_position_ms / 1000.0)
+        self.trim_widget.set_playback_position(current_position_ms / 1000.0, animate = False)
 
     def validate_trim(self) -> bool:
         if self.end_time_textbox.is_not_valid() or not self.end_time_textbox.text():
@@ -519,6 +532,8 @@ class AudioEditorBase(AudioLoadingDialog):
     def get_threads(self) -> list[QThread | None]:
         return [self.prepare_thread, self.load_thread]
 
+    # Events
+
     def eventFilter(
             self,
             watched: QObject,
@@ -531,7 +546,7 @@ class AudioEditorBase(AudioLoadingDialog):
         if event.key() != Qt.Key.Key_Space or event.isAutoRepeat():
             return super().eventFilter(watched, event)
 
-        if not self.play_button.isEnabled():
+        if self.is_closing or self.is_cleaning_up or not self.play_button.isEnabled():
             return True
 
         self.toggle_playback()
@@ -540,7 +555,7 @@ class AudioEditorBase(AudioLoadingDialog):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Space and not event.isAutoRepeat():
-            if self.play_button.isEnabled():
+            if not self.is_closing and not self.is_cleaning_up and self.play_button.isEnabled():
                 self.toggle_playback()
 
             event.accept()
@@ -557,18 +572,27 @@ class AudioEditorBase(AudioLoadingDialog):
         for child_widget in self.findChildren(QWidget):
             child_widget.installEventFilter(self)
 
+    # Lifecycle Handlers
+
+    def request_close(self) -> None:
+        self.play_button.setEnabled(False)
+        self.cleanup_audio()
+
+        super().request_close()
+
     def cleanup_audio(self) -> None:
         if self.is_cleaning_up:
             return
 
         self.is_cleaning_up = True
+        self.play_button.setEnabled(False)
 
         self.playback_timer.stop()
         self.trim_widget.set_is_playing(False)
 
         if self.player.is_playing:
             self.player.fade_out_and_stop(
-                duration_ms = 600,
+                duration_ms = 6000,
                 easing      = LoomEngine.Easing.ease_out_quart,
                 on_finish   = self.reset_preview_effects
             )

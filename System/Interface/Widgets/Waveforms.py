@@ -224,7 +224,7 @@ class MiniWaveformPreview(QWidget):
         top         = center_y_px - (tile_max / waveform_max * center_y_px)
         bottom      = center_y_px - (tile_min / waveform_max * center_y_px)
 
-        smoothing_sigma = float(Constants.current_settings.get("waveform_smoothing", 0.0))
+        smoothing_sigma = 1.7 * (Constants.current_settings["waveform_smoothing_percent"] / 100.0)
 
         if smoothing_sigma > 0.0 and top.size > 1:
             padding_amount = min(int(numpy.ceil(smoothing_sigma * 3.0)), top.size - 1)
@@ -381,6 +381,14 @@ class TrimmingWaveformWidget(QWidget):
             on_change  = self.on_property_update
         )
 
+        self.playback_position_handle = LoomEngine.ui_engine.bind(
+            owner      = self,
+            name       = "playback_position",
+            base_value = 0.0,
+            mix_mode   = LoomEngine.MixMode.REPLACE,
+            on_change  = self.on_property_update
+        )
+
     def on_property_update(self, value: object):
         self.update()
 
@@ -391,8 +399,11 @@ class TrimmingWaveformWidget(QWidget):
         self.is_transitioning    = False
         self.waveform_pixmap     = None
         self.waveform_amplitudes = []
+        self.playback_position   = 0.0
 
         self.waveform_opacity_handle.set_base(0.0)
+        self.playback_position_handle.stop_targeting()
+        self.playback_position_handle.set_base(0.0)
 
         self.pulse_status_widget.reset_contour()
         self.pulse_status_widget.transition_to_white(0)
@@ -487,6 +498,8 @@ class TrimmingWaveformWidget(QWidget):
         self.pulse_status_widget.hide()
         self.update()
 
+    # State
+
     def set_times(
             self,
             start_sec: float,
@@ -506,6 +519,9 @@ class TrimmingWaveformWidget(QWidget):
         self.start_time_sec = start_sec
         self.end_time_sec   = end_sec
 
+        if self.playback_position < start_sec or self.playback_position > end_sec:
+            self.set_playback_position(start_sec, animate = False)
+
         self.update()
 
     def set_start_time(self, start_sec: float) -> None:
@@ -514,8 +530,33 @@ class TrimmingWaveformWidget(QWidget):
     def set_end_time(self, end_sec: float) -> None:
         self.set_times(self.start_time_sec, end_sec)
 
-    def set_playback_position(self, position_sec: float) -> None:
-        self.playback_position = max(0.0, min(self.duration_sec, position_sec))
+    # State
+
+    def set_playback_position(
+            self,
+            position_sec: float,
+            animate:      bool = False
+        ) -> None:
+
+        clamped_position_sec   = max(0.0, min(self.duration_sec, float(position_sec)))
+        self.playback_position = clamped_position_sec
+
+        if animate and Constants.current_settings.get("playhead_animations", True):
+            current_visual_sec = float(self.playback_position_handle.value)
+            distance_sec       = abs(clamped_position_sec - current_visual_sec)
+            distance_ratio     = (distance_sec / self.duration_sec) if self.duration_sec > 0 else 0.5
+            duration_ms        = int(min(500, max(100, 100 + distance_ratio * 180)))
+
+            self.playback_position_handle.set_target(
+                value           = clamped_position_sec,
+                duration_ms     = duration_ms,
+                easing_function = LoomEngine.Easing.ease_out_cubic
+            )
+
+            return
+
+        self.playback_position_handle.stop_targeting()
+        self.playback_position_handle.set_base(clamped_position_sec)
         self.update()
 
     def set_is_playing(self, is_playing: bool) -> None:
@@ -558,6 +599,8 @@ class TrimmingWaveformWidget(QWidget):
 
     # Events
 
+    # Events
+
     def paintEvent(self, event: QPaintEvent) -> None:
         opacity = float(self.waveform_opacity_handle.value)
 
@@ -594,7 +637,8 @@ class TrimmingWaveformWidget(QWidget):
         painter.drawLine(int(start_x_px), 10, int(start_x_px), self.height() - 10)
         painter.drawLine(int(end_x_px),   10, int(end_x_px),   self.height() - 10)
 
-        playhead_x_px = (self.playback_position / self.duration_sec) * width_px if self.duration_sec > 0 else 0.0
+        visual_position_sec = float(self.playback_position_handle.value)
+        playhead_x_px       = (visual_position_sec / self.duration_sec) * width_px if self.duration_sec > 0 else 0.0
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(self.cached_accent_brush)
@@ -609,10 +653,10 @@ class TrimmingWaveformWidget(QWidget):
         end_x_px   = (self.end_time_sec   / self.duration_sec) * self.width() if self.duration_sec > 0 else 0.0
 
         if abs(click_x_px - start_x_px) < 10:
-            self.dragging_handle = 'start'
+            self.dragging_handle = "start"
 
         elif abs(click_x_px - end_x_px) < 10:
-            self.dragging_handle = 'end'
+            self.dragging_handle = "end"
 
         else:
             self.dragging_handle = None
@@ -620,7 +664,7 @@ class TrimmingWaveformWidget(QWidget):
             if not self.is_playing:
                 time_position_sec = (click_x_px / self.width()) * self.duration_sec
 
-                self.set_playback_position(time_position_sec)
+                self.set_playback_position(time_position_sec, animate = True)
                 logger.info(f"Placed playback on {time_position_sec}")
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:

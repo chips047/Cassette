@@ -33,7 +33,7 @@ class ScaleController(QObject):
 
         self.conductor = conductor
 
-        self.px_per_sec             = Constants.current_settings["default_scaling"]
+        self.px_per_sec             = 300 * (Constants.current_settings["default_scaling_percent"] / 100.0)
         self.target_px_per_sec      = self.px_per_sec
         self.scale_anim_active      = False
         self.scale_anim_anchor_ms   = 0.0
