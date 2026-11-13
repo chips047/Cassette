@@ -37,6 +37,11 @@ class ActionModify:
             "key":      "start",
             "label":    lambda glyph: f"{glyph['start']}ms",
             "template": "move from {before} to {after}"
+        },
+        {
+            "key":      "segment_levels",
+            "label":    lambda glyph: "custom levels" if glyph.get("segment_levels") else "full brightness",
+            "template": "setting segment brightness from {before} to {after}"
         }
     ]
 

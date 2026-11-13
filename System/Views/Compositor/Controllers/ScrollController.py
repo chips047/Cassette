@@ -18,22 +18,33 @@ from .. import Timeline
 # Unified Scroll Controller Class
 
 class ScrollController(QObject):
+    VERTICAL_SENSITIVITY_RATIO: float = 0.35
+
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
 
         self.conductor        = conductor
         self.playback_manager = conductor.playback_manager
 
-        self.zoom_step            = 20 * (Constants.current_settings["zoom_step_percent"] / 100.0)
-        self.scroll_acceleration  = 0.3 * (Constants.current_settings["scroll_acceleration_percent"] / 100.0)
-        self.trackpad_scroll_mode = Constants.current_settings["trackpad_scroll_mode"]
-        self.scroll_smoothing     = Constants.current_settings.get("scroll_smoothing_percent", 100) > 0
-        self.scroll_inertia       = Constants.current_settings.get("scroll_inertia_percent", 100) > 0
+        self.zoom_step                    = 20 * (Constants.current_settings["zoom_step_percent"] / 100.0)
+        self.scroll_acceleration          = 0.3 * (Constants.current_settings["scroll_acceleration_percent"] / 100.0)
+        self.vertical_scroll_acceleration = self.scroll_acceleration * self.VERTICAL_SENSITIVITY_RATIO
+        self.trackpad_scroll_mode         = Constants.current_settings["trackpad_scroll_mode"]
+
+        smoothing_percent     = float(Constants.current_settings.get("scroll_smoothing_percent", 100))
+        self.scroll_smoothing = smoothing_percent > 0.0
+        self.smoothing_factor = min(1.0, 0.2 * (100.0 / smoothing_percent)) if smoothing_percent > 0.0 else 1.0
+
+        inertia_percent     = float(Constants.current_settings.get("scroll_inertia_percent", 100))
+        self.scroll_inertia = inertia_percent > 0.0
+        self.inertia_decay  = max(0.5, min(0.97, 1.0 - 0.1 * (100.0 / inertia_percent))) if inertia_percent > 0.0 else 0.0
 
         self.horizontal_velocity        = 0.0
         self.horizontal_target_velocity = 0.0
+        self.horizontal_remainder       = 0.0
         self.vertical_velocity          = 0.0
         self.vertical_target_velocity   = 0.0
+        self.vertical_remainder         = 0.0
 
         self.scroll_blocked         = False
         self.scale_animation_active = False
@@ -97,8 +108,10 @@ class ScrollController(QObject):
     def stop_smooth_scroll(self) -> None:
         self.horizontal_velocity        = 0.0
         self.horizontal_target_velocity = 0.0
+        self.horizontal_remainder       = 0.0
         self.vertical_velocity          = 0.0
         self.vertical_target_velocity   = 0.0
+        self.vertical_remainder         = 0.0
 
     def block_scroll(self) -> None:
         self.scroll_blocked = True
@@ -136,30 +149,37 @@ class ScrollController(QObject):
 
             return
 
-        if modifiers & Qt.KeyboardModifier.ShiftModifier:
-            vertical_delta = event.angleDelta().y()
-            vertical_bar   = self.conductor.verticalScrollBar()
-
-            vertical_bar.setValue(vertical_bar.value() - vertical_delta)
-            self.conductor.content_scrolled.emit(abs(vertical_delta))
-
+        if event.phase() == Qt.ScrollPhase.ScrollMomentum and not self.scroll_inertia:
             event.accept()
 
             return
 
-        if event.phase() == Qt.ScrollPhase.ScrollMomentum and not self.scroll_inertia:
+        pixel_delta = event.pixelDelta()
+        is_trackpad = not pixel_delta.isNull()
+
+        if modifiers & Qt.KeyboardModifier.ShiftModifier:
+            if is_trackpad and self.trackpad_scroll_mode == "directional":
+                raw_vertical_delta              = float(pixel_delta.y() or pixel_delta.x())
+                self.vertical_target_velocity  += -raw_vertical_delta * self.VERTICAL_SENSITIVITY_RATIO
+                magnitude                       = abs(raw_vertical_delta)
+
+            else:
+                vertical_delta                  = event.angleDelta().y() or event.angleDelta().x()
+                self.vertical_target_velocity  += -vertical_delta * self.vertical_scroll_acceleration
+                magnitude                       = abs(vertical_delta)
+
+            self.conductor.start_scroll_tick()
+            self.conductor.content_scrolled.emit(magnitude)
+
             event.accept()
 
             return
 
         self.notify_user_scroll()
 
-        pixel_delta = event.pixelDelta()
-        is_trackpad = not pixel_delta.isNull()
-
         if is_trackpad and self.trackpad_scroll_mode == "directional":
             self.horizontal_target_velocity += -pixel_delta.x()
-            self.vertical_target_velocity   += -pixel_delta.y()
+            self.vertical_target_velocity   += -pixel_delta.y() * self.VERTICAL_SENSITIVITY_RATIO
             magnitude                        = abs(pixel_delta.x()) + abs(pixel_delta.y())
 
         else:
@@ -252,8 +272,8 @@ class ScrollController(QObject):
             return True
 
         if self.scroll_smoothing:
-            self.horizontal_velocity += (self.horizontal_target_velocity - self.horizontal_velocity) * 0.2
-            self.vertical_velocity   += (self.vertical_target_velocity   - self.vertical_velocity)   * 0.2
+            self.horizontal_velocity += (self.horizontal_target_velocity - self.horizontal_velocity) * self.smoothing_factor
+            self.vertical_velocity   += (self.vertical_target_velocity   - self.vertical_velocity)   * self.smoothing_factor
 
         else:
             self.horizontal_velocity = self.horizontal_target_velocity
@@ -262,25 +282,33 @@ class ScrollController(QObject):
         horizontal_bar = self.conductor.horizontalScrollBar()
         vertical_bar   = self.conductor.verticalScrollBar()
 
-        new_horizontal = int(horizontal_bar.value() + self.horizontal_velocity)
-        new_vertical   = int(vertical_bar.value()     + self.vertical_velocity)
+        horizontal_step           = self.horizontal_velocity + self.horizontal_remainder
+        horizontal_pixels         = int(horizontal_step)
+        self.horizontal_remainder = horizontal_step - horizontal_pixels
 
-        horizontal_bar.setValue(new_horizontal)
-        vertical_bar.setValue(new_vertical)
+        vertical_step             = self.vertical_velocity + self.vertical_remainder
+        vertical_pixels           = int(vertical_step)
+        self.vertical_remainder   = vertical_step - vertical_pixels
+
+        if horizontal_pixels != 0:
+            horizontal_bar.setValue(horizontal_bar.value() + horizontal_pixels)
+
+        if vertical_pixels != 0:
+            vertical_bar.setValue(vertical_bar.value() + vertical_pixels)
 
         if self.scroll_inertia:
-            self.horizontal_target_velocity *= 0.9
-            self.vertical_target_velocity   *= 0.9
+            self.horizontal_target_velocity *= self.inertia_decay
+            self.vertical_target_velocity   *= self.inertia_decay
 
         else:
             self.horizontal_target_velocity = 0.0
             self.vertical_target_velocity   = 0.0
 
         is_idle = (
-            abs(self.horizontal_velocity)        < 0.2 and
-            abs(self.horizontal_target_velocity) < 0.2 and
-            abs(self.vertical_velocity)          < 0.2 and
-            abs(self.vertical_target_velocity)   < 0.2
+            abs(self.horizontal_velocity)        < 0.1 and
+            abs(self.horizontal_target_velocity) < 0.1 and
+            abs(self.vertical_velocity)          < 0.1 and
+            abs(self.vertical_target_velocity)   < 0.1
         )
 
         if is_idle:

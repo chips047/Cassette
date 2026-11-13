@@ -285,6 +285,7 @@ class ScrollableContent(QGraphicsView):
         self.context_menu_controller.modify_property_requested.connect(self.glyph_controller.modify_selected_glyphs)
         self.context_menu_controller.apply_effect_requested.connect(self.glyph_controller.apply_effect_to_glyphs)
         self.context_menu_controller.apply_segments_requested.connect(self.glyph_controller.apply_segments_to_glyphs)
+        self.context_menu_controller.reset_segments_requested.connect(self.glyph_controller.reset_selected_glyph_segments)
 
         self.keyboard_controller.undo_requested.connect(self.glyph_controller.undo)
         self.keyboard_controller.redo_requested.connect(self.glyph_controller.redo)
@@ -407,6 +408,12 @@ class ScrollableContent(QGraphicsView):
         width      = audio_duration_sec * self.px_per_sec
         top_margin = Styles.Metrics.Tracks.RulerHeight + Styles.Metrics.Waveform.Height
         row_height = Styles.Metrics.Tracks.RowHeight + Styles.Metrics.Tracks.BoxSpacing
+
+        if self.track_names:
+            self.playhead.set_height(float(top_margin + len(self.track_names) * row_height))
+
+        else:
+            self.playhead.set_height(None)
 
         total_height = max(
             top_margin + len(self.track_names) * row_height + 100,

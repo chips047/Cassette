@@ -1454,11 +1454,11 @@ class AboutWindow(FloatingWindowGPU):
         model_matrix = QMatrix4x4()
         model_matrix.translate(model_offset_x, model_offset_y, 0.0)
         model_matrix.rotate(
-            -tilt_x * 1.2 + idle_sway_x + self.cassette_canvas.manual_pitch + sway_pitch,
+            -tilt_x * 1.4 + idle_sway_x + self.cassette_canvas.manual_pitch + sway_pitch,
             1.0, 0.0, 0.0
         )
         model_matrix.rotate(
-            tilt_y * 1.2 + idle_sway_y + self.cassette_canvas.manual_yaw + self.model_yaw_offset + spin_yaw_angle + sway_yaw,
+            tilt_y * 1.4 + idle_sway_y + self.cassette_canvas.manual_yaw + self.model_yaw_offset + spin_yaw_angle + sway_yaw,
             0.0, 1.0, 0.0
         )
         model_matrix.rotate(tilt_z * 1.2 + sway_roll, 0.0, 0.0, 1.0)
@@ -1632,7 +1632,7 @@ class AboutWindow(FloatingWindowGPU):
 
         self.model_rotation_easter_egg_shown    = True
         self.model_drag_timer.stop()
-        self.cassette_canvas.is_mouse_pressed   = False
+        self.cassette_canvas.is_mouse_pressed    = False
         self.cassette_canvas.drag_start_position = None
         self.cassette_canvas.setCursor(Qt.CursorShape.OpenHandCursor)
         Constants.current_settings.set_value("_about_model_rotated_seen", True)

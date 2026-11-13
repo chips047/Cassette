@@ -423,14 +423,25 @@ class GlyphVisualizer(FloatingWindowGPU):
         expanded = {}
 
         for key, item in items.items():
-            for real_track, real_segments in self.device.expand_display_track(display_track, item.get("segments")):
+            for real_track, real_segments, real_levels in self.device.expand_display_track_with_levels(
+                display_track,
+                item.get("segments"),
+                item.get("segment_levels")
+            ):
                 item_copy = dict(item)
 
                 if real_segments is None:
                     item_copy.pop("segments", None)
+                    item_copy.pop("segment_levels", None)
 
                 else:
                     item_copy["segments"] = real_segments
+
+                    if real_levels is not None:
+                        item_copy["segment_levels"] = real_levels
+
+                    else:
+                        item_copy.pop("segment_levels", None)
 
                 expanded.setdefault(real_track, {})[f"{key}:{real_track}"] = item_copy
 
@@ -468,7 +479,21 @@ class GlyphVisualizer(FloatingWindowGPU):
                 brightness = self.get_item_brightness(item, now_ms)
                 target     = self.get_target_slice(item, base_index, glyph["segment_count"])
 
-                self.global_levels[target] = numpy.maximum(self.global_levels[target], brightness)
+                if "segment_levels" in item and "segments" in item and len(item["segment_levels"]) == len(item["segments"]):
+                    scaled_levels              = numpy.array(item["segment_levels"], dtype = numpy.float32) * brightness
+                    self.global_levels[target] = numpy.maximum(self.global_levels[target], scaled_levels)
+
+                else:
+                    self.global_levels[target] = numpy.maximum(self.global_levels[target], brightness)
+
+    def process_schedule(self) -> None:
+        real_elapsed            = self.elapsed.elapsed()
+        self.virtual_time      += (real_elapsed - self.last_process_time) * self.player.speed
+        self.last_process_time  = real_elapsed
+
+        now_ms = self.virtual_time
+        self.update_levels_for_time(now_ms)
+        self.update()
 
     def on_playhead_scrubbed(self, position_ms: float) -> None:
         if self.is_playing:
@@ -531,28 +556,6 @@ class GlyphVisualizer(FloatingWindowGPU):
             return base_index + numpy.array(item["segments"], dtype = numpy.intp)
 
         return slice(base_index, base_index + segment_count)
-
-    def process_schedule(self) -> None:
-        real_elapsed            = self.elapsed.elapsed()
-        self.virtual_time      += (real_elapsed - self.last_process_time) * self.player.speed
-        self.last_process_time  = real_elapsed
-
-        now_ms = self.virtual_time
-        self.global_levels.fill(0)
-
-        for glyph in self.glyphs_gpu:
-            base_index = glyph["global_base_index"]
-
-            for item in glyph["schedule"]:
-                if not (item["start"] <= now_ms <= item["start"] + item["duration"]):
-                    continue
-
-                brightness = self.get_item_brightness(item, now_ms)
-                target     = self.get_target_slice(item, base_index, glyph["segment_count"])
-
-                self.global_levels[target] = numpy.maximum(self.global_levels[target], brightness)
-
-        self.update()
 
     def interpolate_keyframes(
             self,

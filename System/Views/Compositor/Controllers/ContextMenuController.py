@@ -27,6 +27,8 @@ from System.Interface import (
 
 from .. import Timeline
 
+# Context Menu Controller
+
 class ContextMenuController(QObject):
     context_menu_opened       = pyqtSignal()
     dialog_cancelled          = pyqtSignal(str)
@@ -37,6 +39,7 @@ class ContextMenuController(QObject):
     modify_property_requested = pyqtSignal(str, object)
     apply_effect_requested    = pyqtSignal(str, dict, list)
     apply_segments_requested  = pyqtSignal(list, list)
+    reset_segments_requested  = pyqtSignal()
 
     def __init__(self, conductor: Timeline.ScrollableContent) -> None:
         super().__init__(conductor)
@@ -129,6 +132,27 @@ class ContextMenuController(QObject):
                     (
                         "Segments...",
                         lambda: QTimer.singleShot(0, self.segment_control_popup)
+                    )
+                )
+
+            device = Constants.DEVICES[self.conductor.composition.model]
+
+            all_tracks_support_segments = all(
+                device.can_edit_track_segments(item.track)
+                for item in selected_items
+            )
+
+            has_custom_segments = any(
+                GlyphEffects.is_segment_edited(glyph)
+                for glyph_id in selected_ids
+                if (glyph := self.conductor.composition.get_glyph(glyph_id)) is not None
+            )
+
+            if all_tracks_support_segments and has_custom_segments:
+                entries.append(
+                    (
+                        "Reset segments",
+                        lambda: QTimer.singleShot(0, self.reset_segments_requested.emit)
                     )
                 )
 
@@ -247,16 +271,6 @@ class ContextMenuController(QObject):
 
         device = Constants.DEVICES[self.conductor.composition.model]
 
-        has_non_segmented = any(
-            not device.get_track_segment_count(glyph["track"])
-            for glyph in glyphs
-        )
-
-        has_segmented = all(
-            device.get_track_segment_count(glyph["track"])
-            for glyph in glyphs
-        )
-
         has_custom_segments = any(
             GlyphEffects.is_segment_edited(glyph)
             for glyph in glyphs
@@ -265,18 +279,12 @@ class ContextMenuController(QObject):
         first_track = selected_items[0].track
         same_track  = all(item.track == first_track for item in selected_items)
 
-        can_show_segments = has_segmented and same_track
+        if not same_track:
+            available = GlyphEffects.get_non_segmented_effects()
 
-        if has_non_segmented:
-            effects = GlyphEffects.get_non_segmented_effects()
+            return available, False
 
-        elif has_custom_segments:
-            effects = GlyphEffects.get_segmentation_supported_effects()
-
-        else:
-            effects = GlyphEffects.get_all_effects()
-
-        return effects, can_show_segments
+        return GlyphEffects.get_effects_for_track(device, first_track, has_custom_segments)
 
     def make_effect_entry(
             self,
@@ -367,11 +375,21 @@ class ContextMenuController(QObject):
         if not track_count:
             return
 
-        popup = Windows.SegmentEditor(
-            "Segments",
-            track_count,
-            first_glyph.get("segments")
-        )
+        if device.is_matrix and device.is_master_track(first_glyph["track"]):
+            popup = Windows.MatrixSegmentEditor(
+                "Segments",
+                device,
+                first_glyph.get("segments"),
+                first_glyph.get("segment_levels")
+            )
+
+        else:
+            popup = Windows.SegmentEditor(
+                "Segments",
+                track_count,
+                first_glyph.get("segments"),
+                first_glyph.get("segment_levels")
+            )
 
         if not popup.exec():
             return

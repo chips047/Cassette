@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 
 from loguru import logger
@@ -29,6 +30,7 @@ def parse_effect_arguments(
 
     return arguments
 
+
 def extract_glyph_data(
         glyph: dict,
         model: str | None
@@ -40,6 +42,7 @@ def extract_glyph_data(
     track           = glyph["track"]
     brightness      = glyph.get("brightness", 100)
     active_segments = glyph.get("segments")
+    segment_levels  = glyph.get("segment_levels")
 
     device = Constants.DEVICES.get(model) if model else None
 
@@ -56,8 +59,10 @@ def extract_glyph_data(
         "track":           track,
         "brightness":      brightness,
         "total_segments":  total_segments,
-        "active_segments": active_segments
+        "active_segments": active_segments,
+        "segment_levels":  segment_levels
     }
+
 
 def resolve_target_segments(glyph_data: dict) -> list[int]:
     if glyph_data.get("active_segments"):
@@ -71,14 +76,37 @@ def resolve_target_segments(glyph_data: dict) -> list[int]:
 
 # Event Creation
 
+def resolve_segment_levels_for(
+        glyph_data: dict,
+        segments:   list[int] | None
+    ) -> list[float] | None:
+
+    active_segments = glyph_data.get("active_segments")
+    segment_levels  = glyph_data.get("segment_levels")
+
+    if not segments or not active_segments or not segment_levels:
+        return None
+
+    if len(active_segments) != len(segment_levels):
+        return None
+
+    if segments == active_segments:
+        return list(segment_levels)
+
+    level_map = dict(zip(active_segments, segment_levels))
+
+    return [level_map.get(segment_index, 1.0) for segment_index in segments]
+
+
 def create_glyph_event(
-        track:      str,
-        start:      float,
-        duration:   float,
-        segments:   list[int] | None = None,
-        brightness: int | None = None,
-        keyframes:  list[tuple[float, int | float]] | None = None,
-        easing:     str | None = None
+        track:          str,
+        start:          float,
+        duration:       float,
+        segments:       list[int]   | None = None,
+        brightness:     int         | None = None,
+        keyframes:      list[tuple[float, int | float]] | None = None,
+        easing:         str         | None = None,
+        segment_levels: list[float] | None = None
     ) -> dict:
 
     event = {
@@ -89,6 +117,9 @@ def create_glyph_event(
 
     if segments is not None:
         event["segments"] = segments
+
+        if segment_levels is not None and len(segment_levels) == len(segments):
+            event["segment_levels"] = segment_levels
 
     if keyframes is not None:
         event["keyframes"] = keyframes
@@ -139,6 +170,7 @@ def apply_visual_effect(
 
     return glyph
 
+
 def effect_to_glyph(
         glyph: dict,
         bpm:   int | float,
@@ -159,12 +191,30 @@ def effect_to_glyph(
     settings_metadata = effect_information["settings"]
     keyword_arguments = parse_effect_arguments(configuration, settings_metadata)
 
-    return effect_function(
+    events = effect_function(
         glyph,
         model,
         bpm,
         **keyword_arguments
     )
+
+    active_segments = glyph.get("segments")
+    segment_levels  = glyph.get("segment_levels")
+
+    if active_segments and segment_levels and len(active_segments) == len(segment_levels):
+        level_map = dict(zip(active_segments, segment_levels))
+
+        for event in events:
+            event_segments = event.get("segments")
+
+            if event_segments is not None:
+                event["segment_levels"] = [level_map.get(segment_index, 1.0) for segment_index in event_segments]
+
+            else:
+                event["segments"]       = list(active_segments)
+                event["segment_levels"] = list(segment_levels)
+
+    return events
 
 # Simple Effects
 
@@ -192,6 +242,7 @@ def fade_effect(
     event["mode"] = mode
 
     return [event]
+
 
 def strobe_effect(
         glyph:             dict,
@@ -403,6 +454,7 @@ def bpm_effect(
 
     return output
 
+
 def sparkle_effect(
         glyph:      dict,
         model:      str | None,
@@ -511,6 +563,7 @@ def sidebeat_effect(
 
     return output
 
+
 def fill_effect(
         glyph:  dict,
         model:  str | None,
@@ -556,6 +609,7 @@ def fill_effect(
         )
 
     return output
+
 
 def random_fill_effect(
         glyph:    dict,
@@ -682,6 +736,7 @@ def glitch_effect(
 
     return output
 
+
 def ripple_effect(
         glyph:         dict,
         model:         str | None,
@@ -777,6 +832,7 @@ def ripple_effect(
         current_time = next_time
 
     return output
+
 
 def chase_effect(
         glyph:     dict,
@@ -875,6 +931,7 @@ def chase_effect(
 
     return output
 
+
 def zebra_effect(
         glyph:     dict,
         model:     str | None,
@@ -929,6 +986,7 @@ def zebra_effect(
             )
 
     return output
+
 
 def shocker_effect(
         glyph:     dict,
@@ -1015,6 +1073,7 @@ def calculate_tail_brightness(
 
     return max(min_brightness, int(head_brightness - span * decay_factor))
 
+
 def boomerang_effect(
         glyph: dict,
         model: str | None,
@@ -1084,6 +1143,451 @@ def boomerang_effect(
         current_time = next_time
 
     return output
+
+# Matrix 2D Effects
+
+def matrix_radar_effect(
+        glyph:       dict,
+        model:       str | None,
+        bpm:         int | float,
+        direction:   str = "Clockwise",
+        beam_spread: int = 45
+    ) -> list[dict]:
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms        = glyph_data["duration"]
+    start_ms           = glyph_data["start"]
+    end_ms             = glyph_data["end"]
+    brightness         = glyph_data["brightness"]
+    rotation_period_ms = max(1.0, duration_ms)
+
+    step_interval_ms = 25.0
+    current_time_ms  = start_ms
+    coordinates      = device.matrix_led_coordinates
+    angles           = [math.atan2(point_y, point_x) % math.tau for point_x, point_y in coordinates]
+    beam_width_rad   = math.radians(float(beam_spread))
+    clockwise_factor = 1.0 if direction == "Clockwise" else -1.0
+    output_events    = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration = min(step_interval_ms, end_ms - current_time_ms)
+        elapsed_ms    = current_time_ms - start_ms
+
+        cycle_progress = min(1.0, elapsed_ms / rotation_period_ms)
+        current_angle  = (cycle_progress * math.tau * clockwise_factor) % math.tau
+        lit_leds       = []
+
+        for led_index, led_angle in enumerate(angles):
+            angle_difference = abs(led_angle - current_angle)
+
+            if angle_difference > math.pi:
+                angle_difference = math.tau - angle_difference
+
+            if angle_difference <= beam_width_rad:
+                lit_leds.append(led_index)
+
+        if lit_leds:
+            output_events.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time_ms,
+                    duration   = step_duration + 0.5,
+                    segments   = lit_leds,
+                    brightness = brightness
+                )
+            )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
+
+
+def matrix_spiral_effect(
+        glyph:     dict,
+        model:     str | None,
+        bpm:       int | float,
+        arms:      int = 2,
+        direction: str = "Clockwise"
+    ) -> list[dict]:
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms        = glyph_data["duration"]
+    start_ms           = glyph_data["start"]
+    end_ms             = glyph_data["end"]
+    brightness         = glyph_data["brightness"]
+    rotation_period_ms = max(1.0, duration_ms)
+
+    step_interval_ms = 25.0
+    current_time_ms  = start_ms
+    coordinates      = device.matrix_led_coordinates
+    distances        = [math.hypot(x, y) for x, y in coordinates]
+    angles           = [math.atan2(y, x) % math.tau for x, y in coordinates]
+
+    clockwise_factor = 1.0 if direction == "Clockwise" else -1.0
+    arm_angle_step   = math.tau / max(1, arms)
+    spiral_thickness = 0.38
+    output_events    = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration  = min(step_interval_ms, end_ms - current_time_ms)
+        elapsed_ms     = current_time_ms - start_ms
+        cycle_progress = min(1.0, elapsed_ms / rotation_period_ms)
+        base_rotation  = (cycle_progress * math.tau * clockwise_factor) % math.tau
+
+        lit_leds = []
+
+        for led_index, (distance, angle) in enumerate(zip(distances, angles)):
+            spiral_angle_shift = distance * math.pi * 2.0
+            effective_angle    = (angle - base_rotation - spiral_angle_shift) % math.tau
+
+            for arm_index in range(arms):
+                target_arm_angle = arm_index * arm_angle_step
+                difference       = abs(effective_angle - target_arm_angle)
+
+                if difference > math.pi:
+                    difference = math.tau - difference
+
+                if difference < spiral_thickness:
+                    lit_leds.append(led_index)
+                    break
+
+        if lit_leds:
+            output_events.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time_ms,
+                    duration   = step_duration + 0.5,
+                    segments   = lit_leds,
+                    brightness = brightness
+                )
+            )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
+
+
+def matrix_diamond_effect(
+        glyph: dict,
+        model: str | None,
+        bpm:   int | float,
+        shape: str = "Diamond",
+        mode:  str = "Outward"
+    ) -> list[dict]:
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms     = glyph_data["duration"]
+    start_ms        = glyph_data["start"]
+    end_ms          = glyph_data["end"]
+    brightness      = glyph_data["brightness"]
+    cycle_period_ms = max(1.0, duration_ms)
+
+    step_interval_ms = 25.0
+    current_time_ms  = start_ms
+    coordinates      = device.matrix_led_coordinates
+
+    if shape == "Diamond":
+        metrics = [abs(point_x) + abs(point_y) for point_x, point_y in coordinates]
+
+    else:
+        metrics = [max(abs(point_x), abs(point_y)) for point_x, point_y in coordinates]
+
+    maximum_metric = max(metrics) if metrics else 1.0
+    thickness      = 0.30
+    total_span     = maximum_metric + 2.0 * thickness
+    output_events  = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration = min(step_interval_ms, end_ms - current_time_ms)
+        elapsed_ms    = current_time_ms - start_ms
+
+        phase = min(1.0, elapsed_ms / cycle_period_ms)
+
+        if mode == "Inward":
+            phase = 1.0 - phase
+
+        target_metric = -thickness + phase * total_span
+        lit_leds      = []
+
+        for led_index, metric_value in enumerate(metrics):
+            if abs(metric_value - target_metric) <= thickness:
+                lit_leds.append(led_index)
+
+        if lit_leds:
+            output_events.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time_ms,
+                    duration   = step_duration + 0.5,
+                    segments   = lit_leds,
+                    brightness = brightness
+                )
+            )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
+
+
+def matrix_wave_effect(
+        glyph: dict,
+        model: str | None,
+        bpm:   int | float,
+        mode:  str = "Outward"
+    ) -> list[dict]:
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms    = glyph_data["duration"]
+    start_ms       = glyph_data["start"]
+    end_ms         = glyph_data["end"]
+    brightness     = glyph_data["brightness"]
+    wave_period_ms = max(1.0, duration_ms)
+
+    step_interval_ms = 25.0
+    current_time_ms  = start_ms
+    coordinates      = device.matrix_led_coordinates
+    distances        = [math.hypot(point_x, point_y) for point_x, point_y in coordinates]
+    maximum_distance = max(distances) if distances else 1.0
+    wave_thickness   = 0.28
+    total_span       = maximum_distance + 2.0 * wave_thickness
+    output_events    = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration = min(step_interval_ms, end_ms - current_time_ms)
+        elapsed_ms    = current_time_ms - start_ms
+
+        phase = min(1.0, elapsed_ms / wave_period_ms)
+
+        if mode == "Inward":
+            phase = 1.0 - phase
+
+        wave_radius = -wave_thickness + phase * total_span
+        lit_leds    = []
+
+        for led_index, distance in enumerate(distances):
+            if abs(distance - wave_radius) <= wave_thickness:
+                lit_leds.append(led_index)
+
+        if lit_leds:
+            output_events.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time_ms,
+                    duration   = step_duration + 0.5,
+                    segments   = lit_leds,
+                    brightness = brightness
+                )
+            )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
+
+
+def matrix_scan_effect(
+        glyph:      dict,
+        model:      str | None,
+        bpm:        int | float,
+        direction:  str = "Top to Bottom",
+        line_width: int = 25
+    ) -> list[dict]:
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms     = glyph_data["duration"]
+    start_ms        = glyph_data["start"]
+    end_ms          = glyph_data["end"]
+    brightness      = glyph_data["brightness"]
+    sweep_period_ms = max(1.0, duration_ms)
+
+    step_interval_ms = 25.0
+    current_time_ms  = start_ms
+    coordinates      = device.matrix_led_coordinates
+
+    projected_positions: list[float] = []
+
+    for point_x, point_y in coordinates:
+        if direction == "Top to Bottom":
+            projected_positions.append(point_y)
+
+        elif direction == "Bottom to Top":
+            projected_positions.append(-point_y)
+
+        elif direction == "Left to Right":
+            projected_positions.append(point_x)
+
+        elif direction == "Right to Left":
+            projected_positions.append(-point_x)
+
+        else:
+            projected_positions.append((point_x + point_y) * 0.7071)
+
+    min_position   = min(projected_positions)
+    max_position   = max(projected_positions)
+    range_span     = max_position - min_position if max_position > min_position else 2.0
+    band_thickness = (float(line_width) / 100.0) * range_span
+    total_span     = range_span + 2.0 * band_thickness
+    output_events  = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration = min(step_interval_ms, end_ms - current_time_ms)
+        elapsed_ms    = current_time_ms - start_ms
+
+        cycle_progress  = min(1.0, elapsed_ms / sweep_period_ms)
+        target_position = (min_position - band_thickness) + cycle_progress * total_span
+        lit_leds        = []
+
+        for led_index, projection in enumerate(projected_positions):
+            if abs(projection - target_position) <= band_thickness:
+                lit_leds.append(led_index)
+
+        if lit_leds:
+            output_events.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time_ms,
+                    duration   = step_duration + 0.5,
+                    segments   = lit_leds,
+                    brightness = brightness
+                )
+            )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
+
+
+def matrix_clock_effect(
+        glyph:     dict,
+        model:     str | None,
+        bpm:       int | float,
+        mode:      str = "Fill",
+        direction: str = "Clockwise"
+    ) -> list[dict]:
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms     = glyph_data["duration"]
+    start_ms        = glyph_data["start"]
+    end_ms          = glyph_data["end"]
+    brightness      = glyph_data["brightness"]
+    cycle_period_ms = max(1.0, duration_ms)
+
+    step_interval_ms = 25.0
+    current_time_ms  = start_ms
+    coordinates      = device.matrix_led_coordinates
+
+    angles        = [(math.atan2(x, -y) % math.tau) for x, y in coordinates]
+    output_events = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration  = min(step_interval_ms, end_ms - current_time_ms)
+        elapsed_ms     = current_time_ms - start_ms
+
+        cycle_progress = min(1.0, elapsed_ms / cycle_period_ms)
+        sweep_angle    = cycle_progress * math.tau
+        lit_leds       = []
+
+        for led_index, angle in enumerate(angles):
+            effective_angle = (math.tau - angle) % math.tau if direction == "Counter-Clockwise" else angle
+
+            if mode == "Fill":
+                if effective_angle <= sweep_angle:
+                    lit_leds.append(led_index)
+
+            elif effective_angle > sweep_angle:
+                lit_leds.append(led_index)
+
+        if lit_leds:
+            output_events.append(
+                create_glyph_event(
+                    track      = glyph_data["track"],
+                    start      = current_time_ms,
+                    duration   = step_duration + 0.5,
+                    segments   = lit_leds,
+                    brightness = brightness
+                )
+            )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
+
+
+def matrix_noise_effect(
+        glyph:    dict,
+        model:    str | None,
+        bpm:      int | float,
+        density:  int                = 30,
+        fps:      int                = 15,
+        bpm_snap: int | float | bool = False
+    ) -> list[dict]:
+
+    if bpm_snap and bpm > 0:
+        fps = int((bpm / 60.0) * float(bpm_snap))
+
+    glyph_data = extract_glyph_data(glyph, model)
+    device     = Constants.DEVICES.get(model) if model else None
+
+    if not device or not device.is_matrix or glyph_data["duration"] <= 0:
+        return []
+
+    duration_ms = glyph_data["duration"]
+    start_ms    = glyph_data["start"]
+    end_ms      = glyph_data["end"]
+    brightness  = glyph_data["brightness"]
+
+    step_interval_ms = 1000.0 / max(1, fps)
+    current_time_ms  = start_ms
+    total_leds       = device.columns
+    sample_count     = max(1, int(total_leds * (density / 100.0)))
+    output_events    = []
+
+    while current_time_ms < end_ms - 1e-9:
+        step_duration = min(step_interval_ms, end_ms - current_time_ms)
+        chosen_leds   = random.sample(range(total_leds), sample_count)
+
+        output_events.append(
+            create_glyph_event(
+                track      = glyph_data["track"],
+                start      = current_time_ms,
+                duration   = step_duration + 0.5,
+                segments   = sorted(chosen_leds),
+                brightness = brightness
+            )
+        )
+
+        current_time_ms += step_interval_ms
+
+    return output_events
 
 # Configuration and Utilities
 
@@ -1566,6 +2070,205 @@ EffectsConfig = {
                 "default": 50
             }
         ]
+    },
+
+    "Matrix Wave": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_wave_effect,
+        "settings": [
+            {
+                "type":    "selector",
+                "title":   "Direction",
+                "key":     "mode",
+                "map": {
+                    "Outward": "Outward",
+                    "Inward":  "Inward"
+                },
+                "default": "Outward"
+            }
+        ]
+    },
+
+    "Matrix Radar": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_radar_effect,
+        "settings": [
+            {
+                "type":    "selector",
+                "title":   "Direction",
+                "key":     "direction",
+                "map": {
+                    "Clockwise":         "Clockwise",
+                    "Counter-Clockwise": "Counter-Clockwise"
+                },
+                "default": "Clockwise"
+            },
+            {
+                "type":    "slider",
+                "title":   "Beam Width (deg)",
+                "min":     15,
+                "max":     90,
+                "key":     "beam_spread",
+                "default": 45
+            }
+        ]
+    },
+
+    "Matrix Scan": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_scan_effect,
+        "settings": [
+            {
+                "type":    "selector",
+                "title":   "Direction",
+                "key":     "direction",
+                "map": {
+                    "Top to Bottom": "Top to Bottom",
+                    "Bottom to Top": "Bottom to Top",
+                    "Left to Right": "Left to Right",
+                    "Right to Left": "Right to Left",
+                    "Diagonal":      "Diagonal"
+                },
+                "default": "Top to Bottom"
+            },
+            {
+                "type":    "slider",
+                "title":   "Beam Width (%)",
+                "min":     10,
+                "max":     50,
+                "key":     "line_width",
+                "default": 25
+            }
+        ]
+    },
+
+    "Matrix Spiral": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_spiral_effect,
+        "settings": [
+            {
+                "type":    "selector",
+                "title":   "Direction",
+                "key":     "direction",
+                "map": {
+                    "Clockwise":         "Clockwise",
+                    "Counter-Clockwise": "Counter-Clockwise"
+                },
+                "default": "Clockwise"
+            },
+            {
+                "type":    "slider",
+                "title":   "Arms Count",
+                "min":     1,
+                "max":     4,
+                "key":     "arms",
+                "default": 2
+            }
+        ]
+    },
+
+    "Matrix Diamond": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_diamond_effect,
+        "settings": [
+            {
+                "type":    "selector",
+                "title":   "Shape",
+                "key":     "shape",
+                "map": {
+                    "Diamond": "Diamond",
+                    "Box":     "Box"
+                },
+                "default": "Diamond"
+            },
+            {
+                "type":    "selector",
+                "title":   "Direction",
+                "key":     "mode",
+                "map": {
+                    "Outward": "Outward",
+                    "Inward":  "Inward"
+                },
+                "default": "Outward"
+            }
+        ]
+    },
+
+    "Matrix Clock": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_clock_effect,
+        "settings": [
+            {
+                "type":    "selector",
+                "title":   "Mode",
+                "key":     "mode",
+                "map": {
+                    "Fill":  "Fill",
+                    "Clear": "Clear"
+                },
+                "default": "Fill"
+            },
+            {
+                "type":    "selector",
+                "title":   "Direction",
+                "key":     "direction",
+                "map": {
+                    "Clockwise":         "Clockwise",
+                    "Counter-Clockwise": "Counter-Clockwise"
+                },
+                "default": "Clockwise"
+            }
+        ]
+    },
+
+    "Matrix Noise": {
+        "segmented":             True,
+        "supports_segmentation": True,
+        "matrix_only":           True,
+        "function":              matrix_noise_effect,
+        "settings": [
+            {
+                "type":    "slider",
+                "title":   "Density (%)",
+                "min":     10,
+                "max":     60,
+                "key":     "density",
+                "default": 30
+            },
+            {
+                "type":    "slider",
+                "title":   "FPS",
+                "min":     5,
+                "max":     30,
+                "key":     "fps",
+                "default": 15
+            },
+            {
+                "type":    "selector",
+                "title":   "Snap to BPM",
+                "key":     "bpm_snap",
+                "map": {
+                    "Disabled": False,
+                    "BPM x0.5": 0.5,
+                    "BPM x1":   1,
+                    "BPM x2":   2,
+                    "BPM x4":   4
+                },
+                "default": "Disabled"
+            }
+        ]
     }
 }
 
@@ -1574,26 +2277,113 @@ EffectsConfig = {
 def is_segment_edited(glyph: dict) -> bool:
     return "segments" in glyph
 
+
 def get_all_effects() -> dict:
     return EffectsConfig
 
+
 def get_non_segmented_effects() -> dict:
     return {
-        name: configuration for name, configuration in EffectsConfig.items()
-        if not configuration.get("segmented", False)
+        name: configuration
+        for name, configuration in EffectsConfig.items()
+        if not configuration.get("segmented", False) and not configuration.get("matrix_only", False)
     }
+
 
 def get_segmented_effects() -> dict:
     return {
-        name: configuration for name, configuration in EffectsConfig.items()
-        if configuration.get("segmented", False)
+        name: configuration
+        for name, configuration in EffectsConfig.items()
+        if configuration.get("segmented", False) and not configuration.get("matrix_only", False)
     }
+
 
 def get_segmentation_supported_effects() -> dict:
     return {
-        name: configuration for name, configuration in EffectsConfig.items()
-        if configuration.get("supports_segmentation", False)
+        name: configuration
+        for name, configuration in EffectsConfig.items()
+        if configuration.get("supports_segmentation", False) and not configuration.get("matrix_only", False)
     }
+
+
+def get_matrix_effects() -> dict:
+    return {
+        name: configuration
+        for name, configuration in EffectsConfig.items()
+        if configuration.get("matrix_only", False)
+    }
+
+
+def get_effects_for_track(
+        device:              object,
+        track_identifier:    str,
+        has_custom_segments: bool = False
+    ) -> tuple[dict, bool]:
+
+    is_master = device.is_master_track(track_identifier)
+
+    if device.is_matrix:
+        if is_master:
+            if has_custom_segments:
+                available = {
+                    name: configuration
+                    for name, configuration in EffectsConfig.items()
+                    if configuration.get("supports_segmentation", False)
+                    and not configuration.get("segmented", False)
+                    and not configuration.get("matrix_only", False)
+                }
+
+                return available, True
+
+            available = {
+                name: configuration
+                for name, configuration in EffectsConfig.items()
+                if configuration.get("matrix_only", False) or not configuration.get("segmented", False)
+            }
+
+            return available, True
+
+        available = {
+            name: configuration
+            for name, configuration in EffectsConfig.items()
+            if not configuration.get("matrix_only", False)
+        }
+
+        if has_custom_segments:
+            available = {
+                name: configuration
+                for name, configuration in available.items()
+                if configuration.get("supports_segmentation", False)
+            }
+
+        return available, True
+
+    available = {
+        name: configuration
+        for name, configuration in EffectsConfig.items()
+        if not configuration.get("matrix_only", False)
+    }
+
+    has_segments = bool(device.get_track_segment_count(track_identifier))
+
+    if not has_segments:
+        available = {
+            name: configuration
+            for name, configuration in available.items()
+            if not configuration.get("segmented", False)
+        }
+
+        return available, False
+
+    if has_custom_segments:
+        available = {
+            name: configuration
+            for name, configuration in available.items()
+            if configuration.get("supports_segmentation", False)
+        }
+
+    return available, True
+
 
 def generate_effect_dict(
         name:     str,
@@ -1604,6 +2394,7 @@ def generate_effect_dict(
         "name":     name,
         "settings": settings or {}
     }
+
 
 def generate_glyph_dict(
         track:      str = "1",

@@ -74,4 +74,11 @@ from .Waveforms import (
     TrimmingWaveformWidget
 )
 
+from .SegmentedBars import (
+    SegmentedBar,
+    MatrixSegmentBar,
+    ScheduledMatrixPreview,
+    ScheduledSegmentedBar
+)
+
 from .StarRating import StarRatingWidget

@@ -144,15 +144,19 @@ def parse_glyphs(glyphs: dict, device: Constants.DeviceConfig) -> list[dict]:
         if rounded_end <= rounded_start:
             rounded_end = rounded_start + TIME_STEP_MS
 
-        track_id = glyph["track"]
-        segments = glyph.get("segments")
-        indices  = device.get_display_array_indexes(track_id, segments)
+        track_id       = glyph["track"]
+        segments       = glyph.get("segments")
+        segment_levels = glyph.get("segment_levels")
+        indices        = device.get_display_array_indexes(track_id, segments)
 
         item: dict = {
             "rastered_start": rounded_start,
             "rastered_end":   rounded_end,
             "array_indexes":  indices,
         }
+
+        if segment_levels is not None and segments is not None and len(segment_levels) == len(indices):
+            item["segment_levels"] = segment_levels
 
         if "keyframes" in glyph:
             item["keyframes"] = glyph["keyframes"]
@@ -203,10 +207,18 @@ def apply_glyphs_to_author(
                 continue
 
             brightness_percent = get_glyph_brightness(glyph, index, len(rows))
-            light_level        = max(0, min(4095, round((brightness_percent / 100.0) * 4095.0)))
+            segment_levels     = glyph.get("segment_levels")
 
-            for led_index in glyph["array_indexes"]:
-                author_data[row_index][led_index] = light_level
+            if segment_levels is not None:
+                for led_index, level_multiplier in zip(glyph["array_indexes"], segment_levels):
+                    light_level                       = max(0, min(4095, round((brightness_percent * float(level_multiplier) / 100.0) * 4095.0)))
+                    author_data[row_index][led_index] = max(author_data[row_index][led_index], light_level)
+
+            else:
+                light_level = max(0, min(4095, round((brightness_percent / 100.0) * 4095.0)))
+
+                for led_index in glyph["array_indexes"]:
+                    author_data[row_index][led_index] = max(author_data[row_index][led_index], light_level)
 
     return author_data
 

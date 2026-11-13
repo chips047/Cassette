@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from enum import Enum
 
 from loguru import logger
@@ -17,6 +19,7 @@ class MasterTrackMode(Enum):
     ALL_LIT      = "all_lit"
     MERGED_ZONES = "merged_zones"
     MIRROR_ZONES = "mirror_zones"
+    MATRIX       = "matrix"
 
 # Device Configuration
 
@@ -28,13 +31,15 @@ class DeviceConfig:
     hardware_codes:        list[str]
     composer_code_name:    str
 
-    glyph_indexes:         list[list[int]]
-    zone_indexes:          list[list[int]]
+    glyph_indexes:         list[list[int]] = field(default_factory = list)
+    zone_indexes:          list[list[int]] = field(default_factory = list)
     segments_map:          dict[str, int]  = field(default_factory = dict)
 
     visualization_map:     dict            = field(default_factory = dict)
     port_variants:         list[str]       = field(default_factory = list)
     port_map:              dict            = field(default_factory = dict)
+
+    matrix_rows:           list[int]       = field(default_factory = list)
 
     columns:               int             = field(init = False)
     base_tracks:           int             = field(init = False)
@@ -45,7 +50,21 @@ class DeviceConfig:
 
     legacy_tracks: dict[int, dict[str, list[str]]] = field(default_factory = dict)
 
+    matrix_led_coordinates:    list[tuple[float, float]] = field(init = False, default_factory = list)
+    matrix_led_to_row_segment: list[tuple[str, int]]     = field(init = False, default_factory = list)
+
     def __post_init__(self) -> None:
+        if self.matrix_rows:
+            self.glyph_indexes = make_ranges(*self.matrix_rows)
+            total_matrix_leds  = sum(self.matrix_rows)
+            self.zone_indexes  = [[index] for index in range(total_matrix_leds)]
+            self.segments_map  = {
+                str(row_index + 1): count
+                for row_index, count in enumerate(self.matrix_rows)
+            }
+
+            self.build_matrix_geometry()
+
         self.columns               = sum(len(group) for group in self.glyph_indexes)
         self.base_tracks           = len(self.glyph_indexes)
         self.custom_two_string     = f"{self.columns}cols"
@@ -59,6 +78,36 @@ class DeviceConfig:
         logger.debug(f"Glyph Indexes: {self.glyph_indexes}")
         logger.debug(f"Zone Indexes: {self.zone_indexes}")
         logger.debug(f"Master Track Mode: {self.master_track_mode} ({self.master_track_segments} zones)")
+
+    # Matrix Geometry
+
+    def build_matrix_geometry(self) -> None:
+        row_count       = len(self.matrix_rows)
+        maximum_columns = max(self.matrix_rows)
+        radius_x        = (maximum_columns - 1) / 2.0 if maximum_columns > 1 else 1.0
+        radius_y        = (row_count - 1) / 2.0 if row_count > 1 else 1.0
+
+        coordinates: list[tuple[float, float]] = []
+        mapping:     list[tuple[str, int]]     = []
+
+        for row_index, row_width in enumerate(self.matrix_rows):
+            start_column = (maximum_columns - row_width) // 2
+            row_track    = str(row_index + 1)
+            y_normalized = (row_index - radius_y) / radius_y
+
+            for segment_index in range(row_width):
+                column_index = start_column + segment_index
+                x_normalized = (column_index - radius_x) / radius_x
+
+                coordinates.append((round(x_normalized, 4), round(y_normalized, 4)))
+                mapping.append((row_track, segment_index))
+
+        self.matrix_led_coordinates    = coordinates
+        self.matrix_led_to_row_segment = mapping
+
+    @property
+    def is_matrix(self) -> bool:
+        return bool(self.matrix_rows)
 
     def calculate_zone_offset(
             self,
@@ -97,6 +146,9 @@ class DeviceConfig:
         return [MASTER_TRACK_IDENTIFIER] + [str(index) for index in range(1, self.base_tracks + 1)]
 
     def compute_master_track_mode(self) -> MasterTrackMode:
+        if self.is_matrix:
+            return MasterTrackMode.MATRIX
+
         if self.base_tracks == 1 and "1" in self.segments_map:
             return MasterTrackMode.MIRROR_ZONES
 
@@ -111,6 +163,9 @@ class DeviceConfig:
         return MasterTrackMode.ALL_LIT
 
     def compute_master_track_segments(self) -> int | None:
+        if self.master_track_mode is MasterTrackMode.MATRIX:
+            return self.columns
+
         if self.master_track_mode is MasterTrackMode.MIRROR_ZONES:
             return self.segments_map["1"]
 
@@ -146,6 +201,9 @@ class DeviceConfig:
 
         return self.segments_map.get(track)
 
+    def can_edit_track_segments(self, track: str) -> bool:
+        return bool(self.get_track_segment_count(track))
+
     def resolve_master_zone(self, zone_index: int) -> tuple[str, int]:
         if self.master_track_mode is MasterTrackMode.MIRROR_ZONES:
             return "1", zone_index
@@ -167,7 +225,7 @@ class DeviceConfig:
         raise IndexError(f"Master zone index {zone_index} is out of range for {self.full_name}")
 
     def resolve_master_track(self) -> list[tuple[str, int | None]]:
-        if self.master_track_mode is MasterTrackMode.ALL_LIT:
+        if self.master_track_mode in (MasterTrackMode.ALL_LIT, MasterTrackMode.MATRIX):
             return [(str(index), None) for index in range(1, self.base_tracks + 1)]
 
         return [
@@ -195,8 +253,24 @@ class DeviceConfig:
         ) -> list[tuple[str, list[int] | None]]:
 
         if self.is_master_track(display_track):
-            if self.master_track_mode is MasterTrackMode.ALL_LIT:
+            if self.master_track_mode in (MasterTrackMode.ALL_LIT, MasterTrackMode.MATRIX) and segments is None:
                 return [(real_track, None) for real_track, _ in self.resolve_master_track()]
+
+            if self.master_track_mode is MasterTrackMode.MATRIX and segments is not None:
+                zones_by_real_track: dict[str, list[int]] = {}
+
+                for led_index in segments:
+                    if 0 <= led_index < len(self.matrix_led_to_row_segment):
+                        real_track, real_zone = self.matrix_led_to_row_segment[led_index]
+                        zones_by_real_track.setdefault(real_track, []).append(real_zone)
+
+                return [
+                    (
+                        real_track,
+                        None if self.is_full_track_segments(real_track, real_zones) else sorted(real_zones)
+                    )
+                    for real_track, real_zones in zones_by_real_track.items()
+                ]
 
             active_segments = segments if segments is not None else range(self.master_track_segments)
 
@@ -221,6 +295,78 @@ class DeviceConfig:
 
         return [(display_track, segments)]
 
+    def expand_display_track_with_levels(
+            self,
+            display_track:  str,
+            segments:       list[int]   | None = None,
+            segment_levels: list[float] | None = None
+        ) -> list[tuple[str, list[int] | None, list[float] | None]]:
+
+        if segment_levels is None or segments is None or len(segment_levels) != len(segments):
+            return [
+                (real_track, real_segments, None)
+                for real_track, real_segments in self.expand_display_track(display_track, segments)
+            ]
+
+        level_by_virtual_zone = dict(zip(segments, segment_levels))
+
+        if not self.is_master_track(display_track):
+            if self.is_segment_track(display_track):
+                real_track, real_zone = self.resolve_segment_track(display_track)
+                level                 = level_by_virtual_zone.get(real_zone, 1.0)
+
+                return [(real_track, [real_zone], [level])]
+
+            return [(display_track, segments, segment_levels)]
+
+        if self.master_track_mode is MasterTrackMode.MATRIX:
+            zones_by_real_track: dict[str, list[tuple[int, float]]] = {}
+
+            for led_index in segments:
+                if 0 <= led_index < len(self.matrix_led_to_row_segment):
+                    real_track, real_zone = self.matrix_led_to_row_segment[led_index]
+                    level                 = level_by_virtual_zone.get(led_index, 1.0)
+                    zones_by_real_track.setdefault(real_track, []).append((real_zone, level))
+
+            result = []
+
+            for real_track, pairs in zones_by_real_track.items():
+                pairs.sort(key = lambda pair: pair[0])
+
+                real_zones  = [pair[0] for pair in pairs]
+                real_levels = [pair[1] for pair in pairs]
+
+                if self.is_full_track_segments(real_track, real_zones) and all(level >= 0.999 for level in real_levels):
+                    result.append((real_track, None, None))
+
+                else:
+                    result.append((real_track, real_zones, real_levels))
+
+            return result
+
+        zones_by_real_track = {}
+
+        for virtual_zone in segments:
+            real_track, real_zone = self.resolve_master_zone(virtual_zone)
+            level                 = level_by_virtual_zone.get(virtual_zone, 1.0)
+            zones_by_real_track.setdefault(real_track, []).append((real_zone, level))
+
+        result = []
+
+        for real_track, pairs in zones_by_real_track.items():
+            pairs.sort(key = lambda pair: pair[0])
+
+            real_zones  = [pair[0] for pair in pairs]
+            real_levels = [pair[1] for pair in pairs]
+
+            if self.is_full_track_segments(real_track, real_zones) and all(level >= 0.999 for level in real_levels):
+                result.append((real_track, None, None))
+
+            else:
+                result.append((real_track, real_zones, real_levels))
+
+        return result
+
     def get_master_array_indexes(self, active_segments: list[int] | None = None) -> list[int]:
         if self.master_track_mode is MasterTrackMode.ALL_LIT:
             indexes: list[int] = []
@@ -229,6 +375,12 @@ class DeviceConfig:
                 indexes.extend(self.get_array_indexes(index, 0))
 
             return indexes
+
+        if self.master_track_mode is MasterTrackMode.MATRIX:
+            if active_segments is None:
+                return list(range(self.columns))
+
+            return [index for index in active_segments if 0 <= index < self.columns]
 
         if active_segments is None:
             active_segments = range(self.master_track_segments)
@@ -315,3 +467,47 @@ def make_ranges(*ranges: int | list[int]) -> list[list[int]]:
             current = max(entry) + 1 if entry else current
 
     return result
+
+def generate_matrix_visualization_map(
+        matrix_rows: list[int],
+        view_size:   tuple[int, int] = (260, 260),
+        thickness:   float           = 6.0
+    ) -> dict:
+
+    row_count       = len(matrix_rows)
+    maximum_columns = max(matrix_rows)
+    width_px        = view_size[0]
+    height_px       = view_size[1]
+
+    horizontal_step = (width_px - 40.0) / float(maximum_columns)
+    vertical_step   = (height_px - 40.0) / float(row_count)
+
+    center_x = width_px / 2.0
+    center_y = height_px / 2.0
+
+    glyphs_map: dict[str, dict[str, object]] = {}
+
+    for row_index, row_width in enumerate(matrix_rows):
+        row_track_identifier = str(row_index + 1)
+        y_position           = center_y + (row_index - (row_count - 1) / 2.0) * vertical_step
+        row_pixel_span       = (row_width - 1) * horizontal_step
+
+        start_x = center_x - row_pixel_span / 2.0
+        end_x   = center_x + row_pixel_span / 2.0
+
+        if row_width == 1:
+            end_x += 0.1
+
+        svg_path = f"M{start_x:.2f},{y_position:.2f} L{end_x:.2f},{y_position:.2f}"
+
+        glyphs_map[row_track_identifier] = {
+            "svg":      svg_path,
+            "position": (0, 0),
+            "segments": row_width
+        }
+
+    return {
+        "glyphs":    glyphs_map,
+        "size":      view_size,
+        "thickness": thickness
+    }

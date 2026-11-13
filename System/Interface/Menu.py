@@ -11,19 +11,22 @@ from PyQt6.QtGui import (
     QAction,
     QHideEvent,
     QShowEvent,
-    QMouseEvent
+    QMouseEvent,
+    QGuiApplication
 )
 
 from PyQt6.QtWidgets import (
     QMenu,
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QWidgetAction
 )
 
 from System.Common import (
     Dev,
-    Styles
+    Styles,
+    Constants
 )
 
 from System.Services import (
@@ -147,26 +150,61 @@ class EffectPreviewWidget(QWidget):
         self.controls      = {}
         self.effect_info   = GlyphEffects.EffectsConfig.get(self.effect_name, {})
 
+        device                 = Constants.DEVICES.get(self.model) if self.model else None
+        is_matrix_device       = bool(device and device.is_matrix)
+        is_matrix_effect       = bool(self.effect_info.get("matrix_only", False))
+        is_master_track        = bool(device and device.is_master_track(self.glyph["track"]))
+        self.is_matrix_preview = is_matrix_device and (is_master_track or is_matrix_effect)
+        self.matrix_device     = device
+
         self.setup_user_interface()
         self.populate_controls()
         self.on_control_changed()
 
     # User Interface
 
+    def calculate_optimal_matrix_size(self) -> int:
+        maximum_width_px = 534
+        screen           = QGuiApplication.primaryScreen()
+        screen_height_px = screen.availableGeometry().height() if screen else 900
+    
+        control_items_count = len(self.effect_info.get("settings", []))
+        controls_height_px  = control_items_count * 68 + 120
+    
+        available_vertical_space = screen_height_px - controls_height_px - 80
+    
+        return max(140, min(maximum_width_px, available_vertical_space))
+    
     def setup_user_interface(self) -> None:
         self.setAttribute(Qt.WidgetAttribute.WA_NoMousePropagation, True)
         self.setFixedWidth(550)
         self.setStyleSheet(Styles.Controls.EffectSetupper)
-
+    
         self.main_layout = QVBoxLayout(self)
-
         self.main_layout.setContentsMargins(8, 8, 8, 8)
-        self.main_layout.setSpacing(12)
-
-        self.live_preview_bar = Widgets.ScheduledSegmentedBar(self.segment_count, loop = True)
-        self.apply_button     = Widgets.NothingButton("Apply")
-
-        self.main_layout.addWidget(self.live_preview_bar)
+        self.main_layout.setSpacing(10)
+    
+        if self.is_matrix_preview and self.matrix_device:
+            optimal_size      = self.calculate_optimal_matrix_size()
+            self.live_preview = Widgets.ScheduledMatrixPreview(
+                device          = self.matrix_device,
+                preview_size_px = optimal_size,
+                loop            = True
+            )
+    
+            preview_wrapper = QHBoxLayout()
+            preview_wrapper.setContentsMargins(0, 0, 0, 0)
+            preview_wrapper.addStretch()
+            preview_wrapper.addWidget(self.live_preview)
+            preview_wrapper.addStretch()
+    
+            self.main_layout.addLayout(preview_wrapper)
+    
+        else:
+            self.live_preview = Widgets.ScheduledSegmentedBar(self.segment_count, loop = True)
+            self.main_layout.addWidget(self.live_preview)
+    
+        self.apply_button = Widgets.NothingButton("Apply")
         self.apply_button.clicked.connect(self.on_apply)
 
     def populate_controls(self) -> None:
@@ -212,9 +250,6 @@ class EffectPreviewWidget(QWidget):
             elif isinstance(widget, Widgets.SelectorWithLabel):
                 settings[key] = widget.current_data()
 
-            else:
-                pass
-
         return settings
 
     def generate_effect_track(self) -> None:
@@ -243,7 +278,7 @@ class EffectPreviewWidget(QWidget):
             self.model
         )
 
-        self.live_preview_bar.set_schedule(track_data)
+        self.live_preview.set_schedule(track_data)
 
     # Event Handlers
 
@@ -272,10 +307,10 @@ class EffectPreviewWidget(QWidget):
         super().showEvent(event)
 
         logger.debug(f"Starting Effect Visualizer on {self.effect_name}")
-        self.live_preview_bar.play()
+        self.live_preview.play()
 
     def hideEvent(self, event: QHideEvent) -> None:
         super().hideEvent(event)
 
         logger.debug(f"Stopping Effect Visualizer on {self.effect_name}")
-        self.live_preview_bar.stop()
+        self.live_preview.stop()

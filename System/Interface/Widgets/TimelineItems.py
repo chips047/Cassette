@@ -152,7 +152,7 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
     # Geometry
 
     def boundingRect(self) -> QRectF:
-        height_px = self.height_px or float(self.conductor.height())
+        height_px = self.height_px if self.height_px is not None else float(self.conductor.height())
 
         return QRectF(
             -self.width_px / 2.0,
@@ -170,12 +170,20 @@ class PlayheadItem(Lifecycle.LoomAnimationMixin, QGraphicsObject):
             widget:  QWidget | None = None
         ) -> None:
 
-        height_px = int(self.height_px or self.conductor.height())
+        height_px = int(self.height_px if self.height_px is not None else self.conductor.height())
 
         painter.setPen(self.cached_pen)
         painter.drawLine(0, 0, 0, height_px)
 
     # API
+
+    def set_height(self, height_px: float | None) -> None:
+        if self.height_px == height_px:
+            return
+
+        self.prepareGeometryChange()
+        self.height_px = height_px
+        self.update()
 
     def set_target_x(
             self,

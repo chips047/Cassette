@@ -148,9 +148,9 @@ class VersionPrankWindow(FloatingWindowGPU):
             self.description_label.setText(
                 "`Meet Cassette AI*.`\n\n"
                 "Harness the revolutionary next-generation neural matrix directly inside your timeline. "
-                "Cassette AI autonomously predicts your glyph placements, dynamically synthesizes non-fungible "
+                "Cassette AI autonomously predicts your glyph placements, dynamically synthesizes non - fungible "
                 "polyphonic audio textures, optimizes composition synergies using multimodal neural reasoning, "
-                "and transforms your creative workflow into an effortless prompt-driven cloud experience."
+                "and transforms your creative workflow into an effortless prompt - driven cloud experience ce ce BSHJDFBSDJC."
             )
             self.footnote_label.setVisible(True)
             self.video_widget.setVisible(False)
@@ -179,8 +179,8 @@ class VersionPrankWindow(FloatingWindowGPU):
             self.title_label.setText("Just kidding.")
             self.description_label.setText(
                 "`Just kidding. Let me tell you something:`\n\n"
-                "Only OG users that used Cassette <1.0 version see this window.\n\n"
-                "Thank you for being with me in this development journey."
+                "Only OG users that used Cassette before this version see this window.\n\n"
+                "Thank you for being with me in this development journey :3"
             )
             self.footnote_label.setVisible(False)
             self.video_widget.setVisible(False)

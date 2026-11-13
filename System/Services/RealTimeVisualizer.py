@@ -675,6 +675,12 @@ class GlyphSyncer(QObject):
             if "segments" in old_glyph and old_glyph["segments"] != new_glyph["segments"]:
                 return True
 
+            if ("segment_levels" in old_glyph) != ("segment_levels" in new_glyph):
+                return True
+
+            if "segment_levels" in old_glyph and old_glyph["segment_levels"] != new_glyph["segment_levels"]:
+                return True
+
             return False
 
         changed_glyphs: dict = {}

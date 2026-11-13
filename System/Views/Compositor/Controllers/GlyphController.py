@@ -166,10 +166,12 @@ class GlyphController(QObject):
         if not selected_glyph_ids:
             return
 
-        before_state      = {}
-        after_state       = {}
-        audio_duration_ms = self.conductor.playback_manager.duration_ms
-        animate_movement  = property_name in ("duration", "start", "track")
+        before_state          = {}
+        after_state           = {}
+        audio_duration_ms     = self.conductor.playback_manager.duration_ms
+        animate_movement      = property_name in ("duration", "start", "track")
+        removed_effects_count = 0
+        device                = Constants.DEVICES[self.composition.model]
 
         for glyph_id in selected_glyph_ids:
             glyph_data = self.composition.get_glyph(glyph_id)
@@ -197,7 +199,12 @@ class GlyphController(QObject):
 
             updated_data                = copy.deepcopy(glyph_data)
             updated_data[property_name] = resolved_value
-            after_state[glyph_id]       = updated_data
+
+            if property_name == "track":
+                if self.adapt_glyph_for_track_change(updated_data, str(resolved_value), device):
+                    removed_effects_count += 1
+
+            after_state[glyph_id] = updated_data
 
         if not after_state:
             return
@@ -215,6 +222,12 @@ class GlyphController(QObject):
             if property_name in ("start", "duration", "track"):
                 self.refresh_stack_indicators(force = True)
                 self.refresh_all_occlusion()
+
+            if removed_effects_count > 0:
+                self.conductor.tooltip.show_tooltip_at(
+                    "Removed incompatible effect.",
+                    plan_hide = True
+                )
 
         finally:
             self.composition.stop_batching()
@@ -256,7 +269,7 @@ class GlyphController(QObject):
     def apply_segments_to_glyphs(
             self,
             selected_ids: list[int],
-            segments:     list[bool]
+            segments:     list[bool] | list[float]
         ) -> None:
 
         original_glyphs = {
@@ -264,8 +277,11 @@ class GlyphController(QObject):
             for glyph_id in selected_ids
         }
 
-        turned_on     = [index for index, segment in enumerate(segments) if segment]
-        all_turned_on = all(segments)
+        levels         = [max(0.0, min(1.0, float(value))) for value in segments]
+        turned_on      = [index for index, level in enumerate(levels) if level > 0.0]
+        turned_levels  = [round(levels[index], 3) for index in turned_on]
+        all_turned_on  = len(turned_on) == len(levels) and all(level >= 0.999 for level in turned_levels)
+        all_binary     = all(level >= 0.999 for level in turned_levels)
 
         before_state = {
             glyph_id: copy.deepcopy(original_glyphs[glyph_id])
@@ -278,26 +294,43 @@ class GlyphController(QObject):
 
             if all_turned_on:
                 new_glyph.pop("segments", None)
+                new_glyph.pop("segment_levels", None)
+
+            elif all_binary:
+                new_glyph["segments"] = turned_on
+                new_glyph.pop("segment_levels", None)
 
             else:
-                new_glyph["segments"] = turned_on
+                new_glyph["segments"]       = turned_on
+                new_glyph["segment_levels"] = turned_levels
 
             after_state[glyph_id] = new_glyph
 
-        first_id      = selected_ids[0]
-        first_glyph   = original_glyphs[first_id]
-        effect_data   = first_glyph.get("effect")
-        effect_name   = effect_data.get("name") if effect_data else None
-        effect_config = GlyphEffects.EffectsConfig.get(effect_name, {}) if effect_name else {}
+        first_id    = selected_ids[0]
+        first_glyph = original_glyphs[first_id]
+        device      = Constants.DEVICES[self.composition.model]
 
-        if effect_name and not effect_config.get("supports_segmentation", True):
+        available_effects, _ = GlyphEffects.get_effects_for_track(
+            device,
+            first_glyph["track"],
+            has_custom_segments = not all_turned_on
+        )
+
+        reset_any_effect = False
+
+        for glyph_id in selected_ids:
+            effect_data = after_state[glyph_id].get("effect")
+            effect_name = effect_data.get("name") if effect_data else None
+
+            if effect_name and effect_name not in available_effects:
+                after_state[glyph_id].pop("effect", None)
+                reset_any_effect = True
+
+        if reset_any_effect:
             Windows.ErrorWindow(
                 "Effect has been reset",
                 "Heads up: custom segmentation doesn't work with applied effect, so we reset the effect."
             ).exec()
-
-            for glyph_id in selected_ids:
-                after_state[glyph_id].pop("effect", None)
 
         modified_before = {
             glyph_id: before_state[glyph_id]
@@ -321,6 +354,50 @@ class GlyphController(QObject):
         )
         self.update_glyphs(selected_ids)
 
+    def reset_selected_glyph_segments(self) -> None:
+        selected_ids = self.get_selected_glyph_ids()
+
+        if not selected_ids:
+            return
+
+        before_state: dict[int, dict] = {}
+        after_state:  dict[int, dict] = {}
+
+        for glyph_id in selected_ids:
+            glyph_data = self.composition.get_glyph(glyph_id)
+
+            if not glyph_data or "segments" not in glyph_data:
+                continue
+
+            before_state[glyph_id] = copy.deepcopy(glyph_data)
+
+            updated_glyph = copy.deepcopy(glyph_data)
+            updated_glyph.pop("segments", None)
+            updated_glyph.pop("segment_levels", None)
+            after_state[glyph_id] = updated_glyph
+
+        if not after_state:
+            return
+
+        self.composition.start_batching()
+
+        try:
+            self.push_action(Actions.ActionModify(self, before_state, after_state))
+            self.composition.update_bunch_of_glyphs(after_state)
+            self.update_glyphs(after_state)
+
+            self.elements_changed.emit()
+            self.glyph_property_changed.emit("segments")
+
+            Player.ui_player.play_sound(
+                name        = "Alerts/Clicks/Toggle1",
+                speed       = 0.85,
+                setting_key = "other_glyph_sounds"
+            )
+
+        finally:
+            self.composition.stop_batching()
+
     def shift_selected_glyph_segments(self, delta: int) -> None:
         device = Constants.DEVICES[self.composition.model]
 
@@ -339,11 +416,25 @@ class GlyphController(QObject):
             if not segment_count:
                 continue
 
-            shifted_segments = [
-                segment + delta
-                for segment in glyph_data["segments"]
-                if 0 <= segment + delta < segment_count
-            ]
+            existing_levels = glyph_data.get("segment_levels")
+            has_levels      = existing_levels is not None and len(existing_levels) == len(glyph_data["segments"])
+
+            if has_levels:
+                shifted_pairs = [
+                    (segment + delta, level)
+                    for segment, level in zip(glyph_data["segments"], existing_levels)
+                    if 0 <= segment + delta < segment_count
+                ]
+                shifted_segments = [pair[0] for pair in shifted_pairs]
+                shifted_levels   = [pair[1] for pair in shifted_pairs]
+
+            else:
+                shifted_segments = [
+                    segment + delta
+                    for segment in glyph_data["segments"]
+                    if 0 <= segment + delta < segment_count
+                ]
+                shifted_levels = None
 
             if shifted_segments == glyph_data["segments"] and shifted_segments:
                 continue
@@ -353,7 +444,14 @@ class GlyphController(QObject):
             if shifted_segments:
                 new_glyph_data             = copy.deepcopy(glyph_data)
                 new_glyph_data["segments"] = shifted_segments
-                after_state[glyph_id]      = new_glyph_data
+
+                if shifted_levels is not None and any(level < 0.999 for level in shifted_levels):
+                    new_glyph_data["segment_levels"] = shifted_levels
+
+                else:
+                    new_glyph_data.pop("segment_levels", None)
+
+                after_state[glyph_id] = new_glyph_data
 
             else:
                 deleted_glyphs[glyph_id] = copy.deepcopy(glyph_data)
@@ -429,6 +527,78 @@ class GlyphController(QObject):
 
         finally:
             self.composition.stop_batching()
+
+    def adapt_glyph_for_track_change(
+            self,
+            updated_data: dict,
+            target_track: str,
+            device:       object
+        ) -> bool:
+
+        effect_removed = False
+
+        if "effect" in updated_data:
+            effect_name          = updated_data["effect"]["name"]
+            available_effects, _ = GlyphEffects.get_effects_for_track(
+                device,
+                target_track,
+                has_custom_segments = "segments" in updated_data
+            )
+
+            if effect_name not in available_effects:
+                updated_data.pop("effect", None)
+                effect_removed = True
+
+        target_segments_count = device.get_track_segment_count(target_track)
+
+        if "segments" not in updated_data:
+            return effect_removed
+
+        if not target_segments_count:
+            updated_data.pop("segments", None)
+            updated_data.pop("segment_levels", None)
+
+            return effect_removed
+
+        existing_levels = updated_data.get("segment_levels")
+
+        if existing_levels is not None and len(existing_levels) == len(updated_data["segments"]):
+            filtered_pairs = [
+                (segment, level)
+                for segment, level in zip(updated_data["segments"], existing_levels)
+                if segment < target_segments_count
+            ]
+
+            if not filtered_pairs:
+                updated_data.pop("segments", None)
+                updated_data.pop("segment_levels", None)
+
+            else:
+                updated_data["segments"] = [pair[0] for pair in filtered_pairs]
+                filtered_levels          = [pair[1] for pair in filtered_pairs]
+
+                if any(level < 0.999 for level in filtered_levels):
+                    updated_data["segment_levels"] = filtered_levels
+
+                else:
+                    updated_data.pop("segment_levels", None)
+
+        else:
+            filtered_segments = [
+                segment
+                for segment in updated_data["segments"]
+                if segment < target_segments_count
+            ]
+
+            if not filtered_segments:
+                updated_data.pop("segments", None)
+
+            else:
+                updated_data["segments"] = filtered_segments
+
+            updated_data.pop("segment_levels", None)
+
+        return effect_removed
 
     def adjust_keyframes_brightness(
             self,
@@ -1051,10 +1221,13 @@ class GlyphController(QObject):
 
             if target_index < 0 or target_index >= len(track_names):
                 Player.ui_player.play_sound("Alerts/Warnings/Warning1")
+
                 return
 
-        before_state = {}
-        after_state  = {}
+        before_state          = {}
+        after_state           = {}
+        removed_effects_count = 0
+        device                = Constants.DEVICES[self.composition.model]
 
         for glyph_id in selected_ids:
             glyph_data = self.composition.get_glyph(glyph_id)
@@ -1069,7 +1242,11 @@ class GlyphController(QObject):
 
             new_glyph_data          = copy.deepcopy(glyph_data)
             new_glyph_data["track"] = target_track
-            after_state[glyph_id]   = new_glyph_data
+
+            if self.adapt_glyph_for_track_change(new_glyph_data, target_track, device):
+                removed_effects_count += 1
+
+            after_state[glyph_id] = new_glyph_data
 
         self.composition.start_batching()
 
@@ -1082,6 +1259,12 @@ class GlyphController(QObject):
             self.glyph_property_changed.emit("track")
             self.refresh_stack_indicators(force = True)
             self.refresh_all_occlusion()
+
+            if removed_effects_count > 0:
+                self.conductor.tooltip.show_tooltip_at(
+                    "Removed incompatible effect.",
+                    plan_hide = True
+                )
 
             Player.ui_player.play_sound(
                 name        = "Alerts/Clicks/Toggle1",

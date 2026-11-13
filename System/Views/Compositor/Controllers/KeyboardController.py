@@ -471,7 +471,7 @@ class KeyboardController(QObject):
         if not glyphs:
             return
 
-        if any(not device.get_track_segment_count(glyph["track"]) for glyph in glyphs):
+        if any(not device.can_edit_track_segments(glyph["track"]) for glyph in glyphs):
             warning_index = random.randint(1, 4)
             Player.ui_player.play_sound(
                 name     = f"Alerts/Warnings/Warning{warning_index}",

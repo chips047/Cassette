@@ -136,10 +136,11 @@ def get_target_track(
 # Glyph Factory
 
 def make_glyph(
-        base_glyph:   dict,
-        track_name:   str,
-        segments:     list = None,
-        copy_effects: bool = False
+        base_glyph:     dict,
+        track_name:     str,
+        segments:       list = None,
+        copy_effects:   bool = False,
+        segment_levels: list = None
     ) -> dict:
 
     new_glyph          = base_glyph.copy()
@@ -147,9 +148,16 @@ def make_glyph(
 
     if segments is None:
         new_glyph.pop("segments", None)
+        new_glyph.pop("segment_levels", None)
 
-    if segments is not None:
+    else:
         new_glyph["segments"] = list(segments)
+
+        if segment_levels is not None and len(segment_levels) == len(segments):
+            new_glyph["segment_levels"] = list(segment_levels)
+
+        else:
+            new_glyph.pop("segment_levels", None)
 
     if copy_effects and "effects" in new_glyph:
         new_glyph["effects"] = [effect.copy() for effect in new_glyph["effects"]]
@@ -162,8 +170,18 @@ def expand_display_track_glyph(glyph: dict, model: str) -> list[dict]:
 
     if display_track == Constants.MASTER_TRACK_IDENTIFIER or device.is_segment_track(display_track):
         return [
-            make_glyph(glyph, real_track, segments = real_segments, copy_effects = True)
-            for real_track, real_segments in device.expand_display_track(display_track, glyph.get("segments"))
+            make_glyph(
+                glyph,
+                real_track,
+                segments       = real_segments,
+                copy_effects   = True,
+                segment_levels = real_levels
+            )
+            for real_track, real_segments, real_levels in device.expand_display_track_with_levels(
+                display_track,
+                glyph.get("segments"),
+                glyph.get("segment_levels")
+            )
         ]
 
     return [glyph]
